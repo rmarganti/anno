@@ -42,5 +42,8 @@ fn main() {
     };
 
     // TODO: Launch TUI with content and source.name()
-    let _ = (content, source.name());
+    let blocks = markdown::parser::parse_markdown_to_blocks(&content);
+    for block in &blocks {
+        println!("{block:#?}");
+    }
 }
