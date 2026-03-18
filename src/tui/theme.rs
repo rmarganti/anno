@@ -13,6 +13,7 @@ pub struct Theme {
     pub table_header: Style,
     pub table_border: Style,
     pub cursor: Style,
+    pub selection_highlight: Style,
 }
 
 impl Theme {
@@ -52,6 +53,9 @@ impl Theme {
             table_header: Style::default().add_modifier(Modifier::BOLD),
             table_border: Style::default().fg(Color::DarkGray),
             cursor: Style::default().bg(Color::White).fg(Color::Black),
+            selection_highlight: Style::default()
+                .bg(Color::Rgb(61, 89, 140))
+                .fg(Color::White),
         }
     }
 

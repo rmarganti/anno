@@ -6,6 +6,7 @@ use ratatui::{
 use crate::highlight::{Highlighter, StyledSpan};
 use crate::markdown::block::{Block as MdBlock, BlockType};
 use crate::tui::theme::Theme;
+use crate::tui::viewport::CursorPosition;
 
 /// Metadata about what kind of block a document line came from.
 /// Used by `prepare_visible_lines()` for width-dependent adjustments.
@@ -21,12 +22,27 @@ pub enum LineKind {
     TableRow,
 }
 
+/// Metadata mapping a document line back to its source block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineInfo {
+    /// The block this line belongs to. `None` for blank separator lines.
+    pub block_id: Option<String>,
+    /// Character offset within the block's `content` string where this
+    /// document line's content begins. Meaningless when `block_id` is None.
+    pub content_start: usize,
+    /// Number of prefix characters prepended to the document line that
+    /// are NOT part of the block's `content` (heading markers, indentation,
+    /// list markers, blockquote border). Needed to map column → content offset.
+    pub prefix_len: usize,
+}
+
 /// Intermediate result of blocks-to-lines conversion.
 /// Stores width-independent plain and styled lines.
 pub struct DocumentLines {
     pub plain: Vec<String>,
     pub styled: Vec<Vec<StyledSpan>>,
     pub line_kinds: Vec<LineKind>,
+    pub line_info: Vec<LineInfo>,
 }
 
 /// Convert parsed blocks into flat document lines.
@@ -41,21 +57,35 @@ pub fn blocks_to_lines(
     let mut plain: Vec<String> = Vec::new();
     let mut styled: Vec<Vec<StyledSpan>> = Vec::new();
     let mut line_kinds: Vec<LineKind> = Vec::new();
+    let mut line_info: Vec<LineInfo> = Vec::new();
 
     for block in blocks {
         match &block.block_type {
             BlockType::Heading => {
                 let prefix = "#".repeat(block.level);
+                let prefix_len = prefix.chars().count() + 1; // "### " → level + 1 chars
                 let text = format!("{prefix} {}", block.content);
                 plain.push(text.clone());
                 styled.push(vec![StyledSpan::new(text, theme.heading(block.level))]);
                 line_kinds.push(LineKind::Normal);
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len,
+                });
             }
             BlockType::Paragraph => {
+                let mut offset = 0usize;
                 for line in block.content.split('\n') {
                     plain.push(line.to_string());
                     styled.push(highlighter.highlight_line(line));
                     line_kinds.push(LineKind::Normal);
+                    line_info.push(LineInfo {
+                        block_id: Some(block.id.clone()),
+                        content_start: offset,
+                        prefix_len: 0,
+                    });
+                    offset += line.chars().count() + 1; // +1 for '\n'
                 }
             }
             BlockType::Code => {
@@ -64,11 +94,16 @@ pub fn blocks_to_lines(
                 plain.push(fence_open.clone());
                 styled.push(vec![StyledSpan::new(fence_open, theme.code_fence)]);
                 line_kinds.push(LineKind::Code);
+                // fence-open: synthetic, no content
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len: 0,
+                });
 
-                let highlighted = highlighter.highlight_code_block(
-                    &block.content,
-                    block.language.as_deref(),
-                );
+                let highlighted =
+                    highlighter.highlight_code_block(&block.content, block.language.as_deref());
+                let mut offset = 0usize;
                 for (code_line, spans) in block.content.split('\n').zip(highlighted) {
                     let indented = format!("  {code_line}");
                     plain.push(indented);
@@ -76,11 +111,24 @@ pub fn blocks_to_lines(
                     line_spans.extend(spans);
                     styled.push(line_spans);
                     line_kinds.push(LineKind::Code);
+                    // prefix_len = 2 ("  " indentation added by renderer)
+                    line_info.push(LineInfo {
+                        block_id: Some(block.id.clone()),
+                        content_start: offset,
+                        prefix_len: 2,
+                    });
+                    offset += code_line.chars().count() + 1;
                 }
 
                 plain.push("```".to_string());
                 styled.push(vec![StyledSpan::new("```", theme.code_fence)]);
                 line_kinds.push(LineKind::Code);
+                // fence-close: synthetic
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len: 0,
+                });
             }
             BlockType::Blockquote => {
                 let text = format!("▎ {}", block.content);
@@ -90,9 +138,16 @@ pub fn blocks_to_lines(
                     StyledSpan::new(&block.content, theme.blockquote_text),
                 ]);
                 line_kinds.push(LineKind::Normal);
+                // "▎ " prefix: 2 characters (▎ is a single char + space)
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len: 2,
+                });
             }
             BlockType::ListItem => {
                 let indent = "  ".repeat(block.level);
+                let indent_len = block.level * 2;
                 let (marker_text, content_spans) = if let Some(checked) = block.checked {
                     let marker = if checked { "- [x] " } else { "- [ ] " };
                     (
@@ -120,23 +175,45 @@ pub fn blocks_to_lines(
                         ],
                     )
                 };
+                let marker_len = match (block.checked, block.ordered_index) {
+                    (Some(_), _) => 6,                             // "- [x] " or "- [ ] "
+                    (None, Some(idx)) => format!("{idx}. ").len(), // e.g. "1. "
+                    (None, None) => 2,                             // "- "
+                };
                 let text = format!("{indent}{marker_text}{}", block.content);
                 plain.push(text);
                 let mut spans = content_spans;
                 spans.extend(highlighter.highlight_line(&block.content));
                 styled.push(spans);
                 line_kinds.push(LineKind::Normal);
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len: indent_len + marker_len,
+                });
             }
             BlockType::HorizontalRule => {
                 plain.push("───".to_string());
                 styled.push(vec![StyledSpan::new("───", theme.hr)]);
                 line_kinds.push(LineKind::HorizontalRule);
+                line_info.push(LineInfo {
+                    block_id: Some(block.id.clone()),
+                    content_start: 0,
+                    prefix_len: 0,
+                });
             }
             BlockType::Table => {
+                let mut offset = 0usize;
                 for line in block.content.split('\n') {
                     plain.push(line.to_string());
                     styled.push(vec![StyledSpan::plain(line)]);
                     line_kinds.push(LineKind::TableRow);
+                    line_info.push(LineInfo {
+                        block_id: Some(block.id.clone()),
+                        content_start: offset,
+                        prefix_len: 0,
+                    });
+                    offset += line.chars().count() + 1;
                 }
             }
         }
@@ -144,6 +221,11 @@ pub fn blocks_to_lines(
         plain.push(String::new());
         styled.push(vec![]);
         line_kinds.push(LineKind::Normal);
+        line_info.push(LineInfo {
+            block_id: None,
+            content_start: 0,
+            prefix_len: 0,
+        });
     }
 
     // Remove trailing blank line.
@@ -151,12 +233,14 @@ pub fn blocks_to_lines(
         plain.pop();
         styled.pop();
         line_kinds.pop();
+        line_info.pop();
     }
 
     DocumentLines {
         plain,
         styled,
         line_kinds,
+        line_info,
     }
 }
 
@@ -174,6 +258,7 @@ pub fn prepare_visible_lines(
     cursor_col: usize,
     content_width: usize,
     theme: &Theme,
+    selection: Option<(CursorPosition, CursorPosition)>,
 ) -> Vec<Line<'static>> {
     // Pre-compute table formatting for contiguous runs of TableRow lines.
     let table_lines = format_table_runs(plain_slice, line_types, content_width, theme);
@@ -224,6 +309,28 @@ pub fn prepare_visible_lines(
                     Line::from(spans)
                 }
             }
+        };
+
+        // Apply selection overlay (before cursor, so cursor appears on top).
+        let line = if let Some((sel_start, sel_end)) = selection {
+            if doc_row >= sel_start.row && doc_row <= sel_end.row {
+                let col_start = if doc_row == sel_start.row {
+                    sel_start.col
+                } else {
+                    0
+                };
+                let col_end = if doc_row == sel_end.row {
+                    sel_end.col
+                } else {
+                    // Full line selected — use plain line length as upper bound.
+                    plain_slice[i].chars().count().saturating_sub(1)
+                };
+                apply_selection_to_line(line, col_start, col_end, theme)
+            } else {
+                line
+            }
+        } else {
+            line
         };
 
         if doc_row == cursor_row {
@@ -280,6 +387,57 @@ pub fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize, theme: &Theme) ->
     Line::from(spans)
 }
 
+/// Apply a selection highlight overlay to a pre-styled `Line` over the given column range.
+pub fn apply_selection_to_line(
+    line: Line<'_>,
+    col_start: usize,
+    col_end: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    let mut chars_with_style: Vec<(char, Style)> = Vec::new();
+    for span in line.spans.iter() {
+        for c in span.content.chars() {
+            chars_with_style.push((c, span.style));
+        }
+    }
+
+    if chars_with_style.is_empty() {
+        // Empty line in selection: render a space with selection bg.
+        return Line::from(Span::styled(" ", theme.selection_highlight));
+    }
+
+    let end = col_end.min(chars_with_style.len().saturating_sub(1));
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut current_text = String::new();
+    let mut current_style: Option<Style> = None;
+
+    for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
+        let effective_style = if i >= col_start && i <= end {
+            // Merge: keep fg from original style if set, override bg with selection.
+            style.patch(theme.selection_highlight)
+        } else {
+            style
+        };
+
+        match current_style {
+            Some(s) if s == effective_style => current_text.push(ch),
+            _ => {
+                if let Some(s) = current_style {
+                    spans.push(Span::styled(std::mem::take(&mut current_text), s));
+                }
+                current_text.push(ch);
+                current_style = Some(effective_style);
+            }
+        }
+    }
+    if let Some(s) = current_style {
+        spans.push(Span::styled(current_text, s));
+    }
+
+    Line::from(spans)
+}
+
 /// Detect contiguous runs of `LineKind::TableRow` and format them.
 /// Returns a map from slice index → formatted `Line`.
 fn format_table_runs(
@@ -318,8 +476,9 @@ fn format_table_runs(
 
         // Detect separator row and extract alignment.
         let separator_idx = parsed.iter().position(|row| {
-            row.iter()
-                .all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ') && !cell.is_empty())
+            row.iter().all(|cell| {
+                cell.chars().all(|c| c == '-' || c == ':' || c == ' ') && !cell.is_empty()
+            })
         });
 
         let alignments: Vec<Alignment> = if let Some(sep_idx) = separator_idx {
@@ -362,10 +521,7 @@ fn format_table_runs(
 
             if is_separator {
                 // Render separator with ─ characters and ┼ joints.
-                let parts: Vec<String> = col_widths
-                    .iter()
-                    .map(|&w| "─".repeat(w + 2))
-                    .collect();
+                let parts: Vec<String> = col_widths.iter().map(|&w| "─".repeat(w + 2)).collect();
                 let sep_text = format!("│{}│", parts.join("┼"));
                 result.insert(
                     slice_idx,

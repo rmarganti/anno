@@ -2,11 +2,11 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -16,9 +16,10 @@ use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
 use crate::markdown::parser::parse_markdown_to_blocks;
-use crate::tui::renderer::{self, LineKind};
+use crate::tui::renderer::{self, LineInfo, LineKind};
+use crate::tui::selection::Selection;
 use crate::tui::theme::Theme;
-use crate::tui::viewport::Viewport;
+use crate::tui::viewport::{CursorPosition, Viewport};
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -50,10 +51,14 @@ pub struct App {
     styled_lines: Vec<Vec<StyledSpan>>,
     /// Per-line metadata for width-dependent render adjustments.
     line_kinds: Vec<LineKind>,
+    /// Line-to-block mapping built during initialization.
+    line_info: Vec<LineInfo>,
     /// Viewport state (scroll, cursor, dimensions).
     viewport: Viewport,
     /// Centralized theme styles.
     theme: Theme,
+    /// Anchor position when in Visual mode. Set when entering Visual, cleared on exit.
+    visual_anchor: Option<CursorPosition>,
 }
 
 impl App {
@@ -78,8 +83,10 @@ impl App {
             doc_lines: doc_lines_result.plain,
             styled_lines: doc_lines_result.styled,
             line_kinds: doc_lines_result.line_kinds,
+            line_info: doc_lines_result.line_info,
             viewport,
             theme,
+            visual_anchor: None,
         }
     }
 
@@ -125,13 +132,19 @@ impl App {
             Action::FullPageUp => self.viewport.full_page_up(),
 
             // -- Mode transitions --
-            Action::EnterVisualMode => self.mode = Mode::Visual,
+            Action::EnterVisualMode => {
+                self.mode = Mode::Visual;
+                self.visual_anchor = Some(self.viewport.cursor);
+            }
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
                 self.command_buffer.clear();
             }
             Action::EnterAnnotationListMode => self.mode = Mode::AnnotationList,
-            Action::ExitToNormal => self.mode = Mode::Normal,
+            Action::ExitToNormal => {
+                self.mode = Mode::Normal;
+                self.visual_anchor = None;
+            }
 
             // -- Command mode --
             Action::CommandChar(c) => self.command_buffer.push(c),
@@ -142,6 +155,12 @@ impl App {
                 }
             }
             Action::CommandConfirm => self.execute_command(),
+
+            // -- Annotation creation from Visual mode (stubs — implemented in step 12) --
+            Action::CreateDeletion | Action::CreateComment | Action::CreateReplacement => {
+                self.mode = Mode::Normal;
+                self.visual_anchor = None;
+            }
 
             // All other actions are no-ops for now (implemented in later tasks).
             _ => {}
@@ -166,7 +185,7 @@ impl App {
                 // For now, store the output; actual piping is handled by the caller.
                 // We write to stderr as a workaround since stdout is the TUI.
                 // The proper `:w` mid-session write will be refined in later tasks.
-                let _ = eprintln!("{output}");
+                eprintln!("{output}");
             }
             _ => {}
         }
@@ -197,6 +216,17 @@ impl App {
 
         // -- Main document area --
         let visible = self.viewport.visible_range();
+
+        // Compute normalized selection range when in Visual mode.
+        let selection = if self.mode == Mode::Visual {
+            self.visual_anchor.map(|anchor| {
+                let sel = Selection { anchor };
+                sel.range(self.viewport.cursor)
+            })
+        } else {
+            None
+        };
+
         let visible_lines = renderer::prepare_visible_lines(
             &self.styled_lines[visible.clone()],
             &self.doc_lines[visible.clone()],
@@ -206,6 +236,7 @@ impl App {
             self.viewport.cursor.col,
             doc_width,
             &self.theme,
+            selection,
         );
 
         let doc = Paragraph::new(visible_lines).block(
@@ -251,5 +282,3 @@ impl App {
         frame.render_widget(status_bar, status_area);
     }
 }
-
-
