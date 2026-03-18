@@ -47,6 +47,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: buffer_start_line,
                 language: None,
                 checked: None,
+                ordered_index: None,
             });
             *next_id += 1;
             buffer.clear();
@@ -71,6 +72,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: current_line_num,
                 language: None,
                 checked: None,
+                ordered_index: None,
             });
             next_id += 1;
             i += 1;
@@ -88,6 +90,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: current_line_num,
                 language: None,
                 checked: None,
+                ordered_index: None,
             });
             next_id += 1;
             i += 1;
@@ -101,6 +104,15 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
             // Calculate indentation level from leading whitespace.
             let leading_spaces = line.len() - line.trim_start().len();
             let list_level = leading_spaces / 2;
+
+            // Extract ordinal for ordered list items.
+            let ordered_index = if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                trimmed
+                    .find(". ")
+                    .and_then(|dot_pos| trimmed[..dot_pos].parse::<usize>().ok())
+            } else {
+                None
+            };
 
             // Remove the list marker.
             let after_marker = strip_list_marker(trimmed);
@@ -116,6 +128,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: current_line_num,
                 language: None,
                 checked,
+                ordered_index,
             });
             next_id += 1;
             i += 1;
@@ -134,6 +147,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: current_line_num,
                 language: None,
                 checked: None,
+                ordered_index: None,
             });
             next_id += 1;
             i += 1;
@@ -167,6 +181,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: code_start_line,
                 language,
                 checked: None,
+                ordered_index: None,
             });
             next_id += 1;
             i += 1;
@@ -195,6 +210,7 @@ pub fn parse_markdown_to_blocks(markdown: &str) -> Vec<Block> {
                 start_line: table_start_line,
                 language: None,
                 checked: None,
+                ordered_index: None,
             });
             next_id += 1;
             i += 1;
@@ -422,6 +438,16 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].block_type, BlockType::ListItem);
         assert_eq!(blocks[0].content, "first");
+        assert_eq!(blocks[0].ordered_index, Some(1));
+        assert_eq!(blocks[1].ordered_index, Some(2));
+    }
+
+    #[test]
+    fn unordered_list_has_no_ordered_index() {
+        let md = "- first\n- second";
+        let blocks = parse_markdown_to_blocks(md);
+        assert_eq!(blocks[0].ordered_index, None);
+        assert_eq!(blocks[1].ordered_index, None);
     }
 
     #[test]

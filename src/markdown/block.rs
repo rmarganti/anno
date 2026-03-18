@@ -27,4 +27,6 @@ pub struct Block {
     pub language: Option<String>,
     /// For list items with checkbox syntax, whether the checkbox is checked.
     pub checked: Option<bool>,
+    /// For ordered list items, the 1-based ordinal from the source (e.g. `1`, `2`).
+    pub ordered_index: Option<usize>,
 }

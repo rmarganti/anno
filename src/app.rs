@@ -4,7 +4,7 @@ use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -12,11 +12,12 @@ use ratatui::{
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
 use crate::highlight::syntect::SyntectHighlighter;
-use crate::highlight::{Highlighter, StyledSpan};
+use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
-use crate::markdown::block::BlockType;
 use crate::markdown::parser::parse_markdown_to_blocks;
+use crate::tui::renderer::{self, LineKind};
+use crate::tui::theme::Theme;
 use crate::tui::viewport::Viewport;
 
 /// The result of running the application: whether to print annotations on exit.
@@ -47,16 +48,21 @@ pub struct App {
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
     styled_lines: Vec<Vec<StyledSpan>>,
+    /// Per-line metadata for width-dependent render adjustments.
+    line_kinds: Vec<LineKind>,
     /// Viewport state (scroll, cursor, dimensions).
     viewport: Viewport,
+    /// Centralized theme styles.
+    theme: Theme,
 }
 
 impl App {
     pub fn new(source_name: String, content: String) -> Self {
         let blocks = parse_markdown_to_blocks(&content);
         let highlighter = SyntectHighlighter::new();
-        let (doc_lines, styled_lines) = blocks_to_lines(&blocks, &highlighter);
-        let line_lengths: Vec<usize> = doc_lines.iter().map(|l| l.len()).collect();
+        let theme = Theme::new();
+        let doc_lines_result = renderer::blocks_to_lines(&blocks, &highlighter, &theme);
+        let line_lengths: Vec<usize> = doc_lines_result.plain.iter().map(|l| l.len()).collect();
 
         let mut viewport = Viewport::new();
         viewport.set_line_info(line_lengths);
@@ -69,9 +75,11 @@ impl App {
             command_buffer: String::new(),
             should_quit: false,
             exit_result: None,
-            doc_lines,
-            styled_lines,
+            doc_lines: doc_lines_result.plain,
+            styled_lines: doc_lines_result.styled,
+            line_kinds: doc_lines_result.line_kinds,
             viewport,
+            theme,
         }
     }
 
@@ -189,22 +197,16 @@ impl App {
 
         // -- Main document area --
         let visible = self.viewport.visible_range();
-        let visible_lines: Vec<Line> = self.styled_lines[visible.clone()]
-            .iter()
-            .enumerate()
-            .map(|(i, styled_spans)| {
-                let doc_row = visible.start + i;
-                let spans: Vec<Span> = styled_spans
-                    .iter()
-                    .map(|ss| Span::styled(ss.text.clone(), ss.style))
-                    .collect();
-                if doc_row == self.viewport.cursor.row {
-                    apply_cursor_to_line(Line::from(spans), self.viewport.cursor.col)
-                } else {
-                    Line::from(spans)
-                }
-            })
-            .collect();
+        let visible_lines = renderer::prepare_visible_lines(
+            &self.styled_lines[visible.clone()],
+            &self.doc_lines[visible.clone()],
+            &self.line_kinds[visible.clone()],
+            visible.start,
+            self.viewport.cursor.row,
+            self.viewport.cursor.col,
+            doc_width,
+            &self.theme,
+        );
 
         let doc = Paragraph::new(visible_lines).block(
             Block::default()
@@ -250,157 +252,4 @@ impl App {
     }
 }
 
-/// Apply a block cursor overlay to a pre-styled `Line` at the given column.
-fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize) -> Line<'_> {
-    // Flatten all spans into chars with their original style.
-    let mut chars_with_style: Vec<(char, Style)> = Vec::new();
-    for span in line.spans.iter() {
-        for c in span.content.chars() {
-            chars_with_style.push((c, span.style));
-        }
-    }
 
-    if chars_with_style.is_empty() {
-        return Line::from(Span::styled(
-            " ",
-            Style::default().bg(Color::White).fg(Color::Black),
-        ));
-    }
-
-    let col = cursor_col.min(chars_with_style.len().saturating_sub(1));
-    let cursor_style = Style::default().bg(Color::White).fg(Color::Black);
-
-    // Rebuild spans, applying cursor style to the character at `col`.
-    let mut spans: Vec<Span> = Vec::new();
-    let mut current_text = String::new();
-    let mut current_style: Option<Style> = None;
-
-    for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
-        let effective_style = if i == col { cursor_style } else { style };
-
-        match current_style {
-            Some(s) if s == effective_style => {
-                current_text.push(ch);
-            }
-            _ => {
-                if let Some(s) = current_style {
-                    spans.push(Span::styled(std::mem::take(&mut current_text), s));
-                }
-                current_text.push(ch);
-                current_style = Some(effective_style);
-            }
-        }
-    }
-    if let Some(s) = current_style {
-        spans.push(Span::styled(current_text, s));
-    }
-
-    Line::from(spans)
-}
-
-/// Convert parsed markdown blocks into flat document lines.
-///
-/// Returns `(plain_lines, styled_lines)`:
-/// - `plain_lines`: raw text per line (for cursor movement / word logic).
-/// - `styled_lines`: highlighted spans per line (for rendering).
-fn blocks_to_lines(
-    blocks: &[crate::markdown::block::Block],
-    highlighter: &dyn Highlighter,
-) -> (Vec<String>, Vec<Vec<StyledSpan>>) {
-    let mut plain: Vec<String> = Vec::new();
-    let mut styled: Vec<Vec<StyledSpan>> = Vec::new();
-
-    let heading_style = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
-    let blockquote_style = Style::default().fg(Color::DarkGray);
-    let hr_style = Style::default().fg(Color::DarkGray);
-    let code_fence_style = Style::default().fg(Color::DarkGray);
-    let list_marker_style = Style::default().fg(Color::Yellow);
-    let checkbox_style = Style::default().fg(Color::Green);
-
-    for block in blocks {
-        match &block.block_type {
-            BlockType::Heading => {
-                let prefix = "#".repeat(block.level);
-                let text = format!("{prefix} {}", block.content);
-                plain.push(text.clone());
-                styled.push(vec![StyledSpan::new(text, heading_style)]);
-            }
-            BlockType::Paragraph => {
-                for line in block.content.split('\n') {
-                    plain.push(line.to_string());
-                    styled.push(highlighter.highlight_line(line));
-                }
-            }
-            BlockType::Code => {
-                let lang = block.language.as_deref().unwrap_or("");
-                let fence_open = format!("```{lang}");
-                plain.push(fence_open.clone());
-                styled.push(vec![StyledSpan::new(fence_open, code_fence_style)]);
-
-                let highlighted = highlighter.highlight_code_block(
-                    &block.content,
-                    block.language.as_deref(),
-                );
-                for (code_line, spans) in block.content.split('\n').zip(highlighted) {
-                    let indented = format!("  {code_line}");
-                    plain.push(indented);
-                    // Prepend indent to highlighted spans.
-                    let mut line_spans = vec![StyledSpan::new("  ", Style::default())];
-                    line_spans.extend(spans);
-                    styled.push(line_spans);
-                }
-
-                plain.push("```".to_string());
-                styled.push(vec![StyledSpan::new("```", code_fence_style)]);
-            }
-            BlockType::Blockquote => {
-                let text = format!("> {}", block.content);
-                plain.push(text.clone());
-                styled.push(vec![StyledSpan::new(text, blockquote_style)]);
-            }
-            BlockType::ListItem => {
-                let indent = "  ".repeat(block.level);
-                let (marker, content_spans) = if let Some(checked) = block.checked {
-                    let marker = if checked { "- [x] " } else { "- [ ] " };
-                    (marker, vec![
-                        StyledSpan::new(&indent, Style::default()),
-                        StyledSpan::new(marker, checkbox_style),
-                    ])
-                } else {
-                    ("- ", vec![
-                        StyledSpan::new(&indent, Style::default()),
-                        StyledSpan::new("- ", list_marker_style),
-                    ])
-                };
-                let text = format!("{indent}{marker}{}", block.content);
-                plain.push(text);
-                let mut spans = content_spans;
-                spans.extend(highlighter.highlight_line(&block.content));
-                styled.push(spans);
-            }
-            BlockType::HorizontalRule => {
-                plain.push("───".to_string());
-                styled.push(vec![StyledSpan::new("───", hr_style)]);
-            }
-            BlockType::Table => {
-                for line in block.content.split('\n') {
-                    plain.push(line.to_string());
-                    styled.push(vec![StyledSpan::plain(line)]);
-                }
-            }
-        }
-        // Blank line between blocks.
-        plain.push(String::new());
-        styled.push(vec![]);
-    }
-
-    // Remove trailing blank line.
-    if plain.last().is_some_and(|l| l.is_empty()) {
-        plain.pop();
-        styled.pop();
-    }
-
-    (plain, styled)
-}
