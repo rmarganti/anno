@@ -222,6 +222,7 @@ impl Viewport {
     }
 
     /// Row of the cursor relative to the viewport (for rendering).
+    #[allow(dead_code)] // TODO: used when annotation gutter rendering is added
     pub fn cursor_viewport_row(&self) -> usize {
         self.cursor.row.saturating_sub(self.scroll_offset)
     }

@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use super::types::Annotation;
+use super::types::{Annotation, TextRange};
 
 /// Collection of annotations with CRUD operations and position-based ordering.
 #[derive(Debug, Default)]
@@ -8,6 +8,7 @@ pub struct AnnotationStore {
     annotations: Vec<Annotation>,
 }
 
+#[allow(dead_code)] // TODO: methods used when annotation CRUD is wired up
 impl AnnotationStore {
     /// Create an empty store.
     pub fn new() -> Self {
@@ -38,29 +39,18 @@ impl AnnotationStore {
         self.annotations.is_empty()
     }
 
-    /// Return annotations ordered by position: block id (lexicographic),
-    /// then start offset, then end offset, then creation timestamp.
-    /// `GlobalComment` annotations (no block id) are sorted to the end.
+    /// Return annotations ordered by position: start line, start column,
+    /// end line, end column, then creation timestamp.
+    /// `GlobalComment` annotations (`None` range) are sorted to the end.
     pub fn ordered(&self) -> Vec<&Annotation> {
         let mut refs: Vec<&Annotation> = self.annotations.iter().collect();
         refs.sort_by(|a, b| {
-            let a_key = (
-                a.block_id.as_deref(),
-                a.start_offset,
-                a.end_offset,
-                a.timestamp,
-            );
-            let b_key = (
-                b.block_id.as_deref(),
-                b.start_offset,
-                b.end_offset,
-                b.timestamp,
-            );
-            // `None` (GlobalComment) sorts after `Some(_)` because `None < Some(_)` in Rust,
-            // so we reverse that by mapping: Some(x) → (0, Some(x)), None → (1, None).
-            let a_sort = (if a_key.0.is_some() { 0 } else { 1 }, a_key);
-            let b_sort = (if b_key.0.is_some() { 0 } else { 1 }, b_key);
-            a_sort.cmp(&b_sort)
+            let a_key = a.range.map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
+            let b_key = b.range.map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
+            // None (GlobalComment) sorts last: map to (1, ...) vs (0, ...) for Some.
+            let a_sort = a_key.unwrap_or((1, 0, 0, 0, 0));
+            let b_sort = b_key.unwrap_or((1, 0, 0, 0, 0));
+            a_sort.cmp(&b_sort).then(a.timestamp.cmp(&b.timestamp))
         });
         refs
     }
@@ -75,14 +65,18 @@ impl AnnotationStore {
         &self.annotations
     }
 
-    /// Return all annotations that overlap the given block and character range.
-    pub fn overlapping(&self, block_id: &str, start: usize, end: usize) -> Vec<&Annotation> {
+    /// Return all annotations that overlap the given text range.
+    /// Two ranges overlap if one starts before the other ends and vice versa,
+    /// using `(line, column)` tuple ordering.
+    pub fn overlapping(&self, range: &TextRange) -> Vec<&Annotation> {
         self.annotations
             .iter()
             .filter(|a| {
-                a.block_id.as_deref() == Some(block_id)
-                    && a.start_offset < end
-                    && a.end_offset > start
+                if let Some(r) = a.range {
+                    r.start < range.end && range.start < r.end
+                } else {
+                    false
+                }
             })
             .collect()
     }
@@ -91,22 +85,27 @@ impl AnnotationStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annotation::types::{Annotation, AnnotationType};
+    use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
 
     // ───── helpers ─────
 
-    fn deletion(block_id: &str, start: usize, end: usize) -> Annotation {
-        Annotation::deletion(block_id.to_string(), start, end, "x".repeat(end - start))
+    fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
+        TextRange {
+            start: TextPosition { line: sl, column: sc },
+            end: TextPosition { line: el, column: ec },
+        }
     }
 
-    fn comment(block_id: &str, start: usize, end: usize) -> Annotation {
-        Annotation::comment(
-            block_id.to_string(),
-            start,
-            end,
-            "sel".into(),
-            "note".into(),
-        )
+    fn pos(line: usize, column: usize) -> TextPosition {
+        TextPosition { line, column }
+    }
+
+    fn deletion(sl: usize, sc: usize, el: usize, ec: usize) -> Annotation {
+        Annotation::deletion(range(sl, sc, el, ec), "x".into())
+    }
+
+    fn comment(sl: usize, sc: usize, el: usize, ec: usize) -> Annotation {
+        Annotation::comment(range(sl, sc, el, ec), "sel".into(), "note".into())
     }
 
     fn global() -> Annotation {
@@ -118,7 +117,7 @@ mod tests {
     #[test]
     fn add_and_retrieve() {
         let mut store = AnnotationStore::new();
-        let ann = deletion("block-0", 0, 5);
+        let ann = deletion(0, 0, 0, 5);
         let id = ann.id;
         store.add(ann);
 
@@ -131,7 +130,7 @@ mod tests {
     #[test]
     fn delete_existing() {
         let mut store = AnnotationStore::new();
-        let ann = deletion("block-0", 0, 5);
+        let ann = deletion(0, 0, 0, 5);
         let id = ann.id;
         store.add(ann);
 
@@ -152,8 +151,8 @@ mod tests {
         assert!(store.is_empty());
         assert_eq!(store.len(), 0);
 
-        store.add(deletion("block-0", 0, 1));
-        store.add(deletion("block-0", 1, 2));
+        store.add(deletion(0, 0, 0, 1));
+        store.add(deletion(0, 1, 0, 2));
         assert_eq!(store.len(), 2);
         assert!(!store.is_empty());
     }
@@ -161,32 +160,33 @@ mod tests {
     // ───── Ordering ─────
 
     #[test]
-    fn ordered_by_block_then_offset() {
+    fn ordered_by_line_then_column() {
         let mut store = AnnotationStore::new();
-        store.add(deletion("block-1", 10, 20));
-        store.add(deletion("block-0", 5, 10));
-        store.add(deletion("block-0", 0, 5));
+        store.add(deletion(5, 0, 5, 10));   // line 5
+        store.add(deletion(1, 5, 1, 10));   // line 1, col 5
+        store.add(deletion(1, 0, 1, 5));    // line 1, col 0
 
         let ordered = store.ordered();
-        assert_eq!(ordered[0].block_id.as_deref(), Some("block-0"));
-        assert_eq!(ordered[0].start_offset, 0);
-        assert_eq!(ordered[1].block_id.as_deref(), Some("block-0"));
-        assert_eq!(ordered[1].start_offset, 5);
-        assert_eq!(ordered[2].block_id.as_deref(), Some("block-1"));
+        let r0 = ordered[0].range.unwrap();
+        let r1 = ordered[1].range.unwrap();
+        let r2 = ordered[2].range.unwrap();
+        assert_eq!((r0.start.line, r0.start.column), (1, 0));
+        assert_eq!((r1.start.line, r1.start.column), (1, 5));
+        assert_eq!((r2.start.line, r2.start.column), (5, 0));
     }
 
     #[test]
     fn global_comments_sort_last() {
         let mut store = AnnotationStore::new();
         store.add(global());
-        store.add(deletion("block-0", 0, 5));
+        store.add(deletion(0, 0, 0, 5));
         store.add(global());
 
         let ordered = store.ordered();
-        // block-anchored annotation first, then global comments
-        assert!(ordered[0].block_id.is_some());
-        assert!(ordered[1].block_id.is_none());
-        assert!(ordered[2].block_id.is_none());
+        // Range-anchored annotation first, then global comments
+        assert!(ordered[0].range.is_some());
+        assert!(ordered[1].range.is_none());
+        assert!(ordered[2].range.is_none());
     }
 
     // ───── Overlapping ─────
@@ -194,23 +194,25 @@ mod tests {
     #[test]
     fn overlapping_finds_intersecting_annotations() {
         let mut store = AnnotationStore::new();
-        store.add(deletion("block-0", 0, 10));
-        store.add(deletion("block-0", 5, 15));
-        store.add(deletion("block-0", 20, 30));
-        store.add(deletion("block-1", 0, 10));
+        store.add(deletion(1, 0, 1, 10));
+        store.add(deletion(1, 5, 1, 15));
+        store.add(deletion(3, 0, 3, 10));
+        store.add(deletion(5, 0, 5, 10));  // different line entirely
 
-        // Query range [3, 12) in block-0 should match the first two.
-        let hits = store.overlapping("block-0", 3, 12);
+        // Query range [1:3, 1:12) should match the first two.
+        let query = range(1, 3, 1, 12);
+        let hits = store.overlapping(&query);
         assert_eq!(hits.len(), 2);
     }
 
     #[test]
     fn overlapping_no_match_when_adjacent() {
         let mut store = AnnotationStore::new();
-        store.add(deletion("block-0", 0, 5));
+        store.add(deletion(1, 0, 1, 5));
 
-        // Range [5, 10) starts exactly where the annotation ends — no overlap.
-        let hits = store.overlapping("block-0", 5, 10);
+        // Range [1:5, 1:10) starts exactly where the annotation ends — no overlap.
+        let query = range(1, 5, 1, 10);
+        let hits = store.overlapping(&query);
         assert!(hits.is_empty());
     }
 
@@ -219,38 +221,40 @@ mod tests {
     #[test]
     fn empty_selection_annotation() {
         let mut store = AnnotationStore::new();
-        let ann = Annotation::insertion("block-0".into(), 5, "inserted".into());
+        let ann = Annotation::insertion(pos(1, 5), "inserted".into());
         let id = ann.id;
         store.add(ann);
 
         let a = store.get(id).unwrap();
-        assert_eq!(a.start_offset, 5);
-        assert_eq!(a.end_offset, 5);
+        let r = a.range.unwrap();
+        assert_eq!(r.start, r.end);
+        assert_eq!((r.start.line, r.start.column), (1, 5));
         assert_eq!(a.annotation_type, AnnotationType::Insertion);
     }
 
     #[test]
     fn annotations_at_document_boundaries() {
         let mut store = AnnotationStore::new();
-        // Annotation at the very start of the first block
-        store.add(deletion("block-0", 0, 1));
-        // Annotation at an arbitrary large offset (end of document)
-        store.add(comment("block-99", 1000, 1050));
+        // Annotation at the very start
+        store.add(deletion(0, 0, 0, 1));
+        // Annotation far into the document
+        store.add(comment(99, 0, 99, 50));
 
         assert_eq!(store.len(), 2);
         let ordered = store.ordered();
-        assert_eq!(ordered[0].block_id.as_deref(), Some("block-0"));
-        assert_eq!(ordered[1].block_id.as_deref(), Some("block-99"));
+        assert_eq!(ordered[0].range.unwrap().start.line, 0);
+        assert_eq!(ordered[1].range.unwrap().start.line, 99);
     }
 
     #[test]
     fn multiple_overlapping_annotations_on_same_range() {
         let mut store = AnnotationStore::new();
-        store.add(deletion("block-0", 0, 10));
-        store.add(comment("block-0", 0, 10));
+        store.add(deletion(1, 0, 1, 10));
+        store.add(comment(1, 0, 1, 10));
 
         // Both should be returned for the same range.
-        let hits = store.overlapping("block-0", 0, 10);
+        let query = range(1, 0, 1, 10);
+        let hits = store.overlapping(&query);
         assert_eq!(hits.len(), 2);
     }
 }

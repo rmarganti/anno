@@ -6,6 +6,7 @@ pub enum Mode {
     /// Text selection mode, entered with `v`.
     Visual,
     /// Text input mode for comment/replacement/insertion text entry.
+    #[allow(dead_code)] // TODO: used when insert mode is wired up
     Insert,
     /// Focused on the annotation list sidebar.
     AnnotationList,

@@ -67,10 +67,17 @@ fn export_annotation(output: &mut String, ann: &Annotation, number: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annotation::types::Annotation;
+    use crate::annotation::types::{Annotation, TextPosition, TextRange};
 
     fn exporter() -> PlannotatorExporter {
         PlannotatorExporter
+    }
+
+    fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
+        TextRange {
+            start: TextPosition { line: sl, column: sc },
+            end: TextPosition { line: el, column: ec },
+        }
     }
 
     // ───── Individual annotation types ─────
@@ -85,9 +92,7 @@ mod tests {
     fn export_deletion() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::deletion(
-            "block-0".into(),
-            0,
-            10,
+            range(0, 0, 0, 10),
             "remove me".into(),
         ));
 
@@ -104,9 +109,7 @@ mod tests {
     fn export_comment() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::comment(
-            "block-0".into(),
-            0,
-            5,
+            range(0, 0, 0, 5),
             "hello".into(),
             "needs more detail".into(),
         ));
@@ -120,9 +123,7 @@ mod tests {
     fn export_replacement() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::replacement(
-            "block-0".into(),
-            0,
-            5,
+            range(0, 0, 0, 5),
             "old text".into(),
             "new text".into(),
         ));
@@ -137,8 +138,7 @@ mod tests {
     fn export_insertion() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::insertion(
-            "block-0".into(),
-            5,
+            TextPosition { line: 0, column: 5 },
             "inserted content".into(),
         ));
 
@@ -163,15 +163,11 @@ mod tests {
     fn export_multiple_annotations_numbered_correctly() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::deletion(
-            "block-0".into(),
-            0,
-            5,
+            range(0, 0, 0, 5),
             "first".into(),
         ));
         store.add(Annotation::comment(
-            "block-0".into(),
-            10,
-            15,
+            range(0, 10, 0, 15),
             "second".into(),
             "a comment".into(),
         ));
@@ -187,36 +183,30 @@ mod tests {
     // ───── Ordering ─────
 
     #[test]
-    fn export_ordering_matches_block_then_offset() {
+    fn export_ordering_matches_line_then_column() {
         let mut store = AnnotationStore::new();
         // Add in reverse order
         store.add(Annotation::global_comment("global".into()));
         store.add(Annotation::deletion(
-            "block-1".into(),
-            0,
-            5,
-            "later block".into(),
+            range(5, 0, 5, 5),
+            "later line".into(),
         ));
         store.add(Annotation::comment(
-            "block-0".into(),
-            10,
-            15,
-            "second in block".into(),
+            range(1, 10, 1, 15),
+            "second in line".into(),
             "note".into(),
         ));
         store.add(Annotation::deletion(
-            "block-0".into(),
-            0,
-            5,
-            "first in block".into(),
+            range(1, 0, 1, 5),
+            "first in line".into(),
         ));
 
         let result = exporter().export(&store);
 
-        // Verify ordering: block-0 offset 0, block-0 offset 10, block-1, then global
-        let pos_first = result.find("first in block").unwrap();
-        let pos_second = result.find("second in block").unwrap();
-        let pos_later = result.find("later block").unwrap();
+        // Verify ordering: line 1 col 0, line 1 col 10, line 5, then global
+        let pos_first = result.find("first in line").unwrap();
+        let pos_second = result.find("second in line").unwrap();
+        let pos_later = result.find("later line").unwrap();
         let pos_global = result.find("General feedback").unwrap();
 
         assert!(pos_first < pos_second);

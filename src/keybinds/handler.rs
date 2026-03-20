@@ -23,6 +23,7 @@ pub enum Action {
 
     // -- Mode transitions --
     EnterVisualMode,
+    #[allow(dead_code)] // TODO: used when insert mode is wired up
     EnterInsertMode,
     EnterCommandMode,
     EnterAnnotationListMode,
@@ -77,6 +78,7 @@ impl KeybindHandler {
     }
 
     /// Returns `true` if there is a pending partial key sequence.
+    #[allow(dead_code)] // TODO: used when pending-key UI indicator is added
     pub fn has_pending(&self) -> bool {
         self.pending.is_some()
     }

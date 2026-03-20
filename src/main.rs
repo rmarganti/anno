@@ -3,7 +3,6 @@ mod app;
 mod highlight;
 mod input;
 mod keybinds;
-mod markdown;
 mod tui;
 
 use std::io::{self, IsTerminal, Write};

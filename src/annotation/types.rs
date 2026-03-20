@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 /// The kind of annotation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // TODO: variants used when annotation creation is wired up
 pub enum AnnotationType {
     /// Mark selected text for removal.
     Deletion,
@@ -15,17 +16,27 @@ pub enum AnnotationType {
     GlobalComment,
 }
 
+/// A line/column position within the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TextPosition {
+    pub line: usize,
+    pub column: usize,
+}
+
+/// A range of text within the document, defined by start and end positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextRange {
+    pub start: TextPosition,
+    pub end: TextPosition,
+}
+
 /// A single annotation attached to the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
     /// Unique identifier.
     pub id: Uuid,
-    /// The block this annotation is anchored to (`None` for `GlobalComment`).
-    pub block_id: Option<String>,
-    /// Character offset of the selection start within the block.
-    pub start_offset: usize,
-    /// Character offset of the selection end within the block.
-    pub end_offset: usize,
+    /// The text range this annotation is anchored to (`None` for `GlobalComment`).
+    pub range: Option<TextRange>,
     /// The original selected text (empty for `Insertion` and `GlobalComment`).
     pub selected_text: String,
     /// The annotation type.
@@ -37,12 +48,11 @@ pub struct Annotation {
     pub timestamp: u128,
 }
 
+#[allow(dead_code)] // TODO: constructors used when annotation creation is wired up
 impl Annotation {
     /// Create a new annotation with a generated UUID and current timestamp.
     pub fn new(
-        block_id: Option<String>,
-        start_offset: usize,
-        end_offset: usize,
+        range: Option<TextRange>,
         selected_text: String,
         annotation_type: AnnotationType,
         text: String,
@@ -51,9 +61,7 @@ impl Annotation {
 
         Self {
             id: Uuid::new_v4(),
-            block_id,
-            start_offset,
-            end_offset,
+            range,
             selected_text,
             annotation_type,
             text,
@@ -64,72 +72,53 @@ impl Annotation {
         }
     }
 
-    /// Create a `Deletion` annotation for selected text within a block.
-    pub fn deletion(block_id: String, start: usize, end: usize, selected_text: String) -> Self {
+    /// Create a `Deletion` annotation for selected text.
+    pub fn deletion(range: TextRange, selected_text: String) -> Self {
         Self::new(
-            Some(block_id),
-            start,
-            end,
+            Some(range),
             selected_text,
             AnnotationType::Deletion,
             String::new(),
         )
     }
 
-    /// Create a `Comment` annotation on selected text within a block.
-    pub fn comment(
-        block_id: String,
-        start: usize,
-        end: usize,
-        selected_text: String,
-        comment: String,
-    ) -> Self {
+    /// Create a `Comment` annotation on selected text.
+    pub fn comment(range: TextRange, selected_text: String, comment: String) -> Self {
         Self::new(
-            Some(block_id),
-            start,
-            end,
+            Some(range),
             selected_text,
             AnnotationType::Comment,
             comment,
         )
     }
 
-    /// Create a `Replacement` annotation for selected text within a block.
-    pub fn replacement(
-        block_id: String,
-        start: usize,
-        end: usize,
-        selected_text: String,
-        replacement: String,
-    ) -> Self {
+    /// Create a `Replacement` annotation for selected text.
+    pub fn replacement(range: TextRange, selected_text: String, replacement: String) -> Self {
         Self::new(
-            Some(block_id),
-            start,
-            end,
+            Some(range),
             selected_text,
             AnnotationType::Replacement,
             replacement,
         )
     }
 
-    /// Create an `Insertion` annotation at a cursor position within a block.
-    pub fn insertion(block_id: String, offset: usize, text: String) -> Self {
+    /// Create an `Insertion` annotation at a cursor position.
+    pub fn insertion(position: TextPosition, text: String) -> Self {
         Self::new(
-            Some(block_id),
-            offset,
-            offset,
+            Some(TextRange {
+                start: position,
+                end: position,
+            }),
             String::new(),
             AnnotationType::Insertion,
             text,
         )
     }
 
-    /// Create a `GlobalComment` annotation (not anchored to any block).
+    /// Create a `GlobalComment` annotation (not anchored to any position).
     pub fn global_comment(comment: String) -> Self {
         Self::new(
             None,
-            0,
-            0,
             String::new(),
             AnnotationType::GlobalComment,
             comment,

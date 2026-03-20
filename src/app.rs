@@ -2,21 +2,20 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
-    DefaultTerminal, Frame,
+    widgets::{Block, Paragraph},
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
-use crate::highlight::syntect::SyntectHighlighter;
 use crate::highlight::StyledSpan;
+use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
-use crate::markdown::parser::parse_markdown_to_blocks;
-use crate::tui::renderer::{self, LineInfo, LineKind};
+use crate::tui::renderer;
 use crate::tui::selection::Selection;
 use crate::tui::theme::Theme;
 use crate::tui::viewport::{CursorPosition, Viewport};
@@ -49,10 +48,6 @@ pub struct App {
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
     styled_lines: Vec<Vec<StyledSpan>>,
-    /// Per-line metadata for width-dependent render adjustments.
-    line_kinds: Vec<LineKind>,
-    /// Line-to-block mapping built during initialization.
-    line_info: Vec<LineInfo>,
     /// Viewport state (scroll, cursor, dimensions).
     viewport: Viewport,
     /// Centralized theme styles.
@@ -63,11 +58,14 @@ pub struct App {
 
 impl App {
     pub fn new(source_name: String, content: String) -> Self {
-        let blocks = parse_markdown_to_blocks(&content);
         let highlighter = SyntectHighlighter::new();
         let theme = Theme::new();
-        let doc_lines_result = renderer::blocks_to_lines(&blocks, &highlighter, &theme);
-        let line_lengths: Vec<usize> = doc_lines_result.plain.iter().map(|l| l.len()).collect();
+        let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
+        let line_lengths: Vec<usize> = doc_lines_result
+            .plain
+            .iter()
+            .map(|l| l.chars().count())
+            .collect();
 
         let mut viewport = Viewport::new();
         viewport.set_line_info(line_lengths);
@@ -82,8 +80,6 @@ impl App {
             exit_result: None,
             doc_lines: doc_lines_result.plain,
             styled_lines: doc_lines_result.styled,
-            line_kinds: doc_lines_result.line_kinds,
-            line_info: doc_lines_result.line_info,
             viewport,
             theme,
             visual_anchor: None,
@@ -199,8 +195,8 @@ impl App {
         let area = frame.area();
 
         // Update viewport dimensions (account for borders + status bar).
-        let doc_height = area.height.saturating_sub(3) as usize; // 2 border rows + 1 status row
-        let doc_width = area.width.saturating_sub(2) as usize; // 2 border columns
+        let doc_height = area.height.saturating_sub(1) as usize; // leave room for status row
+        let doc_width = area.width as usize; // 2 border columns
         self.viewport.set_dimensions(doc_width, doc_height);
 
         // Minimum terminal size check.
@@ -230,20 +226,14 @@ impl App {
         let visible_lines = renderer::prepare_visible_lines(
             &self.styled_lines[visible.clone()],
             &self.doc_lines[visible.clone()],
-            &self.line_kinds[visible.clone()],
             visible.start,
             self.viewport.cursor.row,
             self.viewport.cursor.col,
-            doc_width,
             &self.theme,
             selection,
         );
 
-        let doc = Paragraph::new(visible_lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {} ", self.source_name)),
-        );
+        let doc = Paragraph::new(visible_lines).block(Block::default());
         frame.render_widget(doc, main_area);
 
         // -- Status bar --

@@ -28,11 +28,6 @@ impl StyledSpan {
 /// Trait abstracting syntax highlighting so the backend (syntect, tree-sitter, etc.)
 /// can be swapped without touching rendering code.
 pub trait Highlighter {
-    /// Highlight a single line of markdown prose, returning styled spans for
-    /// inline formatting (bold, italic, inline code, links).
-    fn highlight_line(&self, line: &str) -> Vec<StyledSpan>;
-
-    /// Highlight a code block's content with language-specific grammars.
-    /// `language` is the optional fence language tag (e.g. "rust", "python").
-    fn highlight_code_block(&self, code: &str, language: Option<&str>) -> Vec<Vec<StyledSpan>>;
+    /// Highlight an entire document, returning one `Vec<StyledSpan>` per line.
+    fn highlight_document(&self, lines: &[String]) -> Vec<Vec<StyledSpan>>;
 }
