@@ -8,7 +8,6 @@ pub struct AnnotationStore {
     annotations: Vec<Annotation>,
 }
 
-#[allow(dead_code)] // TODO: methods used when annotation CRUD is wired up
 impl AnnotationStore {
     /// Create an empty store.
     pub fn new() -> Self {

@@ -23,7 +23,6 @@ pub enum Action {
 
     // -- Mode transitions --
     EnterVisualMode,
-    #[allow(dead_code)] // TODO: used when insert mode is wired up
     EnterInsertMode,
     EnterCommandMode,
     EnterAnnotationListMode,
@@ -55,6 +54,8 @@ pub enum Action {
     InputChar(char),
     InputBackspace,
     InputConfirm,
+    InputLeft,
+    InputRight,
 
     // -- Help --
     ToggleHelp,
@@ -81,7 +82,7 @@ impl KeybindHandler {
     }
 
     /// Returns `true` if there is a pending partial key sequence.
-    #[allow(dead_code)] // TODO: used when pending-key UI indicator is added
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
         self.pending.is_some()
     }
@@ -195,6 +196,8 @@ impl KeybindHandler {
             KeyCode::Esc => Action::ExitToNormal,
             KeyCode::Enter => Action::InputConfirm,
             KeyCode::Backspace => Action::InputBackspace,
+            KeyCode::Left => Action::InputLeft,
+            KeyCode::Right => Action::InputRight,
             KeyCode::Char(c) => Action::InputChar(c),
             _ => Action::None,
         }

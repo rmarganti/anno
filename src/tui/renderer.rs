@@ -3,6 +3,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::annotation::types::TextRange;
 use crate::highlight::StyledSpan;
 use crate::tui::theme::Theme;
 use crate::tui::viewport::{CursorPosition, RenderSlice};
@@ -44,6 +45,7 @@ pub fn prepare_visible_lines_from_slices(
     cursor_col: usize,
     theme: &Theme,
     selection: Option<(CursorPosition, CursorPosition)>,
+    annotation_ranges: &[TextRange],
 ) -> Vec<Line<'static>> {
     let mut result: Vec<Line<'static>> = Vec::with_capacity(slices.len());
 
@@ -58,6 +60,9 @@ pub fn prepare_visible_lines_from_slices(
         } else {
             Line::from(Span::raw(""))
         };
+
+        // Apply annotation highlight overlay.
+        let line = apply_annotation_overlays(line, doc_row, start_col, end_col, plain_lines, annotation_ranges, theme);
 
         // Apply selection overlay.
         let line = if let Some((sel_start, sel_end)) = selection {
@@ -177,6 +182,108 @@ pub fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize, theme: &Theme) ->
             Some(s) if s == effective_style => {
                 current_text.push(ch);
             }
+            _ => {
+                if let Some(s) = current_style {
+                    spans.push(Span::styled(std::mem::take(&mut current_text), s));
+                }
+                current_text.push(ch);
+                current_style = Some(effective_style);
+            }
+        }
+    }
+    if let Some(s) = current_style {
+        spans.push(Span::styled(current_text, s));
+    }
+
+    Line::from(spans)
+}
+
+/// Apply annotation underline overlays to a line for all annotation ranges that intersect it.
+fn apply_annotation_overlays(
+    line: Line<'static>,
+    doc_row: usize,
+    start_col: usize,
+    end_col: usize,
+    plain_lines: &[String],
+    annotation_ranges: &[TextRange],
+    theme: &Theme,
+) -> Line<'static> {
+    // Collect all column ranges within this display slice that need highlighting.
+    let mut highlight_cols: Vec<(usize, usize)> = Vec::new();
+
+    for range in annotation_ranges {
+        if doc_row < range.start.line || doc_row > range.end.line {
+            continue;
+        }
+
+        let line_len = plain_lines
+            .get(doc_row)
+            .map(|l| l.chars().count())
+            .unwrap_or(0);
+        if line_len == 0 {
+            continue;
+        }
+
+        let doc_col_start = if doc_row == range.start.line {
+            range.start.column
+        } else {
+            0
+        };
+        let doc_col_end = if doc_row == range.end.line {
+            range.end.column
+        } else {
+            line_len.saturating_sub(1)
+        };
+
+        // Intersect with the display slice column range.
+        let lo = doc_col_start.max(start_col);
+        let hi = doc_col_end.min(end_col.saturating_sub(1));
+        if lo <= hi {
+            highlight_cols.push((lo.saturating_sub(start_col), hi.saturating_sub(start_col)));
+        }
+    }
+
+    if highlight_cols.is_empty() {
+        return line;
+    }
+
+    // Flatten line into chars with styles, then apply underline to highlighted columns.
+    let mut chars_with_style: Vec<(char, Style)> = Vec::new();
+    for span in line.spans.iter() {
+        for c in span.content.chars() {
+            chars_with_style.push((c, span.style));
+        }
+    }
+
+    if chars_with_style.is_empty() {
+        return line;
+    }
+
+    // Mark which char positions need the annotation style.
+    let len = chars_with_style.len();
+    let mut marked = vec![false; len];
+    for (lo, hi) in &highlight_cols {
+        let lo = (*lo).min(len.saturating_sub(1));
+        let hi = (*hi).min(len.saturating_sub(1));
+        for m in &mut marked[lo..=hi] {
+            *m = true;
+        }
+    }
+
+    // Rebuild spans.
+    let mut spans: Vec<Span> = Vec::new();
+    let mut current_text = String::new();
+    let mut current_style: Option<Style> = None;
+
+    for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
+        let effective_style = if marked[i] {
+            style.patch(theme.annotation_highlight)
+        } else {
+            style
+        };
+
+        match current_style {
+            Some(s) if s == effective_style => current_text.push(ch),
             _ => {
                 if let Some(s) = current_style {
                     spans.push(Span::styled(std::mem::take(&mut current_text), s));

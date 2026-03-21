@@ -2,7 +2,6 @@ use uuid::Uuid;
 
 /// The kind of annotation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // TODO: variants used when annotation creation is wired up
 pub enum AnnotationType {
     /// Mark selected text for removal.
     Deletion,
@@ -48,7 +47,6 @@ pub struct Annotation {
     pub timestamp: u128,
 }
 
-#[allow(dead_code)] // TODO: constructors used when annotation creation is wired up
 impl Annotation {
     /// Create a new annotation with a generated UUID and current timestamp.
     pub fn new(
