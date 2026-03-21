@@ -18,7 +18,7 @@ use crate::keybinds::mode::Mode;
 use crate::tui::renderer;
 use crate::tui::selection::Selection;
 use crate::tui::theme::Theme;
-use crate::tui::viewport::{CursorPosition, Viewport};
+use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -54,6 +54,8 @@ pub struct App {
     theme: Theme,
     /// Anchor position when in Visual mode. Set when entering Visual, cleared on exit.
     visual_anchor: Option<CursorPosition>,
+    /// Display layout mapping document lines → display rows.
+    display_layout: DisplayLayout,
 }
 
 impl App {
@@ -61,14 +63,14 @@ impl App {
         let highlighter = SyntectHighlighter::new();
         let theme = Theme::new();
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
-        let line_lengths: Vec<usize> = doc_lines_result
-            .plain
-            .iter()
-            .map(|l| l.chars().count())
-            .collect();
 
         let mut viewport = Viewport::new();
-        viewport.set_line_info(line_lengths);
+
+        // Initial layout (width 0 until first render sets dimensions).
+        let display_layout = DisplayLayout::build(&doc_lines_result.plain, 0, false);
+
+        // Ensure viewport knows about initial dimensions (0×0 is fine; render will update).
+        viewport.set_dimensions(0, 0);
 
         Self {
             source_name,
@@ -83,6 +85,7 @@ impl App {
             viewport,
             theme,
             visual_anchor: None,
+            display_layout,
         }
     }
 
@@ -106,26 +109,26 @@ impl App {
 
         match action {
             // -- Movement --
-            Action::MoveUp => self.viewport.move_up(),
-            Action::MoveDown => self.viewport.move_down(),
-            Action::MoveLeft => self.viewport.move_left(),
-            Action::MoveRight => self.viewport.move_right(),
+            Action::MoveUp => self.viewport.move_up(&self.display_layout),
+            Action::MoveDown => self.viewport.move_down(&self.display_layout),
+            Action::MoveLeft => self.viewport.move_left(&self.display_layout),
+            Action::MoveRight => self.viewport.move_right(&self.display_layout),
             Action::MoveWordForward => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport.move_word_forward(&lines);
+                self.viewport.move_word_forward(&lines, &self.display_layout);
             }
             Action::MoveWordBackward => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport.move_word_backward(&lines);
+                self.viewport.move_word_backward(&lines, &self.display_layout);
             }
-            Action::MoveLineStart => self.viewport.move_line_start(),
-            Action::MoveLineEnd => self.viewport.move_line_end(),
-            Action::MoveDocumentTop => self.viewport.move_document_top(),
-            Action::MoveDocumentBottom => self.viewport.move_document_bottom(),
-            Action::HalfPageDown => self.viewport.half_page_down(),
-            Action::HalfPageUp => self.viewport.half_page_up(),
-            Action::FullPageDown => self.viewport.full_page_down(),
-            Action::FullPageUp => self.viewport.full_page_up(),
+            Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
+            Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
+            Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
+            Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
+            Action::HalfPageDown => self.viewport.half_page_down(&self.display_layout),
+            Action::HalfPageUp => self.viewport.half_page_up(&self.display_layout),
+            Action::FullPageDown => self.viewport.full_page_down(&self.display_layout),
+            Action::FullPageUp => self.viewport.full_page_up(&self.display_layout),
 
             // -- Mode transitions --
             Action::EnterVisualMode => {
@@ -140,6 +143,12 @@ impl App {
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
                 self.visual_anchor = None;
+            }
+
+            // -- Word wrap --
+            Action::ToggleWordWrap => {
+                self.viewport.toggle_word_wrap();
+                self.rebuild_display_layout();
             }
 
             // -- Command mode --
@@ -191,13 +200,27 @@ impl App {
         }
     }
 
+    fn rebuild_display_layout(&mut self) {
+        self.display_layout = DisplayLayout::build(
+            &self.doc_lines,
+            self.viewport.width,
+            self.viewport.word_wrap,
+        );
+    }
+
     fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
         // Update viewport dimensions (account for borders + status bar).
         let doc_height = area.height.saturating_sub(1) as usize; // leave room for status row
-        let doc_width = area.width as usize; // 2 border columns
+        let doc_width = area.width as usize;
+        let old_width = self.viewport.width;
         self.viewport.set_dimensions(doc_width, doc_height);
+
+        // Rebuild display layout when width changes (affects word-wrap).
+        if doc_width != old_width {
+            self.rebuild_display_layout();
+        }
 
         // Minimum terminal size check.
         if self.viewport.is_too_small() {
@@ -211,7 +234,7 @@ impl App {
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
         // -- Main document area --
-        let visible = self.viewport.visible_range();
+        let render_slices = self.viewport.visible_render_slices(&self.display_layout);
 
         // Compute normalized selection range when in Visual mode.
         let selection = if self.mode == Mode::Visual {
@@ -223,10 +246,10 @@ impl App {
             None
         };
 
-        let visible_lines = renderer::prepare_visible_lines(
-            &self.styled_lines[visible.clone()],
-            &self.doc_lines[visible.clone()],
-            visible.start,
+        let visible_lines = renderer::prepare_visible_lines_from_slices(
+            &render_slices,
+            &self.styled_lines,
+            &self.doc_lines,
             self.viewport.cursor.row,
             self.viewport.cursor.col,
             &self.theme,
@@ -252,6 +275,12 @@ impl App {
             self.viewport.cursor.col + 1
         );
 
+        let wrap_indicator = if self.viewport.word_wrap {
+            "wrap "
+        } else {
+            ""
+        };
+
         let mut status_spans = vec![
             Span::styled(
                 mode_label,
@@ -260,6 +289,7 @@ impl App {
             Span::raw(format!(" {}  ", self.source_name)),
             Span::raw(format!("{annotation_count} annotation(s)  ")),
             Span::raw(format!("{cursor_pos}  ")),
+            Span::raw(wrap_indicator),
         ];
 
         if self.mode == Mode::Command {

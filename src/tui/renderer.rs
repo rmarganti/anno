@@ -5,7 +5,7 @@ use ratatui::{
 
 use crate::highlight::StyledSpan;
 use crate::tui::theme::Theme;
-use crate::tui::viewport::CursorPosition;
+use crate::tui::viewport::{CursorPosition, RenderSlice};
 
 /// Intermediate result of text-to-lines conversion.
 /// Stores width-independent plain and styled lines.
@@ -31,45 +31,64 @@ pub fn text_to_lines(text: &str, highlighter: &dyn crate::highlight::Highlighter
     DocumentLines { plain, styled }
 }
 
-/// Apply width-dependent styling to a visible slice of styled lines
-/// and convert them to ratatui `Line`s for rendering.
-pub fn prepare_visible_lines(
-    styled_slice: &[Vec<StyledSpan>],
-    plain_slice: &[String],
-    visible_start: usize,
+/// Prepare visible lines from render slices (supports both word-wrap and horizontal scroll).
+///
+/// Each `RenderSlice` maps to one display row, referencing a sub-range of a document line.
+/// Styled spans are sliced to the column range, and cursor/selection overlays are applied
+/// using intersection with the slice's column range.
+pub fn prepare_visible_lines_from_slices(
+    slices: &[RenderSlice],
+    styled_lines: &[Vec<StyledSpan>],
+    plain_lines: &[String],
     cursor_row: usize,
     cursor_col: usize,
     theme: &Theme,
     selection: Option<(CursorPosition, CursorPosition)>,
 ) -> Vec<Line<'static>> {
-    let mut result: Vec<Line<'static>> = Vec::with_capacity(styled_slice.len());
+    let mut result: Vec<Line<'static>> = Vec::with_capacity(slices.len());
 
-    for (i, styled_spans) in styled_slice.iter().enumerate() {
-        let doc_row = visible_start + i;
+    for slice in slices {
+        let doc_row = slice.doc_row;
+        let start_col = slice.start_col;
+        let end_col = slice.end_col;
 
-        let line = {
-            let spans: Vec<Span> = styled_spans
-                .iter()
-                .map(|ss| Span::styled(ss.text.clone(), ss.style))
-                .collect();
-            Line::from(spans)
+        // Slice styled spans to the column range.
+        let line = if doc_row < styled_lines.len() {
+            slice_styled_spans(&styled_lines[doc_row], start_col, end_col)
+        } else {
+            Line::from(Span::raw(""))
         };
 
-        // Apply selection overlay (before cursor, so cursor appears on top).
+        // Apply selection overlay.
         let line = if let Some((sel_start, sel_end)) = selection {
             if doc_row >= sel_start.row && doc_row <= sel_end.row {
-                let col_start = if doc_row == sel_start.row {
+                let doc_col_start = if doc_row == sel_start.row {
                     sel_start.col
                 } else {
                     0
                 };
-                let col_end = if doc_row == sel_end.row {
+                let doc_col_end = if doc_row == sel_end.row {
                     sel_end.col
                 } else {
-                    // Full line selected — use plain line length as upper bound.
-                    plain_slice[i].chars().count().saturating_sub(1)
+                    plain_lines
+                        .get(doc_row)
+                        .map(|l| l.chars().count().saturating_sub(1))
+                        .unwrap_or(0)
                 };
-                apply_selection_to_line(line, col_start, col_end, theme)
+
+                // Intersect selection with slice range.
+                let lo = doc_col_start.max(start_col);
+                let hi = doc_col_end.min(end_col.saturating_sub(1));
+                if lo <= hi {
+                    apply_selection_to_line(
+                        line,
+                        lo.saturating_sub(start_col),
+                        hi.saturating_sub(start_col),
+                        theme,
+                    )
+                } else {
+                    line
+                }
             } else {
                 line
             }
@@ -77,14 +96,57 @@ pub fn prepare_visible_lines(
             line
         };
 
-        if doc_row == cursor_row {
-            result.push(apply_cursor_to_line(line, cursor_col, theme));
+        // Apply cursor overlay.
+        if doc_row == cursor_row && cursor_col >= start_col && cursor_col < end_col {
+            result.push(apply_cursor_to_line(
+                line,
+                cursor_col - start_col,
+                theme,
+            ));
+        } else if doc_row == cursor_row && cursor_col == start_col && start_col == end_col {
+            // Empty line with cursor.
+            result.push(apply_cursor_to_line(line, 0, theme));
         } else {
             result.push(line);
         }
     }
 
     result
+}
+
+/// Slice styled spans to a character column range [start_col, end_col).
+fn slice_styled_spans(spans: &[StyledSpan], start_col: usize, end_col: usize) -> Line<'static> {
+    let mut result_spans: Vec<Span> = Vec::new();
+    let mut offset = 0usize;
+
+    for ss in spans {
+        let span_len = ss.text.chars().count();
+        let span_start = offset;
+        let span_end = offset + span_len;
+
+        // Check overlap with [start_col, end_col).
+        let lo = start_col.max(span_start);
+        let hi = end_col.min(span_end);
+
+        if lo < hi {
+            // Extract the overlapping portion without intermediate Vec allocation.
+            let local_lo = lo - span_start;
+            let local_hi = hi - span_start;
+            let text: String = ss.text.chars().skip(local_lo).take(local_hi - local_lo).collect();
+            result_spans.push(Span::styled(text, ss.style));
+        }
+
+        offset += span_len;
+        if offset >= end_col {
+            break;
+        }
+    }
+
+    if result_spans.is_empty() {
+        Line::from(Span::raw(""))
+    } else {
+        Line::from(result_spans)
+    }
 }
 
 /// Apply a block cursor overlay to a pre-styled `Line` at the given column.

@@ -59,6 +59,9 @@ pub enum Action {
     // -- Help --
     ToggleHelp,
 
+    // -- Word wrap --
+    ToggleWordWrap,
+
     // -- No-op --
     None,
 }
@@ -140,6 +143,9 @@ impl KeybindHandler {
 
             // Help
             (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::ToggleHelp,
+
+            // Word wrap toggle
+            (KeyCode::Char('W'), KeyModifiers::SHIFT) => Action::ToggleWordWrap,
 
             _ => Action::None,
         }
@@ -582,6 +588,18 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Normal, key(KeyCode::Right)),
             Action::MoveRight
+        );
+    }
+
+    #[test]
+    fn normal_shift_w_toggles_word_wrap() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle(
+                Mode::Normal,
+                key_mod(KeyCode::Char('W'), KeyModifiers::SHIFT)
+            ),
+            Action::ToggleWordWrap
         );
     }
 
