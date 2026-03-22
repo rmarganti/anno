@@ -16,7 +16,7 @@ use crate::highlight::StyledSpan;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
-use crate::tui::input_box::InputBox;
+use crate::tui::input_box::{InputBox, InputBoxEvent};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::Theme;
@@ -78,7 +78,7 @@ pub struct App {
     /// Display layout mapping document lines → display rows.
     display_layout: DisplayLayout,
     /// Active input box (shown in Insert mode for annotation text entry).
-    input_box: Option<InputBox>,
+    input_box: Option<InputBox<'static>>,
     /// The pending annotation being created (set when entering Insert mode).
     pending_annotation: Option<PendingAnnotation>,
 }
@@ -212,27 +212,19 @@ impl App {
             }
 
             // -- Input mode --
-            Action::InputChar(c) => {
+            Action::InputForward(key_event) => {
                 if let Some(ref mut ib) = self.input_box {
-                    ib.insert_char(c);
+                    match ib.handle_key(key_event) {
+                        InputBoxEvent::Confirm => self.confirm_input(),
+                        InputBoxEvent::Cancel => {
+                            self.input_box = None;
+                            self.pending_annotation = None;
+                            self.mode = Mode::Normal;
+                        }
+                        InputBoxEvent::Consumed => {}
+                    }
                 }
             }
-            Action::InputBackspace => {
-                if let Some(ref mut ib) = self.input_box {
-                    ib.backspace();
-                }
-            }
-            Action::InputLeft => {
-                if let Some(ref mut ib) = self.input_box {
-                    ib.move_left();
-                }
-            }
-            Action::InputRight => {
-                if let Some(ref mut ib) = self.input_box {
-                    ib.move_right();
-                }
-            }
-            Action::InputConfirm => self.confirm_input(),
 
             _ => {}
         }
@@ -293,7 +285,7 @@ impl App {
         let text = self
             .input_box
             .as_ref()
-            .map(|ib| ib.text().to_owned())
+            .map(|ib| ib.text())
             .unwrap_or_default();
 
         if let Some(pending) = self.pending_annotation.take() {
@@ -451,6 +443,8 @@ impl App {
 
         if self.mode == Mode::Command {
             status_spans.push(Span::raw(format!(":{}", self.command_buffer)));
+        } else if self.mode == Mode::Insert {
+            status_spans.push(Span::raw("Ctrl+S confirm  Esc cancel"));
         } else {
             status_spans.push(Span::raw("? help"));
         }
