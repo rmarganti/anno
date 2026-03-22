@@ -11,12 +11,14 @@ use ratatui::{
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
+use crate::annotation::types::{Annotation, TextPosition, TextRange};
 use crate::highlight::StyledSpan;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::tui::input_box::{InputBox, InputBoxEvent};
 use crate::tui::renderer;
-use crate::tui::selection::Selection;
+use crate::tui::selection::{self, Selection};
 use crate::tui::theme::Theme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
@@ -26,6 +28,25 @@ pub enum ExitResult {
     QuitWithOutput(String),
     /// Quit without printing.
     QuitSilent,
+}
+
+/// Tracks the kind of annotation being created via the input box.
+#[derive(Debug, Clone)]
+enum PendingAnnotation {
+    /// Comment on a selection — stores the selection range and original text.
+    Comment {
+        range: TextRange,
+        selected_text: String,
+    },
+    /// Replacement for a selection — stores the selection range and original text.
+    Replacement {
+        range: TextRange,
+        selected_text: String,
+    },
+    /// Insertion at a cursor position.
+    Insertion { position: TextPosition },
+    /// Global comment (not anchored to text).
+    GlobalComment,
 }
 
 /// Top-level application state.
@@ -56,6 +77,10 @@ pub struct App {
     visual_anchor: Option<CursorPosition>,
     /// Display layout mapping document lines → display rows.
     display_layout: DisplayLayout,
+    /// Active input box (shown in Insert mode for annotation text entry).
+    input_box: Option<InputBox<'static>>,
+    /// The pending annotation being created (set when entering Insert mode).
+    pending_annotation: Option<PendingAnnotation>,
 }
 
 impl App {
@@ -86,6 +111,8 @@ impl App {
             theme,
             visual_anchor: None,
             display_layout,
+            input_box: None,
+            pending_annotation: None,
         }
     }
 
@@ -143,6 +170,8 @@ impl App {
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
                 self.visual_anchor = None;
+                self.input_box = None;
+                self.pending_annotation = None;
             }
 
             // -- Word wrap --
@@ -161,15 +190,126 @@ impl App {
             }
             Action::CommandConfirm => self.execute_command(),
 
-            // -- Annotation creation from Visual mode (stubs — implemented in step 12) --
-            Action::CreateDeletion | Action::CreateComment | Action::CreateReplacement => {
-                self.mode = Mode::Normal;
-                self.visual_anchor = None;
+            // -- Annotation creation from Visual mode --
+            Action::CreateDeletion => self.create_deletion(),
+            Action::CreateComment => self.start_input_for_visual_annotation("Comment"),
+            Action::CreateReplacement => self.start_input_for_visual_annotation("Replacement"),
+
+            // -- Annotation creation from Normal mode --
+            Action::CreateInsertion => {
+                let position = TextPosition {
+                    line: self.viewport.cursor.row,
+                    column: self.viewport.cursor.col,
+                };
+                self.pending_annotation = Some(PendingAnnotation::Insertion { position });
+                self.input_box = Some(InputBox::new("Insertion"));
+                self.mode = Mode::Insert;
+            }
+            Action::CreateGlobalComment => {
+                self.pending_annotation = Some(PendingAnnotation::GlobalComment);
+                self.input_box = Some(InputBox::new("Global Comment"));
+                self.mode = Mode::Insert;
             }
 
-            // All other actions are no-ops for now (implemented in later tasks).
+            // -- Input mode --
+            Action::InputForward(key_event) => {
+                if let Some(ref mut ib) = self.input_box {
+                    match ib.handle_key(key_event) {
+                        InputBoxEvent::Confirm => self.confirm_input(),
+                        InputBoxEvent::Cancel => {
+                            self.input_box = None;
+                            self.pending_annotation = None;
+                            self.mode = Mode::Normal;
+                        }
+                        InputBoxEvent::Consumed => {}
+                    }
+                }
+            }
+
             _ => {}
         }
+    }
+
+    /// Extract the current visual selection as a TextRange and selected text.
+    /// Returns `None` if there is no active visual anchor.
+    fn take_visual_selection(&mut self) -> Option<(TextRange, String)> {
+        let anchor = self.visual_anchor.take()?;
+        let sel = Selection { anchor };
+        let (start, end) = sel.range(self.viewport.cursor);
+        let range = TextRange {
+            start: TextPosition {
+                line: start.row,
+                column: start.col,
+            },
+            end: TextPosition {
+                line: end.row,
+                column: end.col,
+            },
+        };
+        let text = selection::selected_text(start, end, &self.doc_lines);
+        Some((range, text))
+    }
+
+    /// Create a Deletion annotation from the current visual selection.
+    fn create_deletion(&mut self) {
+        if let Some((range, text)) = self.take_visual_selection() {
+            self.annotations.add(Annotation::deletion(range, text));
+        }
+        self.mode = Mode::Normal;
+    }
+
+    /// Begin input for a Comment or Replacement from visual mode.
+    fn start_input_for_visual_annotation(&mut self, kind: &str) {
+        if let Some((range, selected_text)) = self.take_visual_selection() {
+            let pending = if kind == "Comment" {
+                PendingAnnotation::Comment {
+                    range,
+                    selected_text,
+                }
+            } else {
+                PendingAnnotation::Replacement {
+                    range,
+                    selected_text,
+                }
+            };
+            self.pending_annotation = Some(pending);
+            self.input_box = Some(InputBox::new(kind));
+            self.mode = Mode::Insert;
+        } else {
+            self.mode = Mode::Normal;
+        }
+    }
+
+    /// Confirm input and create the pending annotation.
+    fn confirm_input(&mut self) {
+        let text = self
+            .input_box
+            .as_ref()
+            .map(|ib| ib.text())
+            .unwrap_or_default();
+
+        if let Some(pending) = self.pending_annotation.take() {
+            if !text.is_empty() {
+                let annotation = match pending {
+                    PendingAnnotation::Comment {
+                        range,
+                        selected_text,
+                    } => Annotation::comment(range, selected_text, text),
+                    PendingAnnotation::Replacement {
+                        range,
+                        selected_text,
+                    } => Annotation::replacement(range, selected_text, text),
+                    PendingAnnotation::Insertion { position } => {
+                        Annotation::insertion(position, text)
+                    }
+                    PendingAnnotation::GlobalComment => Annotation::global_comment(text),
+                };
+                self.annotations.add(annotation);
+            }
+        }
+
+        self.input_box = None;
+        self.mode = Mode::Normal;
     }
 
     fn execute_command(&mut self) {
@@ -246,6 +386,14 @@ impl App {
             None
         };
 
+        // Collect annotation ranges for visual indicators.
+        let annotation_ranges: Vec<_> = self
+            .annotations
+            .all()
+            .iter()
+            .filter_map(|a| a.range)
+            .collect();
+
         let visible_lines = renderer::prepare_visible_lines_from_slices(
             &render_slices,
             &self.styled_lines,
@@ -254,6 +402,7 @@ impl App {
             self.viewport.cursor.col,
             &self.theme,
             selection,
+            &annotation_ranges,
         );
 
         let doc = Paragraph::new(visible_lines).block(Block::default());
@@ -294,11 +443,18 @@ impl App {
 
         if self.mode == Mode::Command {
             status_spans.push(Span::raw(format!(":{}", self.command_buffer)));
+        } else if self.mode == Mode::Insert {
+            status_spans.push(Span::raw("Ctrl+S confirm  Esc cancel"));
         } else {
             status_spans.push(Span::raw("? help"));
         }
 
         let status_bar = Paragraph::new(Line::from(status_spans));
         frame.render_widget(status_bar, status_area);
+
+        // -- Input box overlay --
+        if let Some(ref ib) = self.input_box {
+            ib.render(frame, main_area);
+        }
     }
 }

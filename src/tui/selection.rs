@@ -24,7 +24,6 @@ impl Selection {
 
 /// Extract the plain text of the selection.
 /// `start` and `end` must already be in document order (`start ≤ end`).
-#[allow(dead_code)] // TODO: used when annotation creation is wired up
 pub fn selected_text(
     start: CursorPosition,
     end: CursorPosition,

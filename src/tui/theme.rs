@@ -1,9 +1,10 @@
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 
 /// Centralized style definitions for the document renderer.
 pub struct Theme {
     pub cursor: Style,
     pub selection_highlight: Style,
+    pub annotation_highlight: Style,
 }
 
 impl Theme {
@@ -13,6 +14,8 @@ impl Theme {
             selection_highlight: Style::default()
                 .bg(Color::Black)
                 .fg(Color::White),
+            annotation_highlight: Style::default()
+                .add_modifier(Modifier::UNDERLINED),
         }
     }
 }

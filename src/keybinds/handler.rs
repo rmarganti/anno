@@ -23,7 +23,6 @@ pub enum Action {
 
     // -- Mode transitions --
     EnterVisualMode,
-    #[allow(dead_code)] // TODO: used when insert mode is wired up
     EnterInsertMode,
     EnterCommandMode,
     EnterAnnotationListMode,
@@ -52,9 +51,8 @@ pub enum Action {
     CommandConfirm,
 
     // -- Input mode --
-    InputChar(char),
-    InputBackspace,
-    InputConfirm,
+    /// Forward the raw key event to the input box for handling.
+    InputForward(KeyEvent),
 
     // -- Help --
     ToggleHelp,
@@ -81,7 +79,7 @@ impl KeybindHandler {
     }
 
     /// Returns `true` if there is a pending partial key sequence.
-    #[allow(dead_code)] // TODO: used when pending-key UI indicator is added
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
         self.pending.is_some()
     }
@@ -191,13 +189,7 @@ impl KeybindHandler {
     }
 
     fn handle_insert(&mut self, event: KeyEvent) -> Action {
-        match event.code {
-            KeyCode::Esc => Action::ExitToNormal,
-            KeyCode::Enter => Action::InputConfirm,
-            KeyCode::Backspace => Action::InputBackspace,
-            KeyCode::Char(c) => Action::InputChar(c),
-            _ => Action::None,
-        }
+        Action::InputForward(event)
     }
 
     fn handle_annotation_list(&mut self, event: KeyEvent) -> Action {
@@ -450,38 +442,27 @@ mod tests {
     // ── Insert mode ───────────────────────────────────────────────
 
     #[test]
-    fn insert_mode_text_input() {
+    fn insert_mode_forwards_all_keys() {
         let mut h = KeybindHandler::new();
-        assert_eq!(
-            h.handle(Mode::Insert, char_key('a')),
-            Action::InputChar('a')
-        );
-        assert_eq!(
-            h.handle(Mode::Insert, char_key('Z')),
-            Action::InputChar('Z')
-        );
+        let event = char_key('a');
+        let action = h.handle(Mode::Insert, event);
+        assert!(matches!(action, Action::InputForward(_)));
     }
 
     #[test]
-    fn insert_confirm_and_cancel() {
+    fn insert_mode_forwards_esc() {
         let mut h = KeybindHandler::new();
-        assert_eq!(
-            h.handle(Mode::Insert, key(KeyCode::Enter)),
-            Action::InputConfirm
-        );
-        assert_eq!(
-            h.handle(Mode::Insert, key(KeyCode::Esc)),
-            Action::ExitToNormal
-        );
+        let event = key(KeyCode::Esc);
+        let action = h.handle(Mode::Insert, event);
+        assert!(matches!(action, Action::InputForward(_)));
     }
 
     #[test]
-    fn insert_backspace() {
+    fn insert_mode_forwards_enter() {
         let mut h = KeybindHandler::new();
-        assert_eq!(
-            h.handle(Mode::Insert, key(KeyCode::Backspace)),
-            Action::InputBackspace
-        );
+        let event = key(KeyCode::Enter);
+        let action = h.handle(Mode::Insert, event);
+        assert!(matches!(action, Action::InputForward(_)));
     }
 
     // ── Annotation list mode ──────────────────────────────────────
