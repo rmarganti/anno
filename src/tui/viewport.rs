@@ -12,6 +12,15 @@ pub struct CursorPosition {
     pub col: usize,
 }
 
+impl From<crate::annotation::types::TextPosition> for CursorPosition {
+    fn from(pos: crate::annotation::types::TextPosition) -> Self {
+        Self {
+            row: pos.line,
+            col: pos.column,
+        }
+    }
+}
+
 /// A single display row: a slice of a document line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayRow {

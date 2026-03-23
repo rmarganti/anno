@@ -196,10 +196,7 @@ impl App {
 
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
-                let position = TextPosition {
-                    line: self.viewport.cursor.row,
-                    column: self.viewport.cursor.col,
-                };
+                let position: TextPosition = self.viewport.cursor.into();
                 self.pending_annotation = Some(PendingAnnotation::Insertion { position });
                 self.input_box = Some(InputBox::new("Insertion"));
                 self.mode = Mode::Insert;
@@ -236,14 +233,8 @@ impl App {
         let sel = Selection { anchor };
         let (start, end) = sel.range(self.viewport.cursor);
         let range = TextRange {
-            start: TextPosition {
-                line: start.row,
-                column: start.col,
-            },
-            end: TextPosition {
-                line: end.row,
-                column: end.col,
-            },
+            start: start.into(),
+            end: end.into(),
         };
         let text = selection::selected_text(start, end, &self.document.lines);
         Some((range, text))

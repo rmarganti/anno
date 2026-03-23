@@ -22,6 +22,15 @@ pub struct TextPosition {
     pub column: usize,
 }
 
+impl From<crate::tui::viewport::CursorPosition> for TextPosition {
+    fn from(pos: crate::tui::viewport::CursorPosition) -> Self {
+        Self {
+            line: pos.row,
+            column: pos.col,
+        }
+    }
+}
+
 /// A range of text within the document, defined by start and end positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextRange {
