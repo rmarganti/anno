@@ -17,6 +17,7 @@ use crate::keybinds::mode::Mode;
 use crate::tui::annotation_list::{AnnotationList, AnnotationListEvent};
 use crate::tui::command_line::{CommandLine, CommandLineEvent, CommandResult};
 use crate::tui::document_viewer::{DocumentViewer, DocumentViewerEvent};
+use crate::tui::help::HelpOverlay;
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 
 const MAX_DOC_WIDTH: u16 = 120;
@@ -86,6 +87,8 @@ pub struct App {
     pending_annotation: Option<PendingAnnotation>,
     /// Annotation list sidebar component.
     annotation_list: AnnotationList,
+    /// Whether the help overlay is currently visible.
+    show_help: bool,
 }
 
 impl App {
@@ -106,6 +109,7 @@ impl App {
             input_box: None,
             pending_annotation: None,
             annotation_list: AnnotationList::new(),
+            show_help: false,
         }
     }
 
@@ -126,6 +130,12 @@ impl App {
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
+        // When the help overlay is visible, any key dismisses it.
+        if self.show_help {
+            self.show_help = false;
+            return;
+        }
+
         let action = self.keybinds.handle(self.mode, key_event);
 
         // Delegate movement, visual mode, and word-wrap actions to the document viewer
@@ -295,6 +305,11 @@ impl App {
                 }
             }
 
+            // -- Help overlay --
+            Action::ToggleHelp => {
+                self.show_help = !self.show_help;
+            }
+
             _ => {}
         }
     }
@@ -460,6 +475,11 @@ impl App {
         // -- Input box overlay --
         if let Some(ref ib) = self.input_box {
             ib.render(frame, main_area);
+        }
+
+        // -- Help overlay (renders on top of everything) --
+        if self.show_help {
+            HelpOverlay.render(frame, main_area);
         }
     }
 }
