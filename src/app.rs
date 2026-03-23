@@ -116,6 +116,7 @@ impl App {
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> io::Result<ExitResult> {
         while !self.should_quit {
             terminal.draw(|frame| {
+                self.update(frame.area());
                 self.render(frame);
             })?;
 
@@ -346,9 +347,7 @@ impl App {
         );
     }
 
-    fn render(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-
+    fn update(&mut self, area: ratatui::layout::Rect) {
         // Update viewport dimensions (account for borders + status bar).
         let doc_height = area.height.saturating_sub(1) as usize; // leave room for status row
         let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
@@ -359,6 +358,10 @@ impl App {
         if doc_width != old_width {
             self.rebuild_display_layout();
         }
+    }
+
+    fn render(&self, frame: &mut Frame) {
+        let area = frame.area();
 
         // Minimum terminal size check.
         if self.viewport.is_too_small() {
