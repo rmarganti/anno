@@ -1,5 +1,6 @@
 mod annotation;
 mod app;
+mod document;
 mod highlight;
 mod input;
 mod keybinds;

@@ -12,7 +12,7 @@ use ratatui::{
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::{Annotation, TextPosition, TextRange};
-use crate::highlight::StyledSpan;
+use crate::document::Document;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
@@ -53,8 +53,8 @@ enum PendingAnnotation {
 
 /// Top-level application state.
 pub struct App {
-    /// The source name (filename or "[stdin]").
-    source_name: String,
+    /// The document being annotated.
+    document: Document,
     /// Current input mode.
     mode: Mode,
     /// Key event dispatcher.
@@ -67,10 +67,6 @@ pub struct App {
     should_quit: bool,
     /// The exit result to return.
     exit_result: Option<ExitResult>,
-    /// Plain-text document lines (for cursor movement / word logic).
-    doc_lines: Vec<String>,
-    /// Highlighted document lines (for rendering with syntax highlighting).
-    styled_lines: Vec<Vec<StyledSpan>>,
     /// Viewport state (scroll, cursor, dimensions).
     viewport: Viewport,
     /// Centralized theme styles.
@@ -89,26 +85,24 @@ impl App {
     pub fn new(source_name: String, content: String) -> Self {
         let highlighter = SyntectHighlighter::new();
         let theme = Theme::new();
-        let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
+        let document = Document::new(source_name, &content, &highlighter);
 
         let mut viewport = Viewport::new();
 
         // Initial layout (width 0 until first render sets dimensions).
-        let display_layout = DisplayLayout::build(&doc_lines_result.plain, 0, false);
+        let display_layout = DisplayLayout::build(&document.lines, 0, false);
 
         // Ensure viewport knows about initial dimensions (0×0 is fine; render will update).
         viewport.set_dimensions(0, 0);
 
         Self {
-            source_name,
+            document,
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
             command_buffer: String::new(),
             should_quit: false,
             exit_result: None,
-            doc_lines: doc_lines_result.plain,
-            styled_lines: doc_lines_result.styled,
             viewport,
             theme,
             visual_anchor: None,
@@ -143,12 +137,12 @@ impl App {
             Action::MoveLeft => self.viewport.move_left(&self.display_layout),
             Action::MoveRight => self.viewport.move_right(&self.display_layout),
             Action::MoveWordForward => {
-                let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
+                let lines: Vec<&str> = self.document.lines.iter().map(|s| s.as_str()).collect();
                 self.viewport
                     .move_word_forward(&lines, &self.display_layout);
             }
             Action::MoveWordBackward => {
-                let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
+                let lines: Vec<&str> = self.document.lines.iter().map(|s| s.as_str()).collect();
                 self.viewport
                     .move_word_backward(&lines, &self.display_layout);
             }
@@ -250,7 +244,7 @@ impl App {
                 column: end.col,
             },
         };
-        let text = selection::selected_text(start, end, &self.doc_lines);
+        let text = selection::selected_text(start, end, &self.document.lines);
         Some((range, text))
     }
 
@@ -346,7 +340,7 @@ impl App {
 
     fn rebuild_display_layout(&mut self) {
         self.display_layout = DisplayLayout::build(
-            &self.doc_lines,
+            &self.document.lines,
             self.viewport.width,
             self.viewport.word_wrap,
         );
@@ -405,8 +399,8 @@ impl App {
 
         let visible_lines = renderer::prepare_visible_lines_from_slices(
             &render_slices,
-            &self.styled_lines,
-            &self.doc_lines,
+            &self.document.styled_lines,
+            &self.document.lines,
             self.viewport.cursor.row,
             self.viewport.cursor.col,
             &self.theme,
@@ -440,7 +434,7 @@ impl App {
                 mode_label,
                 Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
             ),
-            Span::raw(format!(" {}  ", self.source_name)),
+            Span::raw(format!(" {}  ", self.document.source_name)),
             Span::raw(format!("{annotation_count} annotation(s)  ")),
             Span::raw(format!("{cursor_pos}  ")),
             Span::raw(wrap_indicator),
