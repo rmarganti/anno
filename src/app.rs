@@ -14,11 +14,14 @@ use crate::document::Document;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::tui::annotation_list::{AnnotationList, AnnotationListEvent};
 use crate::tui::command_line::{CommandLine, CommandLineEvent, CommandResult};
 use crate::tui::document_viewer::{DocumentViewer, DocumentViewerEvent};
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 
 const MAX_DOC_WIDTH: u16 = 120;
+/// Width of the annotation list sidebar (in terminal columns).
+const ANNOTATION_SIDEBAR_WIDTH: u16 = 40;
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -81,6 +84,8 @@ pub struct App {
     input_box: Option<InputBox<'static>>,
     /// The pending annotation being created (set when entering Insert mode).
     pending_annotation: Option<PendingAnnotation>,
+    /// Annotation list sidebar component.
+    annotation_list: AnnotationList,
 }
 
 impl App {
@@ -100,6 +105,7 @@ impl App {
             doc_viewer,
             input_box: None,
             pending_annotation: None,
+            annotation_list: AnnotationList::new(),
         }
     }
 
@@ -173,6 +179,32 @@ impl App {
                     }
                 }
             }
+            Mode::AnnotationList => {
+                let event = self
+                    .annotation_list
+                    .handle_action(&action, &self.annotations);
+                match event {
+                    AnnotationListEvent::JumpTo { line } => {
+                        self.doc_viewer
+                            .viewport
+                            .jump_to_line(line, &self.doc_viewer.display_layout);
+                        self.mode = Mode::Normal;
+                        return;
+                    }
+                    AnnotationListEvent::Delete { id } => {
+                        self.annotations.delete(id);
+                        self.annotation_list.clamp(self.annotations.len());
+                        return;
+                    }
+                    AnnotationListEvent::Exit => {
+                        self.mode = Mode::Normal;
+                        return;
+                    }
+                    AnnotationListEvent::Consumed => {
+                        return;
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -204,6 +236,38 @@ impl App {
                     CommandLineEvent::Executed(result) => {
                         self.handle_command_result(result);
                     }
+                }
+            }
+
+            // -- Annotation navigation (]a / [a) --
+            Action::NextAnnotation => {
+                let ordered = self.annotations.ordered();
+                let current_line = self.doc_viewer.viewport.cursor.row;
+                // Find the first annotation whose start line is strictly after the current line.
+                if let Some(annotation) = ordered.iter().find(|a| {
+                    a.range
+                        .map(|r| r.start.line > current_line)
+                        .unwrap_or(false)
+                }) {
+                    let line = annotation.range.unwrap().start.line;
+                    self.doc_viewer
+                        .viewport
+                        .jump_to_line(line, &self.doc_viewer.display_layout);
+                }
+            }
+            Action::PrevAnnotation => {
+                let ordered = self.annotations.ordered();
+                let current_line = self.doc_viewer.viewport.cursor.row;
+                // Find the last annotation whose start line is strictly before the current line.
+                if let Some(annotation) = ordered.iter().rev().find(|a| {
+                    a.range
+                        .map(|r| r.start.line < current_line)
+                        .unwrap_or(false)
+                }) {
+                    let line = annotation.range.unwrap().start.line;
+                    self.doc_viewer
+                        .viewport
+                        .jump_to_line(line, &self.doc_viewer.display_layout);
                 }
             }
 
@@ -343,6 +407,21 @@ impl App {
             .flex(Flex::Center)
             .areas::<1>(main_area)[0];
 
+        // When in AnnotationList mode (and there are annotations), split the main
+        // area into a document pane (left) and an annotation sidebar (right).
+        let show_sidebar = self.mode == Mode::AnnotationList && !self.annotations.is_empty();
+
+        let (doc_area, sidebar_area_opt) = if show_sidebar {
+            let [doc, sidebar] = Layout::horizontal([
+                Constraint::Min(40),
+                Constraint::Length(ANNOTATION_SIDEBAR_WIDTH),
+            ])
+            .areas(main_area);
+            (doc, Some(sidebar))
+        } else {
+            (main_area, None)
+        };
+
         // -- Main document area --
         // Collect annotation ranges for visual indicators.
         let annotation_ranges: Vec<_> = self
@@ -354,11 +433,17 @@ impl App {
 
         self.doc_viewer.render(
             frame,
-            main_area,
+            doc_area,
             &self.document,
             self.mode == Mode::Visual,
             &annotation_ranges,
         );
+
+        // -- Annotation list sidebar --
+        if let Some(sidebar_area) = sidebar_area_opt {
+            self.annotation_list
+                .render(frame, sidebar_area, &self.annotations);
+        }
 
         // -- Status bar --
         let status_bar = crate::tui::status_bar::render(

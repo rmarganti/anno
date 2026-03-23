@@ -401,6 +401,14 @@ impl Viewport {
         self.ensure_cursor_visible(layout);
     }
 
+    /// Jump the cursor to the given document line and scroll it into view.
+    pub fn jump_to_line(&mut self, doc_line: usize, layout: &DisplayLayout) {
+        let total = layout.total_doc_lines();
+        self.cursor.row = doc_line.min(total.saturating_sub(1));
+        self.clamp_col(layout);
+        self.ensure_cursor_visible(layout);
+    }
+
     // ── Visible range ─────────────────────────────────────────────
 
     /// Build the list of render slices for visible display rows.
