@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Flex, Layout},
-    widgets::{Block, Paragraph},
+    widgets::Paragraph,
+    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -14,11 +14,8 @@ use crate::document::Document;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::tui::document_viewer::{DocumentViewer, DocumentViewerEvent};
 use crate::tui::input_box::{InputBox, InputBoxEvent};
-use crate::tui::renderer;
-use crate::tui::selection::{self, Selection};
-use crate::tui::theme::Theme;
-use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
 
@@ -65,14 +62,8 @@ pub struct App {
     should_quit: bool,
     /// The exit result to return.
     exit_result: Option<ExitResult>,
-    /// Viewport state (scroll, cursor, dimensions).
-    viewport: Viewport,
-    /// Centralized theme styles.
-    theme: Theme,
-    /// Anchor position when in Visual mode. Set when entering Visual, cleared on exit.
-    visual_anchor: Option<CursorPosition>,
-    /// Display layout mapping document lines → display rows.
-    display_layout: DisplayLayout,
+    /// Document viewer component (viewport, layout, visual selection, theme).
+    doc_viewer: DocumentViewer,
     /// Active input box (shown in Insert mode for annotation text entry).
     input_box: Option<InputBox<'static>>,
     /// The pending annotation being created (set when entering Insert mode).
@@ -82,16 +73,8 @@ pub struct App {
 impl App {
     pub fn new(source_name: String, content: String) -> Self {
         let highlighter = SyntectHighlighter::new();
-        let theme = Theme::new();
         let document = Document::new(source_name, &content, &highlighter);
-
-        let mut viewport = Viewport::new();
-
-        // Initial layout (width 0 until first render sets dimensions).
-        let display_layout = DisplayLayout::build(&document.lines, 0, false);
-
-        // Ensure viewport knows about initial dimensions (0×0 is fine; render will update).
-        viewport.set_dimensions(0, 0);
+        let doc_viewer = DocumentViewer::new(&document);
 
         Self {
             document,
@@ -101,10 +84,7 @@ impl App {
             command_buffer: String::new(),
             should_quit: false,
             exit_result: None,
-            viewport,
-            theme,
-            visual_anchor: None,
-            display_layout,
+            doc_viewer,
             input_box: None,
             pending_annotation: None,
         }
@@ -129,36 +109,67 @@ impl App {
     fn handle_key(&mut self, key_event: KeyEvent) {
         let action = self.keybinds.handle(self.mode, key_event);
 
-        match action {
-            // -- Movement --
-            Action::MoveUp => self.viewport.move_up(&self.display_layout),
-            Action::MoveDown => self.viewport.move_down(&self.display_layout),
-            Action::MoveLeft => self.viewport.move_left(&self.display_layout),
-            Action::MoveRight => self.viewport.move_right(&self.display_layout),
-            Action::MoveWordForward => {
-                let lines: Vec<&str> = self.document.lines.iter().map(|s| s.as_str()).collect();
-                self.viewport
-                    .move_word_forward(&lines, &self.display_layout);
+        // Delegate movement, visual mode, and word-wrap actions to the document viewer
+        // when we're in a mode where it makes sense.
+        match self.mode {
+            Mode::Normal | Mode::Visual => {
+                let event = self.doc_viewer.handle_action(&action, &self.document);
+                match event {
+                    DocumentViewerEvent::EnteredVisual => {
+                        self.mode = Mode::Visual;
+                        return;
+                    }
+                    DocumentViewerEvent::ExitedVisual => {
+                        self.mode = Mode::Normal;
+                        self.input_box = None;
+                        self.pending_annotation = None;
+                        return;
+                    }
+                    DocumentViewerEvent::VisualSelection {
+                        range,
+                        selected_text,
+                    } => {
+                        // The visual selection was taken; determine what annotation to create.
+                        match &action {
+                            Action::CreateDeletion => {
+                                self.annotations
+                                    .add(Annotation::deletion(range, selected_text));
+                                self.mode = Mode::Normal;
+                            }
+                            Action::CreateComment => {
+                                self.pending_annotation = Some(PendingAnnotation::Comment {
+                                    range,
+                                    selected_text,
+                                });
+                                self.input_box = Some(InputBox::new("Comment"));
+                                self.mode = Mode::Insert;
+                            }
+                            Action::CreateReplacement => {
+                                self.pending_annotation = Some(PendingAnnotation::Replacement {
+                                    range,
+                                    selected_text,
+                                });
+                                self.input_box = Some(InputBox::new("Replacement"));
+                                self.mode = Mode::Insert;
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                    DocumentViewerEvent::Consumed => {
+                        return;
+                    }
+                    DocumentViewerEvent::Unhandled => {
+                        // Fall through to handle remaining actions below.
+                    }
+                }
             }
-            Action::MoveWordBackward => {
-                let lines: Vec<&str> = self.document.lines.iter().map(|s| s.as_str()).collect();
-                self.viewport
-                    .move_word_backward(&lines, &self.display_layout);
-            }
-            Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
-            Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
-            Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
-            Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
-            Action::HalfPageDown => self.viewport.half_page_down(&self.display_layout),
-            Action::HalfPageUp => self.viewport.half_page_up(&self.display_layout),
-            Action::FullPageDown => self.viewport.full_page_down(&self.display_layout),
-            Action::FullPageUp => self.viewport.full_page_up(&self.display_layout),
+            _ => {}
+        }
 
-            // -- Mode transitions --
-            Action::EnterVisualMode => {
-                self.mode = Mode::Visual;
-                self.visual_anchor = Some(self.viewport.cursor);
-            }
+        // Handle actions not delegated to the document viewer.
+        match action {
+            // -- Mode transitions (not handled by viewer) --
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
                 self.command_buffer.clear();
@@ -166,15 +177,8 @@ impl App {
             Action::EnterAnnotationListMode => self.mode = Mode::AnnotationList,
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
-                self.visual_anchor = None;
                 self.input_box = None;
                 self.pending_annotation = None;
-            }
-
-            // -- Word wrap --
-            Action::ToggleWordWrap => {
-                self.viewport.toggle_word_wrap();
-                self.rebuild_display_layout();
             }
 
             // -- Command mode --
@@ -187,14 +191,9 @@ impl App {
             }
             Action::CommandConfirm => self.execute_command(),
 
-            // -- Annotation creation from Visual mode --
-            Action::CreateDeletion => self.create_deletion(),
-            Action::CreateComment => self.start_input_for_visual_annotation("Comment"),
-            Action::CreateReplacement => self.start_input_for_visual_annotation("Replacement"),
-
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
-                let position: TextPosition = self.viewport.cursor.into();
+                let position: TextPosition = self.doc_viewer.viewport.cursor.into();
                 self.pending_annotation = Some(PendingAnnotation::Insertion { position });
                 self.input_box = Some(InputBox::new("Insertion"));
                 self.mode = Mode::Insert;
@@ -221,50 +220,6 @@ impl App {
             }
 
             _ => {}
-        }
-    }
-
-    /// Extract the current visual selection as a TextRange and selected text.
-    /// Returns `None` if there is no active visual anchor.
-    fn take_visual_selection(&mut self) -> Option<(TextRange, String)> {
-        let anchor = self.visual_anchor.take()?;
-        let sel = Selection { anchor };
-        let (start, end) = sel.range(self.viewport.cursor);
-        let range = TextRange {
-            start: start.into(),
-            end: end.into(),
-        };
-        let text = selection::selected_text(start, end, &self.document.lines);
-        Some((range, text))
-    }
-
-    /// Create a Deletion annotation from the current visual selection.
-    fn create_deletion(&mut self) {
-        if let Some((range, text)) = self.take_visual_selection() {
-            self.annotations.add(Annotation::deletion(range, text));
-        }
-        self.mode = Mode::Normal;
-    }
-
-    /// Begin input for a Comment or Replacement from visual mode.
-    fn start_input_for_visual_annotation(&mut self, kind: &str) {
-        if let Some((range, selected_text)) = self.take_visual_selection() {
-            let pending = if kind == "Comment" {
-                PendingAnnotation::Comment {
-                    range,
-                    selected_text,
-                }
-            } else {
-                PendingAnnotation::Replacement {
-                    range,
-                    selected_text,
-                }
-            };
-            self.pending_annotation = Some(pending);
-            self.input_box = Some(InputBox::new(kind));
-            self.mode = Mode::Insert;
-        } else {
-            self.mode = Mode::Normal;
         }
     }
 
@@ -328,24 +283,23 @@ impl App {
         }
     }
 
-    fn rebuild_display_layout(&mut self) {
-        self.display_layout = DisplayLayout::build(
-            &self.document.lines,
-            self.viewport.width,
-            self.viewport.word_wrap,
-        );
-    }
-
     fn update(&mut self, area: ratatui::layout::Rect) {
-        // Update viewport dimensions (account for borders + status bar).
-        let doc_height = area.height.saturating_sub(1) as usize; // leave room for status row
-        let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
-        let old_width = self.viewport.width;
-        self.viewport.set_dimensions(doc_width, doc_height);
+        // Account for status bar (leave room for status row).
+        let doc_height = area.height.saturating_sub(1) as usize;
+        // Cap content width and center it — same as the layout constraint below.
+        let max_width = MAX_DOC_WIDTH as usize;
 
-        // Rebuild display layout when width changes (affects word-wrap).
+        // Compute the centered area width (mirrors Layout::horizontal below).
+        let available_width = area.width as usize;
+        let doc_width = available_width.min(max_width);
+
+        let old_width = self.doc_viewer.viewport.width;
+        self.doc_viewer
+            .viewport
+            .set_dimensions(doc_width, doc_height);
+
         if doc_width != old_width {
-            self.rebuild_display_layout();
+            self.doc_viewer.rebuild_display_layout(&self.document);
         }
     }
 
@@ -353,7 +307,7 @@ impl App {
         let area = frame.area();
 
         // Minimum terminal size check.
-        if self.viewport.is_too_small() {
+        if self.doc_viewer.viewport.is_too_small() {
             let msg = Paragraph::new("Terminal too small.\nPlease resize to at least 80×24.")
                 .alignment(Alignment::Center);
             frame.render_widget(msg, area);
@@ -369,18 +323,6 @@ impl App {
             .areas::<1>(main_area)[0];
 
         // -- Main document area --
-        let render_slices = self.viewport.visible_render_slices(&self.display_layout);
-
-        // Compute normalized selection range when in Visual mode.
-        let selection = if self.mode == Mode::Visual {
-            self.visual_anchor.map(|anchor| {
-                let sel = Selection { anchor };
-                sel.range(self.viewport.cursor)
-            })
-        } else {
-            None
-        };
-
         // Collect annotation ranges for visual indicators.
         let annotation_ranges: Vec<_> = self
             .annotations
@@ -389,28 +331,22 @@ impl App {
             .filter_map(|a| a.range)
             .collect();
 
-        let visible_lines = renderer::prepare_visible_lines_from_slices(
-            &render_slices,
-            &self.document.styled_lines,
-            &self.document.lines,
-            self.viewport.cursor.row,
-            self.viewport.cursor.col,
-            &self.theme,
-            selection,
+        self.doc_viewer.render(
+            frame,
+            main_area,
+            &self.document,
+            self.mode == Mode::Visual,
             &annotation_ranges,
         );
-
-        let doc = Paragraph::new(visible_lines).block(Block::default());
-        frame.render_widget(doc, main_area);
 
         // -- Status bar --
         let status_bar = crate::tui::status_bar::render(
             self.mode,
             &self.document.source_name,
             self.annotations.len(),
-            self.viewport.cursor.row,
-            self.viewport.cursor.col,
-            self.viewport.word_wrap,
+            self.doc_viewer.viewport.cursor.row,
+            self.doc_viewer.viewport.cursor.col,
+            self.doc_viewer.viewport.word_wrap,
             &self.command_buffer,
         );
         frame.render_widget(status_bar, status_area);
