@@ -47,6 +47,18 @@ enum PendingAnnotation {
     GlobalComment,
 }
 
+impl PendingAnnotation {
+    /// Human-readable label used as the title of the input box.
+    fn label(&self) -> &'static str {
+        match self {
+            PendingAnnotation::Comment { .. } => "Comment",
+            PendingAnnotation::Replacement { .. } => "Replacement",
+            PendingAnnotation::Insertion { .. } => "Insertion",
+            PendingAnnotation::GlobalComment => "Global Comment",
+        }
+    }
+}
+
 /// Top-level application state.
 pub struct App {
     /// The document being annotated.
@@ -138,20 +150,16 @@ impl App {
                                 self.mode = Mode::Normal;
                             }
                             Action::CreateComment => {
-                                self.pending_annotation = Some(PendingAnnotation::Comment {
+                                self.start_annotation_input(PendingAnnotation::Comment {
                                     range,
                                     selected_text,
                                 });
-                                self.input_box = Some(InputBox::new("Comment"));
-                                self.mode = Mode::Insert;
                             }
                             Action::CreateReplacement => {
-                                self.pending_annotation = Some(PendingAnnotation::Replacement {
+                                self.start_annotation_input(PendingAnnotation::Replacement {
                                     range,
                                     selected_text,
                                 });
-                                self.input_box = Some(InputBox::new("Replacement"));
-                                self.mode = Mode::Insert;
                             }
                             _ => {}
                         }
@@ -202,14 +210,10 @@ impl App {
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
                 let position: TextPosition = self.doc_viewer.viewport.cursor.into();
-                self.pending_annotation = Some(PendingAnnotation::Insertion { position });
-                self.input_box = Some(InputBox::new("Insertion"));
-                self.mode = Mode::Insert;
+                self.start_annotation_input(PendingAnnotation::Insertion { position });
             }
             Action::CreateGlobalComment => {
-                self.pending_annotation = Some(PendingAnnotation::GlobalComment);
-                self.input_box = Some(InputBox::new("Global Comment"));
-                self.mode = Mode::Insert;
+                self.start_annotation_input(PendingAnnotation::GlobalComment);
             }
 
             // -- Input mode --
@@ -229,6 +233,15 @@ impl App {
 
             _ => {}
         }
+    }
+
+    /// Begin collecting text input for the given annotation kind.
+    ///
+    /// Sets `pending_annotation`, opens the input box, and transitions to Insert mode.
+    fn start_annotation_input(&mut self, pending: PendingAnnotation) {
+        self.input_box = Some(InputBox::new(pending.label()));
+        self.pending_annotation = Some(pending);
+        self.mode = Mode::Insert;
     }
 
     /// Confirm input and create the pending annotation.
