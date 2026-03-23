@@ -82,12 +82,7 @@ impl Annotation {
 
     /// Create a `Comment` annotation on selected text.
     pub fn comment(range: TextRange, selected_text: String, comment: String) -> Self {
-        Self::new(
-            Some(range),
-            selected_text,
-            AnnotationType::Comment,
-            comment,
-        )
+        Self::new(Some(range), selected_text, AnnotationType::Comment, comment)
     }
 
     /// Create a `Replacement` annotation for selected text.
@@ -115,11 +110,6 @@ impl Annotation {
 
     /// Create a `GlobalComment` annotation (not anchored to any position).
     pub fn global_comment(comment: String) -> Self {
-        Self::new(
-            None,
-            String::new(),
-            AnnotationType::GlobalComment,
-            comment,
-        )
+        Self::new(None, String::new(), AnnotationType::GlobalComment, comment)
     }
 }

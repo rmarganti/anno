@@ -11,11 +11,8 @@ impl Theme {
     pub fn new() -> Self {
         Self {
             cursor: Style::default().bg(Color::White).fg(Color::Black),
-            selection_highlight: Style::default()
-                .bg(Color::Black)
-                .fg(Color::White),
-            annotation_highlight: Style::default()
-                .add_modifier(Modifier::UNDERLINED),
+            selection_highlight: Style::default().bg(Color::Black).fg(Color::White),
+            annotation_highlight: Style::default().add_modifier(Modifier::UNDERLINED),
         }
     }
 }

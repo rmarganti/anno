@@ -62,7 +62,15 @@ pub fn prepare_visible_lines_from_slices(
         };
 
         // Apply annotation highlight overlay.
-        let line = apply_annotation_overlays(line, doc_row, start_col, end_col, plain_lines, annotation_ranges, theme);
+        let line = apply_annotation_overlays(
+            line,
+            doc_row,
+            start_col,
+            end_col,
+            plain_lines,
+            annotation_ranges,
+            theme,
+        );
 
         // Apply selection overlay.
         let line = if let Some((sel_start, sel_end)) = selection {
@@ -103,11 +111,7 @@ pub fn prepare_visible_lines_from_slices(
 
         // Apply cursor overlay.
         if doc_row == cursor_row && cursor_col >= start_col && cursor_col < end_col {
-            result.push(apply_cursor_to_line(
-                line,
-                cursor_col - start_col,
-                theme,
-            ));
+            result.push(apply_cursor_to_line(line, cursor_col - start_col, theme));
         } else if doc_row == cursor_row && cursor_col == start_col && start_col == end_col {
             // Empty line with cursor.
             result.push(apply_cursor_to_line(line, 0, theme));
@@ -137,7 +141,12 @@ fn slice_styled_spans(spans: &[StyledSpan], start_col: usize, end_col: usize) ->
             // Extract the overlapping portion without intermediate Vec allocation.
             let local_lo = lo - span_start;
             let local_hi = hi - span_start;
-            let text: String = ss.text.chars().skip(local_lo).take(local_hi - local_lo).collect();
+            let text: String = ss
+                .text
+                .chars()
+                .skip(local_lo)
+                .take(local_hi - local_lo)
+                .collect();
             result_spans.push(Span::styled(text, ss.style));
         }
 

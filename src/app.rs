@@ -3,7 +3,7 @@ use std::io;
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
     DefaultTerminal, Frame,
-    layout::{Alignment, Constraint, Layout},
+    layout::{Alignment, Constraint, Flex, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
@@ -21,6 +21,8 @@ use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::Theme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
+
+const MAX_DOC_WIDTH: u16 = 120;
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -142,11 +144,13 @@ impl App {
             Action::MoveRight => self.viewport.move_right(&self.display_layout),
             Action::MoveWordForward => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport.move_word_forward(&lines, &self.display_layout);
+                self.viewport
+                    .move_word_forward(&lines, &self.display_layout);
             }
             Action::MoveWordBackward => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport.move_word_backward(&lines, &self.display_layout);
+                self.viewport
+                    .move_word_backward(&lines, &self.display_layout);
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
@@ -353,7 +357,7 @@ impl App {
 
         // Update viewport dimensions (account for borders + status bar).
         let doc_height = area.height.saturating_sub(1) as usize; // leave room for status row
-        let doc_width = area.width as usize;
+        let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(doc_width, doc_height);
 
@@ -372,6 +376,11 @@ impl App {
 
         let [main_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+
+        // Cap the main content width at MAX_DOC_WIDTH columns and center it.
+        let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
+            .flex(Flex::Center)
+            .areas::<1>(main_area)[0];
 
         // -- Main document area --
         let render_slices = self.viewport.visible_render_slices(&self.display_layout);
@@ -424,11 +433,7 @@ impl App {
             self.viewport.cursor.col + 1
         );
 
-        let wrap_indicator = if self.viewport.word_wrap {
-            "wrap "
-        } else {
-            ""
-        };
+        let wrap_indicator = if self.viewport.word_wrap { "wrap " } else { "" };
 
         let mut status_spans = vec![
             Span::styled(

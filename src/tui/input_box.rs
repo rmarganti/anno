@@ -63,7 +63,9 @@ impl<'a> InputBox<'a> {
 
     /// Render the input box centered in the given area.
     pub fn render(&self, frame: &mut Frame, area: Rect) {
-        let box_width = (area.width as usize * 2 / 3).max(30).min(area.width as usize) as u16;
+        let box_width = (area.width as usize * 2 / 3)
+            .max(30)
+            .min(area.width as usize) as u16;
         let box_height: u16 = 8;
 
         let [vert_area] = Layout::vertical([Constraint::Length(box_height)])

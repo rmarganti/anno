@@ -75,8 +75,14 @@ mod tests {
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
         TextRange {
-            start: TextPosition { line: sl, column: sc },
-            end: TextPosition { line: el, column: ec },
+            start: TextPosition {
+                line: sl,
+                column: sc,
+            },
+            end: TextPosition {
+                line: el,
+                column: ec,
+            },
         }
     }
 
@@ -91,10 +97,7 @@ mod tests {
     #[test]
     fn export_deletion() {
         let mut store = AnnotationStore::new();
-        store.add(Annotation::deletion(
-            range(0, 0, 0, 10),
-            "remove me".into(),
-        ));
+        store.add(Annotation::deletion(range(0, 0, 0, 10), "remove me".into()));
 
         let result = exporter().export(&store);
         assert!(result.contains("# Plan Feedback"));
@@ -162,10 +165,7 @@ mod tests {
     #[test]
     fn export_multiple_annotations_numbered_correctly() {
         let mut store = AnnotationStore::new();
-        store.add(Annotation::deletion(
-            range(0, 0, 0, 5),
-            "first".into(),
-        ));
+        store.add(Annotation::deletion(range(0, 0, 0, 5), "first".into()));
         store.add(Annotation::comment(
             range(0, 10, 0, 15),
             "second".into(),
@@ -187,10 +187,7 @@ mod tests {
         let mut store = AnnotationStore::new();
         // Add in reverse order
         store.add(Annotation::global_comment("global".into()));
-        store.add(Annotation::deletion(
-            range(5, 0, 5, 5),
-            "later line".into(),
-        ));
+        store.add(Annotation::deletion(range(5, 0, 5, 5), "later line".into()));
         store.add(Annotation::comment(
             range(1, 10, 1, 15),
             "second in line".into(),

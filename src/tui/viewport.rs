@@ -489,9 +489,7 @@ mod tests {
 
     /// Build a layout for `n` lines of `line_len` characters each (no wrap).
     fn make_lines(n: usize, line_len: usize) -> (Vec<String>, DisplayLayout) {
-        let lines: Vec<String> = (0..n)
-            .map(|_| "x".repeat(line_len))
-            .collect();
+        let lines: Vec<String> = (0..n).map(|_| "x".repeat(line_len)).collect();
         let layout = DisplayLayout::build(&lines, 80, false);
         (lines, layout)
     }
@@ -658,11 +656,7 @@ mod tests {
 
     #[test]
     fn col_clamped_when_moving_to_shorter_line() {
-        let lines = vec![
-            "x".repeat(20),
-            "x".repeat(5),
-            "x".repeat(20),
-        ];
+        let lines = vec!["x".repeat(20), "x".repeat(5), "x".repeat(20)];
         let layout = DisplayLayout::build(&lines, 80, false);
         let mut v = Viewport::new();
         v.set_dimensions(80, 10);
@@ -766,8 +760,22 @@ mod tests {
         let lines = vec!["short".to_string(), "another".to_string()];
         let layout = DisplayLayout::build(&lines, 80, false);
         assert_eq!(layout.total_display_rows(), 2);
-        assert_eq!(layout.rows[0], DisplayRow { doc_row: 0, start_col: 0, end_col: 5 });
-        assert_eq!(layout.rows[1], DisplayRow { doc_row: 1, start_col: 0, end_col: 7 });
+        assert_eq!(
+            layout.rows[0],
+            DisplayRow {
+                doc_row: 0,
+                start_col: 0,
+                end_col: 5
+            }
+        );
+        assert_eq!(
+            layout.rows[1],
+            DisplayRow {
+                doc_row: 1,
+                start_col: 0,
+                end_col: 7
+            }
+        );
     }
 
     #[test]

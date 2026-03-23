@@ -37,8 +37,7 @@ impl InputSource for FileSource {
         if !Path::new(&self.path).exists() {
             return Err(InputError::FileNotFound(self.path.clone()));
         }
-        fs::read_to_string(&self.path)
-            .map_err(|e| InputError::ReadError(e.to_string()))
+        fs::read_to_string(&self.path).map_err(|e| InputError::ReadError(e.to_string()))
     }
 
     fn name(&self) -> &str {

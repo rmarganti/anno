@@ -24,11 +24,7 @@ impl Selection {
 
 /// Extract the plain text of the selection.
 /// `start` and `end` must already be in document order (`start ≤ end`).
-pub fn selected_text(
-    start: CursorPosition,
-    end: CursorPosition,
-    doc_lines: &[String],
-) -> String {
+pub fn selected_text(start: CursorPosition, end: CursorPosition, doc_lines: &[String]) -> String {
     let mut result = String::new();
 
     for row in start.row..=end.row {

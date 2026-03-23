@@ -44,8 +44,12 @@ impl AnnotationStore {
     pub fn ordered(&self) -> Vec<&Annotation> {
         let mut refs: Vec<&Annotation> = self.annotations.iter().collect();
         refs.sort_by(|a, b| {
-            let a_key = a.range.map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
-            let b_key = b.range.map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
+            let a_key = a
+                .range
+                .map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
+            let b_key = b
+                .range
+                .map(|r| (0, r.start.line, r.start.column, r.end.line, r.end.column));
             // None (GlobalComment) sorts last: map to (1, ...) vs (0, ...) for Some.
             let a_sort = a_key.unwrap_or((1, 0, 0, 0, 0));
             let b_sort = b_key.unwrap_or((1, 0, 0, 0, 0));
@@ -90,8 +94,14 @@ mod tests {
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
         TextRange {
-            start: TextPosition { line: sl, column: sc },
-            end: TextPosition { line: el, column: ec },
+            start: TextPosition {
+                line: sl,
+                column: sc,
+            },
+            end: TextPosition {
+                line: el,
+                column: ec,
+            },
         }
     }
 
@@ -123,7 +133,10 @@ mod tests {
         assert_eq!(store.len(), 1);
         assert!(!store.is_empty());
         assert!(store.get(id).is_some());
-        assert_eq!(store.get(id).unwrap().annotation_type, AnnotationType::Deletion);
+        assert_eq!(
+            store.get(id).unwrap().annotation_type,
+            AnnotationType::Deletion
+        );
     }
 
     #[test]
@@ -161,9 +174,9 @@ mod tests {
     #[test]
     fn ordered_by_line_then_column() {
         let mut store = AnnotationStore::new();
-        store.add(deletion(5, 0, 5, 10));   // line 5
-        store.add(deletion(1, 5, 1, 10));   // line 1, col 5
-        store.add(deletion(1, 0, 1, 5));    // line 1, col 0
+        store.add(deletion(5, 0, 5, 10)); // line 5
+        store.add(deletion(1, 5, 1, 10)); // line 1, col 5
+        store.add(deletion(1, 0, 1, 5)); // line 1, col 0
 
         let ordered = store.ordered();
         let r0 = ordered[0].range.unwrap();
@@ -196,7 +209,7 @@ mod tests {
         store.add(deletion(1, 0, 1, 10));
         store.add(deletion(1, 5, 1, 15));
         store.add(deletion(3, 0, 3, 10));
-        store.add(deletion(5, 0, 5, 10));  // different line entirely
+        store.add(deletion(5, 0, 5, 10)); // different line entirely
 
         // Query range [1:3, 1:12) should match the first two.
         let query = range(1, 3, 1, 12);
