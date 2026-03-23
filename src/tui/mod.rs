@@ -1,4 +1,5 @@
 pub mod annotation_list;
+pub mod command_line;
 pub mod document_viewer;
 pub mod help;
 pub mod input_box;

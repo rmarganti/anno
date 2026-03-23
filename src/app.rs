@@ -14,6 +14,7 @@ use crate::document::Document;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::tui::command_line::{CommandLine, CommandLineEvent, CommandResult};
 use crate::tui::document_viewer::{DocumentViewer, DocumentViewerEvent};
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 
@@ -56,8 +57,8 @@ pub struct App {
     keybinds: KeybindHandler,
     /// Annotation storage.
     annotations: AnnotationStore,
-    /// Command-mode buffer (characters typed after `:`).
-    command_buffer: String,
+    /// Command-line component (buffer + execution).
+    command_line: CommandLine,
     /// Whether the app should quit.
     should_quit: bool,
     /// The exit result to return.
@@ -81,7 +82,7 @@ impl App {
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
-            command_buffer: String::new(),
+            command_line: CommandLine::new(),
             should_quit: false,
             exit_result: None,
             doc_viewer,
@@ -172,24 +173,31 @@ impl App {
             // -- Mode transitions (not handled by viewer) --
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
-                self.command_buffer.clear();
+                self.command_line.clear();
             }
             Action::EnterAnnotationListMode => self.mode = Mode::AnnotationList,
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
+                self.command_line.clear();
                 self.input_box = None;
                 self.pending_annotation = None;
             }
 
-            // -- Command mode --
-            Action::CommandChar(c) => self.command_buffer.push(c),
-            Action::CommandBackspace => {
-                self.command_buffer.pop();
-                if self.command_buffer.is_empty() {
-                    self.mode = Mode::Normal;
+            // -- Command mode: forward all command actions to CommandLine --
+            Action::CommandChar(_) | Action::CommandBackspace | Action::CommandConfirm => {
+                match self.command_line.handle_action(&action) {
+                    CommandLineEvent::Consumed => {}
+                    CommandLineEvent::ExitToNormal => {
+                        self.mode = Mode::Normal;
+                    }
+                    CommandLineEvent::Cancelled => {
+                        self.mode = Mode::Normal;
+                    }
+                    CommandLineEvent::Executed(result) => {
+                        self.handle_command_result(result);
+                    }
                 }
             }
-            Action::CommandConfirm => self.execute_command(),
 
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
@@ -255,18 +263,19 @@ impl App {
         self.mode = Mode::Normal;
     }
 
-    fn execute_command(&mut self) {
-        match self.command_buffer.as_str() {
-            "q" => {
+    /// Act on a parsed command result from `CommandLine`.
+    fn handle_command_result(&mut self, result: CommandResult) {
+        match result {
+            CommandResult::Quit => {
                 let output = PlannotatorExporter.export(&self.annotations);
                 self.exit_result = Some(ExitResult::QuitWithOutput(output));
                 self.should_quit = true;
             }
-            "q!" => {
+            CommandResult::QuitForce => {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-            "w" => {
+            CommandResult::Write => {
                 let output = PlannotatorExporter.export(&self.annotations);
                 // Print to stdout immediately (terminal is in alternate screen,
                 // so this goes to the real stdout which the caller captures).
@@ -275,9 +284,8 @@ impl App {
                 // The proper `:w` mid-session write will be refined in later tasks.
                 eprintln!("{output}");
             }
-            _ => {}
+            CommandResult::Unknown => {}
         }
-        self.command_buffer.clear();
         if !self.should_quit {
             self.mode = Mode::Normal;
         }
@@ -347,7 +355,7 @@ impl App {
             self.doc_viewer.viewport.cursor.row,
             self.doc_viewer.viewport.cursor.col,
             self.doc_viewer.viewport.word_wrap,
-            &self.command_buffer,
+            &self.command_line.buffer,
         );
         frame.render_widget(status_bar, status_area);
 
