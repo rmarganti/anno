@@ -3,5 +3,6 @@ pub mod help;
 pub mod input_box;
 pub mod renderer;
 pub mod selection;
+pub mod status_bar;
 pub mod theme;
 pub mod viewport;
