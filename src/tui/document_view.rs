@@ -75,9 +75,7 @@ impl DocumentView {
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
-            Action::MoveDocumentBottom => {
-                self.viewport.move_document_bottom(&self.display_layout)
-            }
+            Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
             Action::HalfPageDown => self.viewport.half_page_down(&self.display_layout),
             Action::HalfPageUp => self.viewport.half_page_up(&self.display_layout),
             Action::FullPageDown => self.viewport.full_page_down(&self.display_layout),
@@ -194,5 +192,227 @@ impl DocumentView {
             self.viewport.width,
             self.viewport.word_wrap,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::highlight::StyledSpan;
+    use crate::keybinds::handler::Action;
+    use crate::tui::viewport::CursorPosition;
+
+    // ── Helpers ───────────────────────────────────────────────────────
+
+    /// Build a `DocumentView` from plain text lines with no syntax highlighting.
+    fn make_view(lines: &[&str]) -> DocumentView {
+        let doc_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let styled_lines: Vec<Vec<StyledSpan>> = doc_lines
+            .iter()
+            .map(|l| {
+                if l.is_empty() {
+                    vec![]
+                } else {
+                    vec![StyledSpan::plain(l.clone())]
+                }
+            })
+            .collect();
+        let mut view = DocumentView::new(doc_lines, styled_lines);
+        // Give it a non-zero size so movement works.
+        view.update_dimensions(80, 24);
+        view
+    }
+
+    fn pos(row: usize, col: usize) -> CursorPosition {
+        CursorPosition { row, col }
+    }
+
+    // ── Initial state ─────────────────────────────────────────────────
+
+    #[test]
+    fn initial_cursor_at_origin() {
+        let view = make_view(&["hello"]);
+        assert_eq!(view.cursor(), pos(0, 0));
+    }
+
+    #[test]
+    fn initial_word_wrap_disabled() {
+        let view = make_view(&["hello"]);
+        assert!(!view.word_wrap());
+    }
+
+    // ── Movement ──────────────────────────────────────────────────────
+
+    #[test]
+    fn move_down_advances_row() {
+        let mut view = make_view(&["first", "second"]);
+        let consumed = view.handle_action(&Action::MoveDown);
+        assert!(consumed);
+        assert_eq!(view.cursor().row, 1);
+    }
+
+    #[test]
+    fn move_down_stops_at_last_line() {
+        let mut view = make_view(&["only"]);
+        view.handle_action(&Action::MoveDown);
+        assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn move_up_decrements_row() {
+        let mut view = make_view(&["first", "second"]);
+        view.handle_action(&Action::MoveDown);
+        let consumed = view.handle_action(&Action::MoveUp);
+        assert!(consumed);
+        assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn move_right_advances_col() {
+        let mut view = make_view(&["hello"]);
+        let consumed = view.handle_action(&Action::MoveRight);
+        assert!(consumed);
+        assert_eq!(view.cursor().col, 1);
+    }
+
+    #[test]
+    fn move_left_decrements_col() {
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::MoveRight);
+        view.handle_action(&Action::MoveRight);
+        let consumed = view.handle_action(&Action::MoveLeft);
+        assert!(consumed);
+        assert_eq!(view.cursor().col, 1);
+    }
+
+    #[test]
+    fn move_line_end_goes_to_last_col() {
+        let mut view = make_view(&["hello"]);
+        let consumed = view.handle_action(&Action::MoveLineEnd);
+        assert!(consumed);
+        assert_eq!(view.cursor().col, 4); // "hello" has 5 chars, last col = 4
+    }
+
+    #[test]
+    fn move_line_start_goes_to_col_zero() {
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::MoveLineEnd);
+        let consumed = view.handle_action(&Action::MoveLineStart);
+        assert!(consumed);
+        assert_eq!(view.cursor().col, 0);
+    }
+
+    #[test]
+    fn move_document_top_goes_to_row_zero() {
+        let mut view = make_view(&["a", "b", "c"]);
+        view.handle_action(&Action::MoveDown);
+        view.handle_action(&Action::MoveDown);
+        let consumed = view.handle_action(&Action::MoveDocumentTop);
+        assert!(consumed);
+        assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn move_document_bottom_goes_to_last_row() {
+        let mut view = make_view(&["a", "b", "c"]);
+        let consumed = view.handle_action(&Action::MoveDocumentBottom);
+        assert!(consumed);
+        assert_eq!(view.cursor().row, 2);
+    }
+
+    // ── Unhandled actions return false ────────────────────────────────
+
+    #[test]
+    fn unhandled_action_returns_false() {
+        let mut view = make_view(&["hello"]);
+        let consumed = view.handle_action(&Action::CreateDeletion);
+        assert!(!consumed);
+    }
+
+    #[test]
+    fn enter_insert_mode_returns_false() {
+        let mut view = make_view(&["hello"]);
+        let consumed = view.handle_action(&Action::EnterInsertMode);
+        assert!(!consumed);
+    }
+
+    // ── Visual selection ──────────────────────────────────────────────
+
+    #[test]
+    fn enter_visual_mode_sets_anchor() {
+        let mut view = make_view(&["hello world"]);
+        let consumed = view.handle_action(&Action::EnterVisualMode);
+        assert!(consumed);
+        // Move right then take selection — should be "h".
+        view.handle_action(&Action::MoveRight);
+        let result = view.take_visual_selection();
+        assert!(result.is_some());
+        let (range, text) = result.unwrap();
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.start.column, 0);
+        assert_eq!(text, "he"); // anchor=0, cursor=1 → chars 0..=1
+    }
+
+    #[test]
+    fn take_visual_selection_none_without_anchor() {
+        let mut view = make_view(&["hello"]);
+        let result = view.take_visual_selection();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn take_visual_selection_clears_anchor() {
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::EnterVisualMode);
+        view.handle_action(&Action::MoveRight);
+        view.take_visual_selection();
+        // Second call should return None (anchor was consumed).
+        assert!(view.take_visual_selection().is_none());
+    }
+
+    #[test]
+    fn clear_visual_removes_anchor() {
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::EnterVisualMode);
+        view.clear_visual();
+        assert!(view.take_visual_selection().is_none());
+    }
+
+    // ── Word wrap toggle ──────────────────────────────────────────────
+
+    #[test]
+    fn toggle_word_wrap_enables() {
+        let mut view = make_view(&["hello world"]);
+        view.handle_action(&Action::ToggleWordWrap);
+        assert!(view.word_wrap());
+    }
+
+    #[test]
+    fn toggle_word_wrap_disables_after_second_toggle() {
+        let mut view = make_view(&["hello world"]);
+        view.handle_action(&Action::ToggleWordWrap);
+        view.handle_action(&Action::ToggleWordWrap);
+        assert!(!view.word_wrap());
+    }
+
+    // ── is_too_small ──────────────────────────────────────────────────
+
+    #[test]
+    fn too_small_when_dimensions_zero() {
+        // DocumentView::new() starts at 0×0 before update_dimensions is called.
+        let mut raw_view = {
+            let doc_lines = vec!["hello".to_string()];
+            let styled_lines = vec![vec![StyledSpan::plain("hello")]];
+            DocumentView::new(doc_lines, styled_lines)
+        };
+        assert!(raw_view.is_too_small());
+        raw_view.update_dimensions(80, 24);
+        assert!(!raw_view.is_too_small());
+    }
+
+    #[test]
+    fn not_too_small_with_adequate_dimensions() {
+        let view = make_view(&["hello"]);
+        assert!(!view.is_too_small());
     }
 }

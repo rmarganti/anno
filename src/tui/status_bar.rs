@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 
 use crate::keybinds::mode::Mode;
@@ -53,4 +53,208 @@ pub fn render(frame: &mut Frame, area: Rect, props: &StatusBarProps) {
 
     let status_bar = Paragraph::new(Line::from(status_spans));
     frame.render_widget(status_bar, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+
+    use super::*;
+
+    /// Render StatusBarProps into a 80-wide single-row buffer and return the
+    /// trimmed string of all visible characters.
+    fn render_to_string(props: &StatusBarProps) -> String {
+        let backend = TestBackend::new(80, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 1,
+                };
+                render(frame, area, props);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let content: String = (0..80)
+            .map(|x| {
+                buffer
+                    .cell((x, 0))
+                    .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                    .unwrap_or(' ')
+            })
+            .collect();
+        content.trim_end().to_string()
+    }
+
+    fn base_props(mode: Mode) -> StatusBarProps<'static> {
+        StatusBarProps {
+            mode,
+            source_name: "test.md",
+            annotation_count: 0,
+            cursor_row: 0,
+            cursor_col: 0,
+            word_wrap: false,
+            command_buffer: "",
+        }
+    }
+
+    // ── Mode labels ───────────────────────────────────────────────────
+
+    #[test]
+    fn normal_mode_label() {
+        let props = base_props(Mode::Normal);
+        let output = render_to_string(&props);
+        assert!(output.contains("NORMAL"), "Expected NORMAL in: {output}");
+    }
+
+    #[test]
+    fn visual_mode_label() {
+        let props = base_props(Mode::Visual);
+        let output = render_to_string(&props);
+        assert!(output.contains("VISUAL"), "Expected VISUAL in: {output}");
+    }
+
+    #[test]
+    fn insert_mode_label() {
+        let props = base_props(Mode::Insert);
+        let output = render_to_string(&props);
+        assert!(output.contains("INSERT"), "Expected INSERT in: {output}");
+    }
+
+    #[test]
+    fn annotation_list_mode_label() {
+        let props = base_props(Mode::AnnotationList);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("ANNOTATIONS"),
+            "Expected ANNOTATIONS in: {output}"
+        );
+    }
+
+    #[test]
+    fn command_mode_label() {
+        let props = base_props(Mode::Command);
+        let output = render_to_string(&props);
+        assert!(output.contains("COMMAND"), "Expected COMMAND in: {output}");
+    }
+
+    // ── Annotation count ──────────────────────────────────────────────
+
+    #[test]
+    fn annotation_count_zero() {
+        let props = StatusBarProps {
+            annotation_count: 0,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("0 annotation(s)"),
+            "Expected annotation count in: {output}"
+        );
+    }
+
+    #[test]
+    fn annotation_count_nonzero() {
+        let props = StatusBarProps {
+            annotation_count: 3,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("3 annotation(s)"),
+            "Expected 3 annotation(s) in: {output}"
+        );
+    }
+
+    // ── Cursor position ───────────────────────────────────────────────
+
+    #[test]
+    fn cursor_position_displayed_one_indexed() {
+        let props = StatusBarProps {
+            cursor_row: 4,
+            cursor_col: 9,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        // row+1=5, col+1=10
+        assert!(output.contains("5:10"), "Expected 5:10 in: {output}");
+    }
+
+    #[test]
+    fn cursor_at_origin_shows_1_1() {
+        let props = StatusBarProps {
+            cursor_row: 0,
+            cursor_col: 0,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(output.contains("1:1"), "Expected 1:1 in: {output}");
+    }
+
+    // ── Word wrap indicator ───────────────────────────────────────────
+
+    #[test]
+    fn word_wrap_on_shows_indicator() {
+        let props = StatusBarProps {
+            word_wrap: true,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(output.contains("wrap"), "Expected 'wrap' in: {output}");
+    }
+
+    #[test]
+    fn word_wrap_off_no_indicator() {
+        let props = StatusBarProps {
+            word_wrap: false,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            !output.contains("wrap"),
+            "Did not expect 'wrap' in: {output}"
+        );
+    }
+
+    // ── Mode-specific hints ───────────────────────────────────────────
+
+    #[test]
+    fn insert_mode_shows_confirm_hint() {
+        let props = base_props(Mode::Insert);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("Ctrl+S confirm"),
+            "Expected confirm hint in: {output}"
+        );
+    }
+
+    #[test]
+    fn normal_mode_shows_help_hint() {
+        let props = base_props(Mode::Normal);
+        let output = render_to_string(&props);
+        assert!(output.contains("? help"), "Expected '? help' in: {output}");
+    }
+
+    #[test]
+    fn command_mode_shows_command_buffer() {
+        let props = StatusBarProps {
+            command_buffer: "q!",
+            ..base_props(Mode::Command)
+        };
+        let output = render_to_string(&props);
+        assert!(output.contains(":q!"), "Expected ':q!' in: {output}");
+    }
+
+    #[test]
+    fn source_name_shown() {
+        let props = base_props(Mode::Normal);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("test.md"),
+            "Expected source name in: {output}"
+        );
+    }
 }

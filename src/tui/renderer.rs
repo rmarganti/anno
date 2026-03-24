@@ -309,6 +309,310 @@ fn apply_annotation_overlays(
     Line::from(spans)
 }
 
+#[cfg(test)]
+mod tests {
+    use ratatui::text::{Line, Span};
+
+    use super::*;
+    use crate::highlight::{Highlighter, StyledSpan};
+    use crate::tui::theme::Theme;
+    use crate::tui::viewport::RenderSlice;
+
+    // ── Helpers ───────────────────────────────────────────────────────
+
+    fn default_theme() -> Theme {
+        Theme::new()
+    }
+
+    /// A no-op highlighter that returns unstyled spans for every line.
+    struct PlainHighlighter;
+
+    impl Highlighter for PlainHighlighter {
+        fn highlight_document(&self, lines: &[String]) -> Vec<Vec<StyledSpan>> {
+            lines
+                .iter()
+                .map(|l| {
+                    if l.is_empty() {
+                        vec![]
+                    } else {
+                        vec![StyledSpan::plain(l.clone())]
+                    }
+                })
+                .collect()
+        }
+    }
+
+    fn plain_line(text: &str) -> Line<'static> {
+        Line::from(Span::raw(text.to_string()))
+    }
+
+    fn collect_text(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    // ── text_to_lines ─────────────────────────────────────────────────
+
+    #[test]
+    fn text_to_lines_empty_produces_single_empty_line() {
+        let result = text_to_lines("", &PlainHighlighter);
+        assert_eq!(result.plain, vec!["".to_string()]);
+        assert_eq!(result.styled.len(), 1);
+    }
+
+    #[test]
+    fn text_to_lines_single_line() {
+        let result = text_to_lines("hello", &PlainHighlighter);
+        assert_eq!(result.plain, vec!["hello".to_string()]);
+        assert_eq!(result.styled.len(), 1);
+        assert_eq!(result.styled[0][0].text, "hello");
+    }
+
+    #[test]
+    fn text_to_lines_splits_on_newline() {
+        let result = text_to_lines("foo\nbar\nbaz", &PlainHighlighter);
+        assert_eq!(
+            result.plain,
+            vec!["foo".to_string(), "bar".to_string(), "baz".to_string()]
+        );
+        assert_eq!(result.styled.len(), 3);
+    }
+
+    #[test]
+    fn text_to_lines_count_matches_styled_count() {
+        let text = "line one\nline two\nline three";
+        let result = text_to_lines(text, &PlainHighlighter);
+        assert_eq!(result.plain.len(), result.styled.len());
+    }
+
+    // ── apply_cursor_to_line ──────────────────────────────────────────
+
+    #[test]
+    fn apply_cursor_empty_line_produces_space_with_cursor_style() {
+        let theme = default_theme();
+        let line = plain_line("");
+        let result = apply_cursor_to_line(line, 0, &theme);
+        assert_eq!(collect_text(&result), " ");
+        assert_eq!(result.spans[0].style, theme.cursor);
+    }
+
+    #[test]
+    fn apply_cursor_at_col_zero() {
+        let theme = default_theme();
+        let line = plain_line("hello");
+        let result = apply_cursor_to_line(line, 0, &theme);
+        // First char should have cursor style.
+        assert_eq!(result.spans[0].style, theme.cursor);
+        assert!(result.spans[0].content.starts_with('h'));
+    }
+
+    #[test]
+    fn apply_cursor_at_middle_col() {
+        let theme = default_theme();
+        let line = plain_line("abcde");
+        let result = apply_cursor_to_line(line, 2, &theme);
+        let text = collect_text(&result);
+        assert_eq!(text, "abcde");
+        // Find the span containing 'c' (col 2) and verify its style.
+        let cursor_span = result
+            .spans
+            .iter()
+            .find(|s| s.content.contains('c'))
+            .unwrap();
+        assert_eq!(cursor_span.style, theme.cursor);
+    }
+
+    #[test]
+    fn apply_cursor_clamps_to_last_char() {
+        let theme = default_theme();
+        let line = plain_line("ab");
+        // cursor_col beyond line length should clamp to last char.
+        let result = apply_cursor_to_line(line, 99, &theme);
+        let text = collect_text(&result);
+        assert_eq!(text, "ab");
+        // The last char 'b' should have cursor style.
+        let last_span = result.spans.last().unwrap();
+        assert_eq!(last_span.style, theme.cursor);
+    }
+
+    #[test]
+    fn apply_cursor_preserves_text_content() {
+        let theme = default_theme();
+        let line = plain_line("hello world");
+        let result = apply_cursor_to_line(line, 6, &theme);
+        assert_eq!(collect_text(&result), "hello world");
+    }
+
+    // ── apply_selection_to_line ───────────────────────────────────────
+
+    #[test]
+    fn apply_selection_empty_line_produces_space_with_selection_style() {
+        let theme = default_theme();
+        let line = plain_line("");
+        let result = apply_selection_to_line(line, 0, 0, &theme);
+        assert_eq!(collect_text(&result), " ");
+        assert_eq!(result.spans[0].style, theme.selection_highlight);
+    }
+
+    #[test]
+    fn apply_selection_full_line() {
+        let theme = default_theme();
+        let line = plain_line("hello");
+        let result = apply_selection_to_line(line, 0, 4, &theme);
+        let text = collect_text(&result);
+        assert_eq!(text, "hello");
+        // All chars should use selection highlight (merged into one or more spans).
+        for span in &result.spans {
+            assert_eq!(span.style, theme.selection_highlight);
+        }
+    }
+
+    #[test]
+    fn apply_selection_preserves_text_content() {
+        let theme = default_theme();
+        let line = plain_line("abcde");
+        let result = apply_selection_to_line(line, 1, 3, &theme);
+        assert_eq!(collect_text(&result), "abcde");
+    }
+
+    #[test]
+    fn apply_selection_partial_range_styles_only_selected_chars() {
+        let theme = default_theme();
+        let line = plain_line("abcde");
+        let result = apply_selection_to_line(line, 1, 3, &theme);
+        // 'a' (col 0) should NOT have selection style.
+        let first_span = &result.spans[0];
+        assert_ne!(first_span.style, theme.selection_highlight);
+        assert!(first_span.content.starts_with('a'));
+    }
+
+    // ── prepare_visible_lines_from_slices ─────────────────────────────
+
+    #[test]
+    fn prepare_visible_lines_basic_no_cursor_no_selection() {
+        let theme = default_theme();
+        let doc_lines = vec!["hello".to_string(), "world".to_string()];
+        let styled_lines: Vec<Vec<StyledSpan>> = doc_lines
+            .iter()
+            .map(|l| vec![StyledSpan::plain(l.clone())])
+            .collect();
+        let slices = vec![
+            RenderSlice {
+                doc_row: 0,
+                start_col: 0,
+                end_col: 5,
+            },
+            RenderSlice {
+                doc_row: 1,
+                start_col: 0,
+                end_col: 5,
+            },
+        ];
+
+        // Cursor is off-screen (row 99).
+        let lines = prepare_visible_lines_from_slices(
+            &slices,
+            &styled_lines,
+            &doc_lines,
+            99,
+            0,
+            &theme,
+            None,
+            &[],
+        );
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(collect_text(&lines[0]), "hello");
+        assert_eq!(collect_text(&lines[1]), "world");
+    }
+
+    #[test]
+    fn prepare_visible_lines_cursor_applied_to_correct_row() {
+        let theme = default_theme();
+        let doc_lines = vec!["hello".to_string()];
+        let styled_lines = vec![vec![StyledSpan::plain("hello")]];
+        let slices = vec![RenderSlice {
+            doc_row: 0,
+            start_col: 0,
+            end_col: 5,
+        }];
+
+        let lines = prepare_visible_lines_from_slices(
+            &slices,
+            &styled_lines,
+            &doc_lines,
+            0, // cursor row = 0
+            2, // cursor col = 2
+            &theme,
+            None,
+            &[],
+        );
+
+        assert_eq!(lines.len(), 1);
+        let text = collect_text(&lines[0]);
+        assert_eq!(text, "hello");
+        // Col 2 ('l') should carry cursor style.
+        let cursor_span = lines[0]
+            .spans
+            .iter()
+            .find(|s| s.style == theme.cursor)
+            .unwrap();
+        assert!(cursor_span.content.starts_with('l'));
+    }
+
+    #[test]
+    fn prepare_visible_lines_out_of_bounds_doc_row_returns_empty() {
+        let theme = default_theme();
+        let doc_lines: Vec<String> = vec![];
+        let styled_lines: Vec<Vec<StyledSpan>> = vec![];
+        // Slice referencing a doc_row that doesn't exist.
+        let slices = vec![RenderSlice {
+            doc_row: 5,
+            start_col: 0,
+            end_col: 10,
+        }];
+
+        let lines = prepare_visible_lines_from_slices(
+            &slices,
+            &styled_lines,
+            &doc_lines,
+            99,
+            0,
+            &theme,
+            None,
+            &[],
+        );
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(collect_text(&lines[0]), "");
+    }
+
+    #[test]
+    fn prepare_visible_lines_horizontal_slice() {
+        let theme = default_theme();
+        let doc_lines = vec!["abcdefgh".to_string()];
+        let styled_lines = vec![vec![StyledSpan::plain("abcdefgh")]];
+        // Slice columns 2..5 → "cde"
+        let slices = vec![RenderSlice {
+            doc_row: 0,
+            start_col: 2,
+            end_col: 5,
+        }];
+
+        let lines = prepare_visible_lines_from_slices(
+            &slices,
+            &styled_lines,
+            &doc_lines,
+            99,
+            0,
+            &theme,
+            None,
+            &[],
+        );
+
+        assert_eq!(collect_text(&lines[0]), "cde");
+    }
+}
+
 /// Apply a selection highlight overlay to a pre-styled `Line` over the given column range.
 pub fn apply_selection_to_line(
     line: Line<'_>,
