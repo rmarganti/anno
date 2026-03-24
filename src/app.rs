@@ -14,6 +14,8 @@ use crate::highlight::StyledSpan;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::tui::app_command::{AppCommand, QuitKind};
+use crate::tui::command_line::{CommandLine, CommandLineEvent};
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
@@ -60,8 +62,8 @@ pub struct App {
     keybinds: KeybindHandler,
     /// Annotation storage.
     annotations: AnnotationStore,
-    /// Command-mode buffer (characters typed after `:`).
-    command_buffer: String,
+    /// Command-line component (handles `:` command input).
+    command_line: CommandLine,
     /// Whether the app should quit.
     should_quit: bool,
     /// The exit result to return.
@@ -103,7 +105,7 @@ impl App {
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
-            command_buffer: String::new(),
+            command_line: CommandLine::new(),
             should_quit: false,
             exit_result: None,
             doc_lines: doc_lines_result.plain,
@@ -167,7 +169,7 @@ impl App {
             }
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
-                self.command_buffer.clear();
+                self.command_line.clear();
             }
             Action::EnterAnnotationListMode => self.mode = Mode::AnnotationList,
             Action::ExitToNormal => {
@@ -184,14 +186,18 @@ impl App {
             }
 
             // -- Command mode --
-            Action::CommandChar(c) => self.command_buffer.push(c),
-            Action::CommandBackspace => {
-                self.command_buffer.pop();
-                if self.command_buffer.is_empty() {
-                    self.mode = Mode::Normal;
-                }
+            Action::CommandChar(c) => {
+                let event = self.command_line.handle_char(c);
+                self.handle_command_line_event(event);
             }
-            Action::CommandConfirm => self.execute_command(),
+            Action::CommandBackspace => {
+                let event = self.command_line.handle_backspace();
+                self.handle_command_line_event(event);
+            }
+            Action::CommandConfirm => {
+                let event = self.command_line.handle_confirm();
+                self.handle_command_line_event(event);
+            }
 
             // -- Annotation creation from Visual mode --
             Action::CreateDeletion => self.create_deletion(),
@@ -315,31 +321,30 @@ impl App {
         self.mode = Mode::Normal;
     }
 
-    fn execute_command(&mut self) {
-        match self.command_buffer.as_str() {
-            "q" => {
+    fn handle_command_line_event(&mut self, event: CommandLineEvent) {
+        match event {
+            CommandLineEvent::Command(cmd) => self.process_app_command(cmd),
+            CommandLineEvent::ExitToNormal => self.mode = Mode::Normal,
+            CommandLineEvent::Consumed => {}
+        }
+    }
+
+    fn process_app_command(&mut self, cmd: AppCommand) {
+        match cmd {
+            AppCommand::Quit(QuitKind::WithOutput) => {
                 let output = PlannotatorExporter.export(&self.annotations);
                 self.exit_result = Some(ExitResult::QuitWithOutput(output));
                 self.should_quit = true;
             }
-            "q!" => {
+            AppCommand::Quit(QuitKind::Silent) => {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-            "w" => {
+            AppCommand::Write => {
                 let output = PlannotatorExporter.export(&self.annotations);
-                // Print to stdout immediately (terminal is in alternate screen,
-                // so this goes to the real stdout which the caller captures).
-                // For now, store the output; actual piping is handled by the caller.
-                // We write to stderr as a workaround since stdout is the TUI.
-                // The proper `:w` mid-session write will be refined in later tasks.
                 eprintln!("{output}");
+                self.mode = Mode::Normal;
             }
-            _ => {}
-        }
-        self.command_buffer.clear();
-        if !self.should_quit {
-            self.mode = Mode::Normal;
         }
     }
 
@@ -427,7 +432,7 @@ impl App {
                 cursor_row: self.viewport.cursor.row,
                 cursor_col: self.viewport.cursor.col,
                 word_wrap: self.viewport.word_wrap,
-                command_buffer: &self.command_buffer,
+                command_buffer: self.command_line.buffer(),
             },
         );
 

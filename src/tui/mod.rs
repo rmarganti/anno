@@ -1,5 +1,6 @@
 pub mod annotation_list;
 pub mod app_command;
+pub mod command_line;
 pub mod help;
 pub mod input_box;
 pub mod renderer;
