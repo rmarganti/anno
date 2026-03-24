@@ -173,6 +173,16 @@ impl DocumentView {
         frame.render_widget(doc, main_area);
     }
 
+    /// Update the viewport dimensions (e.g. from terminal size) so that
+    /// `is_too_small()` works correctly before the first `render()` call.
+    pub fn update_dimensions(&mut self, width: usize, height: usize) {
+        let old_width = self.viewport.width;
+        self.viewport.set_dimensions(width, height);
+        if width != old_width {
+            self.rebuild_display_layout();
+        }
+    }
+
     /// Returns `true` if the terminal is too small to render the UI.
     pub fn is_too_small(&self) -> bool {
         self.viewport.is_too_small()

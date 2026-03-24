@@ -286,6 +286,11 @@ impl App {
     fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
+        // Sync viewport dimensions before the size check so is_too_small()
+        // reflects the actual terminal size (viewport starts at 0×0).
+        self.document_view
+            .update_dimensions(area.width as usize, area.height.saturating_sub(1) as usize);
+
         // Minimum terminal size check.
         if self.document_view.is_too_small() {
             let msg = Paragraph::new("Terminal too small.\nPlease resize to at least 80×24.")
