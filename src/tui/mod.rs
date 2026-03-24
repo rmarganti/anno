@@ -1,7 +1,11 @@
 pub mod annotation_list;
+pub mod app_command;
+pub mod command_line;
+pub mod document_view;
 pub mod help;
 pub mod input_box;
 pub mod renderer;
 pub mod selection;
+pub mod status_bar;
 pub mod theme;
 pub mod viewport;
