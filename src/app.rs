@@ -4,8 +4,6 @@ use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Flex, Layout},
-    style::{Modifier, Style},
-    text::{Line, Span},
     widgets::{Block, Paragraph},
 };
 
@@ -19,6 +17,7 @@ use crate::keybinds::mode::Mode;
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
+use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::Theme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
@@ -418,44 +417,19 @@ impl App {
         frame.render_widget(doc, main_area);
 
         // -- Status bar --
-        let mode_label = match self.mode {
-            Mode::Normal => " NORMAL ",
-            Mode::Visual => " VISUAL ",
-            Mode::Insert => " INSERT ",
-            Mode::AnnotationList => " ANNOTATIONS ",
-            Mode::Command => " COMMAND ",
-        };
-
-        let annotation_count = self.annotations.len();
-        let cursor_pos = format!(
-            "{}:{}",
-            self.viewport.cursor.row + 1,
-            self.viewport.cursor.col + 1
+        status_bar::render(
+            frame,
+            status_area,
+            &StatusBarProps {
+                mode: self.mode,
+                source_name: &self.source_name,
+                annotation_count: self.annotations.len(),
+                cursor_row: self.viewport.cursor.row,
+                cursor_col: self.viewport.cursor.col,
+                word_wrap: self.viewport.word_wrap,
+                command_buffer: &self.command_buffer,
+            },
         );
-
-        let wrap_indicator = if self.viewport.word_wrap { "wrap " } else { "" };
-
-        let mut status_spans = vec![
-            Span::styled(
-                mode_label,
-                Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
-            ),
-            Span::raw(format!(" {}  ", self.source_name)),
-            Span::raw(format!("{annotation_count} annotation(s)  ")),
-            Span::raw(format!("{cursor_pos}  ")),
-            Span::raw(wrap_indicator),
-        ];
-
-        if self.mode == Mode::Command {
-            status_spans.push(Span::raw(format!(":{}", self.command_buffer)));
-        } else if self.mode == Mode::Insert {
-            status_spans.push(Span::raw("Ctrl+S confirm  Esc cancel"));
-        } else {
-            status_spans.push(Span::raw("? help"));
-        }
-
-        let status_bar = Paragraph::new(Line::from(status_spans));
-        frame.render_widget(status_bar, status_area);
 
         // -- Input box overlay --
         if let Some(ref ib) = self.input_box {
