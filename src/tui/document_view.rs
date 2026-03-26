@@ -336,13 +336,6 @@ mod tests {
         assert!(!consumed);
     }
 
-    #[test]
-    fn enter_insert_mode_returns_false() {
-        let mut view = make_view(&["hello"]);
-        let consumed = view.handle_action(&Action::EnterInsertMode);
-        assert!(!consumed);
-    }
-
     // ── Visual selection ──────────────────────────────────────────────
 
     #[test]

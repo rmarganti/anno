@@ -22,7 +22,7 @@ impl AnnotationStore {
     }
 
     /// Delete an annotation by its id. Returns `true` if it was found and removed.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn delete(&mut self, id: Uuid) -> bool {
         let len_before = self.annotations.len();
         self.annotations.retain(|a| a.id != id);
@@ -35,7 +35,7 @@ impl AnnotationStore {
     }
 
     /// Return whether the store is empty.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_empty(&self) -> bool {
         self.annotations.is_empty()
     }
@@ -61,7 +61,7 @@ impl AnnotationStore {
     }
 
     /// Get an annotation by id.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn get(&self, id: Uuid) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
     }
@@ -74,7 +74,7 @@ impl AnnotationStore {
     /// Return all annotations that overlap the given text range.
     /// Two ranges overlap if one starts before the other ends and vice versa,
     /// using `(line, column)` tuple ordering.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn overlapping(&self, range: &TextRange) -> Vec<&Annotation> {
         self.annotations
             .iter()
