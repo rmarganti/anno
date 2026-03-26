@@ -1,6 +1,10 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+- This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+- All commit messages should following conventional commits. Examples:
+    - `feat: added ability to do thing`
+    - `fix: fixed some bug`
+    - `docs: updated README.md with build info`
 
 ## Quick Reference
 
