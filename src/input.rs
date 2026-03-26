@@ -22,6 +22,8 @@ impl std::fmt::Display for InputError {
     }
 }
 
+impl std::error::Error for InputError {}
+
 pub struct FileSource {
     path: String,
 }
