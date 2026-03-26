@@ -297,6 +297,65 @@ impl Viewport {
         self.ensure_horizontal_visible();
     }
 
+    pub fn move_word_end(&mut self, lines: &[&str], layout: &DisplayLayout) {
+        let total_lines = layout.total_doc_lines();
+        if lines.is_empty() || self.cursor.row >= lines.len() {
+            return;
+        }
+
+        let line = lines[self.cursor.row];
+        let chars: Vec<char> = line.chars().collect();
+        let mut col = self.cursor.col;
+
+        // Advance at least one character so we leave the current position.
+        if col < chars.len() {
+            col += 1;
+        }
+
+        // Skip whitespace.
+        while col < chars.len() && chars[col].is_whitespace() {
+            col += 1;
+        }
+
+        if col >= chars.len() {
+            // Wrap to the next line if possible.
+            if self.cursor.row + 1 < total_lines {
+                self.cursor.row += 1;
+                self.cursor.col = 0;
+                if self.cursor.row < lines.len() {
+                    let next_chars: Vec<char> = lines[self.cursor.row].chars().collect();
+                    let mut nc = 0;
+                    // Skip leading whitespace.
+                    while nc < next_chars.len() && next_chars[nc].is_whitespace() {
+                        nc += 1;
+                    }
+                    // Advance to end of word.
+                    while nc < next_chars.len() && !next_chars[nc].is_whitespace() {
+                        nc += 1;
+                    }
+                    self.cursor.col = if nc > 0 { nc - 1 } else { 0 };
+                }
+            } else {
+                // Last line — stay at end.
+                self.cursor.col = if chars.is_empty() {
+                    0
+                } else {
+                    chars.len() - 1
+                };
+            }
+        } else {
+            // Advance to end of word.
+            while col < chars.len() && !chars[col].is_whitespace() {
+                col += 1;
+            }
+            self.cursor.col = col - 1;
+        }
+
+        self.clamp_col(layout);
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+    }
+
     pub fn move_word_backward(&mut self, lines: &[&str], layout: &DisplayLayout) {
         if lines.is_empty() || self.cursor.row >= lines.len() {
             return;

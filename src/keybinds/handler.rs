@@ -12,6 +12,7 @@ pub enum Action {
     MoveRight,
     MoveWordForward,
     MoveWordBackward,
+    MoveWordEnd,
     MoveLineStart,
     MoveLineEnd,
     MoveDocumentTop,
@@ -123,6 +124,7 @@ impl KeybindHandler {
             (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => Action::MoveRight,
             (KeyCode::Char('w'), KeyModifiers::NONE) => Action::MoveWordForward,
             (KeyCode::Char('b'), KeyModifiers::NONE) => Action::MoveWordBackward,
+            (KeyCode::Char('e'), KeyModifiers::NONE) => Action::MoveWordEnd,
             (KeyCode::Char('0'), KeyModifiers::NONE) => Action::MoveLineStart,
             (KeyCode::Char('$'), KeyModifiers::NONE) => Action::MoveLineEnd,
             (KeyCode::Char('G'), KeyModifiers::SHIFT) => Action::MoveDocumentBottom,
@@ -173,6 +175,7 @@ impl KeybindHandler {
             (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => Action::MoveRight,
             (KeyCode::Char('w'), KeyModifiers::NONE) => Action::MoveWordForward,
             (KeyCode::Char('b'), KeyModifiers::NONE) => Action::MoveWordBackward,
+            (KeyCode::Char('e'), KeyModifiers::NONE) => Action::MoveWordEnd,
             (KeyCode::Char('0'), KeyModifiers::NONE) => Action::MoveLineStart,
             (KeyCode::Char('$'), KeyModifiers::NONE) => Action::MoveLineEnd,
 
@@ -264,6 +267,10 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Normal, char_key('b')),
             Action::MoveWordBackward
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('e')),
+            Action::MoveWordEnd
         );
         assert_eq!(h.handle(Mode::Normal, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Normal, char_key('$')), Action::MoveLineEnd);
@@ -411,6 +418,10 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Visual, char_key('b')),
             Action::MoveWordBackward
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('e')),
+            Action::MoveWordEnd
         );
         assert_eq!(h.handle(Mode::Visual, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Visual, char_key('$')), Action::MoveLineEnd);

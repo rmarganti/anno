@@ -72,6 +72,11 @@ impl DocumentView {
                 self.viewport
                     .move_word_backward(&lines, &self.display_layout);
             }
+            Action::MoveWordEnd => {
+                let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
+                self.viewport
+                    .move_word_end(&lines, &self.display_layout);
+            }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
