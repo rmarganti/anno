@@ -162,14 +162,16 @@ impl DocumentView {
         };
 
         let visible_lines: Vec<Line<'static>> = renderer::prepare_visible_lines_from_slices(
-            &render_slices,
-            &self.styled_lines,
-            &self.doc_lines,
-            self.viewport.cursor.row,
-            self.viewport.cursor.col,
-            theme,
-            selection,
-            annotation_ranges,
+            &renderer::PrepareVisibleLinesParams {
+                slices: &render_slices,
+                styled_lines: &self.styled_lines,
+                plain_lines: &self.doc_lines,
+                cursor_row: self.viewport.cursor.row,
+                cursor_col: self.viewport.cursor.col,
+                theme,
+                selection,
+                annotation_ranges,
+            },
         );
 
         let doc = Paragraph::new(visible_lines).block(Block::default());

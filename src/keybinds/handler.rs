@@ -24,6 +24,7 @@ pub enum Action {
 
     // -- Mode transitions --
     EnterVisualMode,
+    #[allow(dead_code)]
     EnterInsertMode,
     EnterCommandMode,
     EnterAnnotationListMode,

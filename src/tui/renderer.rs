@@ -32,31 +32,34 @@ pub fn text_to_lines(text: &str, highlighter: &dyn crate::highlight::Highlighter
     DocumentLines { plain, styled }
 }
 
+/// Parameters for [`prepare_visible_lines_from_slices`].
+pub struct PrepareVisibleLinesParams<'a> {
+    pub slices: &'a [RenderSlice],
+    pub styled_lines: &'a [Vec<StyledSpan>],
+    pub plain_lines: &'a [String],
+    pub cursor_row: usize,
+    pub cursor_col: usize,
+    pub theme: &'a Theme,
+    pub selection: Option<(CursorPosition, CursorPosition)>,
+    pub annotation_ranges: &'a [TextRange],
+}
+
 /// Prepare visible lines from render slices (supports both word-wrap and horizontal scroll).
 ///
 /// Each `RenderSlice` maps to one display row, referencing a sub-range of a document line.
 /// Styled spans are sliced to the column range, and cursor/selection overlays are applied
 /// using intersection with the slice's column range.
-pub fn prepare_visible_lines_from_slices(
-    slices: &[RenderSlice],
-    styled_lines: &[Vec<StyledSpan>],
-    plain_lines: &[String],
-    cursor_row: usize,
-    cursor_col: usize,
-    theme: &Theme,
-    selection: Option<(CursorPosition, CursorPosition)>,
-    annotation_ranges: &[TextRange],
-) -> Vec<Line<'static>> {
-    let mut result: Vec<Line<'static>> = Vec::with_capacity(slices.len());
+pub fn prepare_visible_lines_from_slices(params: &PrepareVisibleLinesParams<'_>) -> Vec<Line<'static>> {
+    let mut result: Vec<Line<'static>> = Vec::with_capacity(params.slices.len());
 
-    for slice in slices {
+    for slice in params.slices {
         let doc_row = slice.doc_row;
         let start_col = slice.start_col;
         let end_col = slice.end_col;
 
         // Slice styled spans to the column range.
-        let line = if doc_row < styled_lines.len() {
-            slice_styled_spans(&styled_lines[doc_row], start_col, end_col)
+        let line = if doc_row < params.styled_lines.len() {
+            slice_styled_spans(&params.styled_lines[doc_row], start_col, end_col)
         } else {
             Line::from(Span::raw(""))
         };
@@ -67,13 +70,13 @@ pub fn prepare_visible_lines_from_slices(
             doc_row,
             start_col,
             end_col,
-            plain_lines,
-            annotation_ranges,
-            theme,
+            params.plain_lines,
+            params.annotation_ranges,
+            params.theme,
         );
 
         // Apply selection overlay.
-        let line = if let Some((sel_start, sel_end)) = selection {
+        let line = if let Some((sel_start, sel_end)) = params.selection {
             if doc_row >= sel_start.row && doc_row <= sel_end.row {
                 let doc_col_start = if doc_row == sel_start.row {
                     sel_start.col
@@ -83,7 +86,7 @@ pub fn prepare_visible_lines_from_slices(
                 let doc_col_end = if doc_row == sel_end.row {
                     sel_end.col
                 } else {
-                    plain_lines
+                    params.plain_lines
                         .get(doc_row)
                         .map(|l| l.chars().count().saturating_sub(1))
                         .unwrap_or(0)
@@ -97,7 +100,7 @@ pub fn prepare_visible_lines_from_slices(
                         line,
                         lo.saturating_sub(start_col),
                         hi.saturating_sub(start_col),
-                        theme,
+                        params.theme,
                     )
                 } else {
                     line
@@ -110,11 +113,11 @@ pub fn prepare_visible_lines_from_slices(
         };
 
         // Apply cursor overlay.
-        if doc_row == cursor_row && cursor_col >= start_col && cursor_col < end_col {
-            result.push(apply_cursor_to_line(line, cursor_col - start_col, theme));
-        } else if doc_row == cursor_row && cursor_col == start_col && start_col == end_col {
+        if doc_row == params.cursor_row && params.cursor_col >= start_col && params.cursor_col < end_col {
+            result.push(apply_cursor_to_line(line, params.cursor_col - start_col, params.theme));
+        } else if doc_row == params.cursor_row && params.cursor_col == start_col && start_col == end_col {
             // Empty line with cursor.
-            result.push(apply_cursor_to_line(line, 0, theme));
+            result.push(apply_cursor_to_line(line, 0, params.theme));
         } else {
             result.push(line);
         }
@@ -509,16 +512,16 @@ mod tests {
         ];
 
         // Cursor is off-screen (row 99).
-        let lines = prepare_visible_lines_from_slices(
-            &slices,
-            &styled_lines,
-            &doc_lines,
-            99,
-            0,
-            &theme,
-            None,
-            &[],
-        );
+        let lines = prepare_visible_lines_from_slices(&PrepareVisibleLinesParams {
+            slices: &slices,
+            styled_lines: &styled_lines,
+            plain_lines: &doc_lines,
+            cursor_row: 99,
+            cursor_col: 0,
+            theme: &theme,
+            selection: None,
+            annotation_ranges: &[],
+        });
 
         assert_eq!(lines.len(), 2);
         assert_eq!(collect_text(&lines[0]), "hello");
@@ -536,16 +539,16 @@ mod tests {
             end_col: 5,
         }];
 
-        let lines = prepare_visible_lines_from_slices(
-            &slices,
-            &styled_lines,
-            &doc_lines,
-            0, // cursor row = 0
-            2, // cursor col = 2
-            &theme,
-            None,
-            &[],
-        );
+        let lines = prepare_visible_lines_from_slices(&PrepareVisibleLinesParams {
+            slices: &slices,
+            styled_lines: &styled_lines,
+            plain_lines: &doc_lines,
+            cursor_row: 0,
+            cursor_col: 2,
+            theme: &theme,
+            selection: None,
+            annotation_ranges: &[],
+        });
 
         assert_eq!(lines.len(), 1);
         let text = collect_text(&lines[0]);
@@ -571,16 +574,16 @@ mod tests {
             end_col: 10,
         }];
 
-        let lines = prepare_visible_lines_from_slices(
-            &slices,
-            &styled_lines,
-            &doc_lines,
-            99,
-            0,
-            &theme,
-            None,
-            &[],
-        );
+        let lines = prepare_visible_lines_from_slices(&PrepareVisibleLinesParams {
+            slices: &slices,
+            styled_lines: &styled_lines,
+            plain_lines: &doc_lines,
+            cursor_row: 99,
+            cursor_col: 0,
+            theme: &theme,
+            selection: None,
+            annotation_ranges: &[],
+        });
 
         assert_eq!(lines.len(), 1);
         assert_eq!(collect_text(&lines[0]), "");
@@ -598,16 +601,16 @@ mod tests {
             end_col: 5,
         }];
 
-        let lines = prepare_visible_lines_from_slices(
-            &slices,
-            &styled_lines,
-            &doc_lines,
-            99,
-            0,
-            &theme,
-            None,
-            &[],
-        );
+        let lines = prepare_visible_lines_from_slices(&PrepareVisibleLinesParams {
+            slices: &slices,
+            styled_lines: &styled_lines,
+            plain_lines: &doc_lines,
+            cursor_row: 99,
+            cursor_col: 0,
+            theme: &theme,
+            selection: None,
+            annotation_ranges: &[],
+        });
 
         assert_eq!(collect_text(&lines[0]), "cde");
     }

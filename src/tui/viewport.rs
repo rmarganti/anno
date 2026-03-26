@@ -4,7 +4,6 @@
 /// on screen. Each parsed [`Block`] expands into one or more document lines (e.g. a
 /// multi-line paragraph or code block). The mapping from blocks to document lines is
 /// provided externally via [`DisplayLayout`].
-
 /// Cursor position in the document (0-indexed row and column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorPosition {
@@ -69,13 +68,11 @@ impl DisplayLayout {
                         // Search backward from chunk_end for a whitespace boundary.
                         // Walk the char_indices to find positions.
                         let mut last_ws = None;
-                        let mut idx = 0;
-                        for (_, ch) in line.chars().enumerate().skip(col).take(chunk_end - col) {
+                        for (idx, (_, ch)) in line.chars().enumerate().skip(col).take(chunk_end - col).enumerate() {
                             let abs_idx = col + idx;
                             if ch.is_whitespace() {
                                 last_ws = Some(abs_idx + 1); // break after whitespace
                             }
-                            idx += 1;
                         }
                         match last_ws {
                             Some(b) if b > col => b,
