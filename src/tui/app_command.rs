@@ -3,8 +3,6 @@
 pub enum AppCommand {
     /// Quit the application.
     Quit(QuitKind),
-    /// Write annotations to output mid-session.
-    Write,
 }
 
 /// How the application should quit.

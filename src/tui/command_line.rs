@@ -53,7 +53,6 @@ impl CommandLine {
         let cmd = match self.buffer.as_str() {
             "q" => AppCommand::Quit(QuitKind::WithOutput),
             "q!" => AppCommand::Quit(QuitKind::Silent),
-            "w" => AppCommand::Write,
             _ => {
                 self.buffer.clear();
                 return CommandLineEvent::ExitToNormal;
@@ -118,16 +117,6 @@ mod tests {
         assert_eq!(
             cl.handle_confirm(),
             CommandLineEvent::Command(AppCommand::Quit(QuitKind::Silent))
-        );
-    }
-
-    #[test]
-    fn confirm_w_returns_write() {
-        let mut cl = CommandLine::new();
-        cl.handle_char('w');
-        assert_eq!(
-            cl.handle_confirm(),
-            CommandLineEvent::Command(AppCommand::Write)
         );
     }
 

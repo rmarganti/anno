@@ -275,11 +275,7 @@ impl App {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-            AppCommand::Write => {
-                let output = PlannotatorExporter.export(&self.annotations);
-                eprintln!("{output}");
-                self.mode = Mode::Normal;
-            }
+
         }
     }
 
