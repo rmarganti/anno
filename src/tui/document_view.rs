@@ -144,6 +144,7 @@ impl DocumentView {
         theme: &Theme,
         is_visual: bool,
         annotation_ranges: &[TextRange],
+        selected_annotation_range: Option<&TextRange>,
     ) {
         // Update viewport dimensions (account for status row handled by caller).
         let doc_height = area.height as usize;
@@ -181,6 +182,7 @@ impl DocumentView {
                 theme,
                 selection,
                 annotation_ranges,
+                selected_annotation_range,
             },
         );
 

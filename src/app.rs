@@ -361,6 +361,16 @@ impl App {
             .filter_map(|a| a.range)
             .collect();
 
+        // Resolve the selected annotation's text range (if any) for document highlighting.
+        let selected_annotation_range = if show_panel {
+            self.annotation_list_panel
+                .selected_annotation_id()
+                .and_then(|id| self.annotations.get(id))
+                .and_then(|a| a.range)
+        } else {
+            None
+        };
+
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
             self.annotation_list_panel
@@ -374,6 +384,7 @@ impl App {
             &self.theme,
             self.mode == Mode::Visual,
             &annotation_ranges,
+            selected_annotation_range.as_ref(),
         );
 
         // -- Status bar --

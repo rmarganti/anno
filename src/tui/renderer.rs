@@ -42,6 +42,7 @@ pub struct PrepareVisibleLinesParams<'a> {
     pub theme: &'a Theme,
     pub selection: Option<(CursorPosition, CursorPosition)>,
     pub annotation_ranges: &'a [TextRange],
+    pub selected_annotation_range: Option<&'a TextRange>,
 }
 
 /// Prepare visible lines from render slices (supports both word-wrap and horizontal scroll).
@@ -72,6 +73,7 @@ pub fn prepare_visible_lines_from_slices(params: &PrepareVisibleLinesParams<'_>)
             end_col,
             params.plain_lines,
             params.annotation_ranges,
+            params.selected_annotation_range,
             params.theme,
         );
 
@@ -218,22 +220,25 @@ fn apply_annotation_overlays(
     end_col: usize,
     plain_lines: &[String],
     annotation_ranges: &[TextRange],
+    selected_annotation_range: Option<&TextRange>,
     theme: &Theme,
 ) -> Line<'static> {
     // Collect all column ranges within this display slice that need highlighting.
     let mut highlight_cols: Vec<(usize, usize)> = Vec::new();
+    // Separate tracking for the selected annotation range.
+    let mut selected_cols: Vec<(usize, usize)> = Vec::new();
 
-    for range in annotation_ranges {
+    let line_len = plain_lines
+        .get(doc_row)
+        .map(|l| l.chars().count())
+        .unwrap_or(0);
+
+    let intersect_range = |range: &TextRange| -> Option<(usize, usize)> {
         if doc_row < range.start.line || doc_row > range.end.line {
-            continue;
+            return None;
         }
-
-        let line_len = plain_lines
-            .get(doc_row)
-            .map(|l| l.chars().count())
-            .unwrap_or(0);
         if line_len == 0 {
-            continue;
+            return None;
         }
 
         let doc_col_start = if doc_row == range.start.line {
@@ -247,19 +252,32 @@ fn apply_annotation_overlays(
             line_len.saturating_sub(1)
         };
 
-        // Intersect with the display slice column range.
         let lo = doc_col_start.max(start_col);
         let hi = doc_col_end.min(end_col.saturating_sub(1));
         if lo <= hi {
-            highlight_cols.push((lo.saturating_sub(start_col), hi.saturating_sub(start_col)));
+            Some((lo.saturating_sub(start_col), hi.saturating_sub(start_col)))
+        } else {
+            None
+        }
+    };
+
+    for range in annotation_ranges {
+        if let Some(cols) = intersect_range(range) {
+            highlight_cols.push(cols);
         }
     }
 
-    if highlight_cols.is_empty() {
+    if let Some(range) = selected_annotation_range {
+        if let Some(cols) = intersect_range(range) {
+            selected_cols.push(cols);
+        }
+    }
+
+    if highlight_cols.is_empty() && selected_cols.is_empty() {
         return line;
     }
 
-    // Flatten line into chars with styles, then apply underline to highlighted columns.
+    // Flatten line into chars with styles, then apply overlays to highlighted columns.
     let mut chars_with_style: Vec<(char, Style)> = Vec::new();
     for span in line.spans.iter() {
         for c in span.content.chars() {
@@ -282,17 +300,29 @@ fn apply_annotation_overlays(
         }
     }
 
+    // Mark which char positions need the selected-annotation style.
+    let mut selected = vec![false; len];
+    for (lo, hi) in &selected_cols {
+        let lo = (*lo).min(len.saturating_sub(1));
+        let hi = (*hi).min(len.saturating_sub(1));
+        for m in &mut selected[lo..=hi] {
+            *m = true;
+        }
+    }
+
     // Rebuild spans.
     let mut spans: Vec<Span> = Vec::new();
     let mut current_text = String::new();
     let mut current_style: Option<Style> = None;
 
     for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
-        let effective_style = if marked[i] {
-            style.patch(theme.annotation_highlight)
-        } else {
-            style
-        };
+        let mut effective_style = style;
+        if marked[i] {
+            effective_style = effective_style.patch(theme.annotation_highlight);
+        }
+        if selected[i] {
+            effective_style = effective_style.patch(theme.selected_annotation_highlight);
+        }
 
         match current_style {
             Some(s) if s == effective_style => current_text.push(ch),
@@ -521,6 +551,7 @@ mod tests {
             theme: &theme,
             selection: None,
             annotation_ranges: &[],
+            selected_annotation_range: None,
         });
 
         assert_eq!(lines.len(), 2);
@@ -548,6 +579,7 @@ mod tests {
             theme: &theme,
             selection: None,
             annotation_ranges: &[],
+            selected_annotation_range: None,
         });
 
         assert_eq!(lines.len(), 1);
@@ -583,6 +615,7 @@ mod tests {
             theme: &theme,
             selection: None,
             annotation_ranges: &[],
+            selected_annotation_range: None,
         });
 
         assert_eq!(lines.len(), 1);
@@ -610,6 +643,7 @@ mod tests {
             theme: &theme,
             selection: None,
             annotation_ranges: &[],
+            selected_annotation_range: None,
         });
 
         assert_eq!(collect_text(&lines[0]), "cde");
