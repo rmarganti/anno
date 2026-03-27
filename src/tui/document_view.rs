@@ -1,8 +1,8 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Flex, Layout},
     text::Line,
     widgets::{Block, Paragraph},
+    Frame,
 };
 
 use crate::annotation::types::TextRange;
@@ -172,7 +172,9 @@ impl DocumentView {
                 annotation_ranges,
             });
 
-        let doc = Paragraph::new(visible_lines).block(Block::default());
+        let doc = Paragraph::new(visible_lines)
+            .style(theme.document)
+            .block(Block::default().style(theme.document));
         frame.render_widget(doc, main_area);
     }
 

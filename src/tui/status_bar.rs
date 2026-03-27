@@ -1,12 +1,13 @@
 use ratatui::{
-    Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Modifier,
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 
 use crate::keybinds::mode::Mode;
+use crate::tui::theme::Theme;
 
 /// Data needed to render the status bar.
 pub struct StatusBarProps<'a> {
@@ -20,7 +21,7 @@ pub struct StatusBarProps<'a> {
 }
 
 /// Render the status bar into the given area.
-pub fn render(frame: &mut Frame, area: Rect, props: &StatusBarProps) {
+pub fn render(frame: &mut Frame, area: Rect, theme: &Theme, props: &StatusBarProps) {
     let mode_label = match props.mode {
         Mode::Normal => " NORMAL ",
         Mode::Visual => " VISUAL ",
@@ -35,7 +36,10 @@ pub fn render(frame: &mut Frame, area: Rect, props: &StatusBarProps) {
     let mut status_spans = vec![
         Span::styled(
             mode_label,
-            Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+            theme
+                .status_mode
+                .add_modifier(Modifier::BOLD)
+                .remove_modifier(Modifier::REVERSED),
         ),
         Span::raw(format!(" {}  ", props.source_name)),
         Span::raw(format!("{} annotation(s)  ", props.annotation_count)),
@@ -51,13 +55,13 @@ pub fn render(frame: &mut Frame, area: Rect, props: &StatusBarProps) {
         status_spans.push(Span::raw("? help"));
     }
 
-    let status_bar = Paragraph::new(Line::from(status_spans));
+    let status_bar = Paragraph::new(Line::from(status_spans)).style(theme.status_bar);
     frame.render_widget(status_bar, area);
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 
     use super::*;
 
@@ -74,7 +78,7 @@ mod tests {
                     width: 80,
                     height: 1,
                 };
-                render(frame, area, props);
+                render(frame, area, &Theme::default(), props);
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();

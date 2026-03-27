@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
+    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource,
 };
+use crate::tui::theme::ThemeOverrides;
 
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
@@ -92,6 +93,7 @@ pub struct StartupSettings {
     pub theme: ResolvedValue<ResolvedThemeAsset>,
     pub theme_provenance: ThemeProvenance,
     pub syntax: ResolvedValue<ResolvedSyntax>,
+    pub app_theme: ThemeOverrides,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +152,8 @@ struct SettingsFile {
     theme_mode: Option<ThemeMode>,
     #[serde(default)]
     syntax: Option<String>,
+    #[serde(default, alias = "appTheme", alias = "app-theme")]
+    app_theme: ThemeOverrides,
 }
 
 impl StartupSettings {
@@ -187,6 +191,7 @@ impl StartupSettings {
             theme: theme.resolved,
             theme_provenance: theme.provenance,
             syntax,
+            app_theme: config.app_theme,
         })
     }
 }
@@ -620,5 +625,29 @@ mod tests {
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
         assert_eq!(cli.file.as_deref(), Some("demo.md"));
+    }
+
+    #[test]
+    fn settings_file_accepts_app_theme_overrides() {
+        let settings: SettingsFile = serde_json::from_str(
+            r##"{
+                "app_theme": {
+                    "cursor": { "bg": "#112233" },
+                    "selection": { "underlined": true },
+                    "annotation": { "fg": "#abcdef" }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings.app_theme.cursor.bg,
+            Some(crate::tui::theme::ThemeColor::new(17, 34, 51))
+        );
+        assert_eq!(settings.app_theme.selection.underlined, Some(true));
+        assert_eq!(
+            settings.app_theme.annotation.fg,
+            Some(crate::tui::theme::ThemeColor::new(171, 205, 239))
+        );
     }
 }

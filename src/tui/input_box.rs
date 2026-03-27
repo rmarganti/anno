@@ -1,12 +1,14 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Flex, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::Span,
     widgets::{Block, Borders, Clear},
+    Frame,
 };
 use tui_textarea::{Input, Key, TextArea};
+
+use crate::tui::theme::Theme;
 
 /// State for the modal input box widget, backed by `tui-textarea`.
 #[derive(Debug, Clone)]
@@ -62,7 +64,7 @@ impl<'a> InputBox<'a> {
     }
 
     /// Render the input box centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let box_width = (area.width as usize * 2 / 3)
             .max(30)
             .min(area.width as usize) as u16;
@@ -81,17 +83,19 @@ impl<'a> InputBox<'a> {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .style(theme.input_box)
+            .border_style(theme.input_box_border)
             .title(Span::styled(
                 format!(" {} ", self.prompt),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                theme.input_box_title,
             ))
             .title_alignment(Alignment::Left);
 
         // Clone the textarea so we can set the block on it for rendering.
         let mut ta = self.textarea.clone();
+        ta.set_style(theme.input_box);
+        ta.set_cursor_style(theme.cursor);
+        ta.set_selection_style(theme.selection_highlight);
         ta.set_block(block);
         frame.render_widget(&ta, horiz_area);
     }

@@ -50,22 +50,31 @@ impl SyntectHighlighter {
                 },
                 source: crate::startup::SettingSource::Fallback,
             },
+            app_theme: crate::tui::theme::ThemeOverrides::default(),
         })
         .expect("default startup settings should be valid")
     }
 
-    pub fn from_startup(startup: &StartupSettings) -> Result<Self, StartupError> {
+    pub fn from_parts(syntax_name: String, theme: Theme) -> Self {
         let no_color = std::env::var("NO_COLOR").is_ok();
-        Ok(Self {
+        Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme: startup
-                .theme
-                .value
-                .load_theme()
-                .map_err(StartupError::ThemeAsset)?,
-            syntax_name: startup.syntax.value.syntax_name.clone(),
+            theme,
+            syntax_name,
             no_color,
-        })
+        }
+    }
+
+    pub fn from_startup(startup: &StartupSettings) -> Result<Self, StartupError> {
+        let theme = startup
+            .theme
+            .value
+            .load_theme()
+            .map_err(StartupError::ThemeAsset)?;
+        Ok(Self::from_parts(
+            startup.syntax.value.syntax_name.clone(),
+            theme,
+        ))
     }
 
     /// Convert a syntect RGBA color to a ratatui Color.
@@ -195,6 +204,7 @@ mod tests {
                 },
                 source: SettingSource::Cli,
             },
+            app_theme: crate::tui::theme::ThemeOverrides::default(),
         }
     }
 

@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
+    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -59,8 +59,16 @@ impl App {
         content: String,
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
-        let highlighter = SyntectHighlighter::from_startup(&startup)?;
-        let theme = Theme::new();
+        let syntect_theme = startup
+            .theme
+            .value
+            .load_theme()
+            .map_err(StartupError::ThemeAsset)?;
+        let highlighter = SyntectHighlighter::from_parts(
+            startup.syntax.value.syntax_name.clone(),
+            syntect_theme.clone(),
+        );
+        let theme = Theme::from_syntect_theme(&syntect_theme, Some(&startup.app_theme));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
@@ -247,6 +255,7 @@ impl App {
         status_bar::render(
             frame,
             status_area,
+            &self.theme,
             &StatusBarProps {
                 mode: self.mode,
                 source_name: &self.source_name,
@@ -260,7 +269,7 @@ impl App {
 
         // -- Input box overlay --
         if let Some(ib) = self.annotation_controller.input_box() {
-            ib.render(frame, main_area);
+            ib.render(frame, main_area, &self.theme);
         }
     }
 }
