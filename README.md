@@ -60,6 +60,7 @@ anno --theme "~/.config/bat/themes/Catppuccin Mocha.tmTheme" notes.md
 ```json
 {
   "theme": "catppuccin-mocha",
+  "background": "default",
   "theme_mode": "dark",
   "syntax": "rust",
   "app_theme": {
@@ -79,11 +80,16 @@ anno --theme "~/.config/bat/themes/Catppuccin Mocha.tmTheme" notes.md
 Supported top-level keys:
 
 - `theme`: built-in theme name or explicit `.tmTheme` path.
+- `background`: `theme` or `default`. `default` uses the terminal's default background color for the main document surface.
 - `theme_mode`: `auto`, `light`, or `dark`.
 - `syntax`: syntax name, token, or extension.
 - `app_theme`: optional document-overlay overrides for `cursor`, `selection`, and `annotation`.
 
 The settings parser also accepts `themeMode` / `theme-mode` and `appTheme` / `app-theme` as aliases for the snake_case keys above.
+
+`background` controls the primary document background independently of the resolved syntax theme.
+Use `default` if you want anno to fall back to the terminal's default background instead of the
+theme's RGB background.
 
 `app_theme` is intentionally narrow: it only affects document overlays layered on top of the
 resolved syntax theme. It does not override widget chrome such as the status bar, mode pill,

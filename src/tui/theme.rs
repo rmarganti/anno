@@ -72,6 +72,14 @@ struct DerivedThemePalette {
 /// This surface intentionally covers only cursor, selection, and annotation styling.
 /// Widget chrome such as the status bar, mode pill, and input box still comes from
 /// `UiTheme` derivation rather than `app_theme` settings.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentBackground {
+    #[default]
+    Theme,
+    Default,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeOverlayOverrides {
@@ -178,18 +186,21 @@ impl<'de> Deserialize<'de> for ThemeColor {
 
 impl UiTheme {
     pub fn new() -> Self {
-        Self::from_syntect_theme(&SyntectTheme::default(), None)
+        Self::from_syntect_theme(&SyntectTheme::default(), None, DocumentBackground::Theme)
     }
 
     pub fn from_syntect_theme(
         theme: &SyntectTheme,
         overrides: Option<&ThemeOverlayOverrides>,
+        document_background: DocumentBackground,
     ) -> Self {
         let palette = DerivedThemePalette::from_syntect_theme(theme);
         let overrides = overrides.cloned().unwrap_or_default();
+        let document =
+            apply_document_background(style_with_surface(palette.document), document_background);
 
         Self {
-            document: style_with_surface(palette.document),
+            document,
             cursor: overrides
                 .cursor
                 .apply(style_with_surface(palette.cursor).add_modifier(Modifier::BOLD)),
@@ -202,7 +213,10 @@ impl UiTheme {
             selected_annotation_highlight: style_with_surface(palette.selected_annotation),
             status_bar: style_with_surface(palette.status_bar),
             status_mode: style_with_surface(palette.status_mode).add_modifier(Modifier::BOLD),
-            input_box: style_with_surface(palette.document),
+            input_box: apply_document_background(
+                style_with_surface(palette.document),
+                document_background,
+            ),
             input_box_border: style_with_fg(palette.input_border_fg),
             input_box_title: style_with_fg(palette.input_border_fg).add_modifier(Modifier::BOLD),
             panel: style_with_surface(palette.panel),
@@ -385,6 +399,13 @@ fn style_with_fg(fg: ThemeColor) -> Style {
     Style::default().fg(fg.to_ratatui())
 }
 
+fn apply_document_background(style: Style, document_background: DocumentBackground) -> Style {
+    match document_background {
+        DocumentBackground::Theme => style,
+        DocumentBackground::Default => style.bg(Color::Reset),
+    }
+}
+
 fn derive_accent(
     theme: &SyntectTheme,
     foreground: ThemeColor,
@@ -520,7 +541,7 @@ mod tests {
             ..SyntectTheme::default()
         };
 
-        let derived = UiTheme::from_syntect_theme(&theme, None);
+        let derived = UiTheme::from_syntect_theme(&theme, None, DocumentBackground::Theme);
 
         assert_eq!(derived.document.fg, Some(Color::Rgb(220, 220, 220)));
         assert_eq!(derived.document.bg, Some(Color::Rgb(16, 18, 20)));
@@ -683,7 +704,8 @@ mod tests {
             },
         };
 
-        let derived = UiTheme::from_syntect_theme(&theme, Some(&overrides));
+        let derived =
+            UiTheme::from_syntect_theme(&theme, Some(&overrides), DocumentBackground::Theme);
 
         assert_eq!(derived.cursor.fg, Some(Color::Rgb(1, 2, 3)));
         assert_eq!(derived.cursor.bg, Some(Color::Rgb(4, 5, 6)));
@@ -705,6 +727,18 @@ mod tests {
     fn theme_color_deserializes_from_hex() {
         let color: ThemeColor = serde_json::from_str("\"#7aa2f7\"").unwrap();
         assert_eq!(color, ThemeColor::new(122, 162, 247));
+    }
+
+    #[test]
+    fn document_background_default_uses_terminal_default_color() {
+        let derived = UiTheme::from_syntect_theme(
+            &SyntectTheme::default(),
+            None,
+            DocumentBackground::Default,
+        );
+
+        assert_eq!(derived.document.bg, Some(Color::Reset));
+        assert_eq!(derived.input_box.bg, Some(Color::Reset));
     }
 
     #[test]

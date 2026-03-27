@@ -6,6 +6,7 @@ use syntect::parsing::SyntaxSet;
 use super::{Highlighter, StyledSpan};
 use crate::highlight::theme_assets::default_fallback_resolved_theme;
 use crate::startup::{ResolvedSyntax, StartupError, StartupSettings};
+use crate::tui::theme::DocumentBackground;
 
 /// Magic value stored in the alpha byte of a `syntect::highlighting::Color` to signal
 /// that `r` should be interpreted as an ANSI 256-color palette index rather than an
@@ -24,6 +25,7 @@ impl SyntectHighlighter {
     pub fn new() -> Self {
         let fallback_theme = default_fallback_resolved_theme();
         Self::from_startup(&StartupSettings {
+            document_background: DocumentBackground::Theme,
             theme_mode: crate::startup::ResolvedValue {
                 value: crate::startup::ThemeMode::Auto,
                 source: crate::startup::SettingSource::Auto,
@@ -187,6 +189,7 @@ mod tests {
     fn startup_with_syntax(syntax_name: &str) -> StartupSettings {
         let fallback_theme = default_fallback_resolved_theme();
         StartupSettings {
+            document_background: DocumentBackground::Theme,
             theme_mode: ResolvedValue {
                 value: ThemeMode::Dark,
                 source: SettingSource::Auto,
