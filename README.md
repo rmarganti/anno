@@ -40,6 +40,7 @@ Use `--theme`, `--theme-mode`, and `--syntax` on the command line, or set the sa
 - `--theme <NAME_OR_PATH>` picks either a built-in theme name or an explicit path to a `.tmTheme` file.
 - `--theme-mode <auto|light|dark>` controls automatic built-in theme selection when no explicit theme is set.
 - `--syntax <NAME_OR_EXTENSION>` overrides syntax highlighting detection.
+- Bare values like `mocha` or `neverforest` stay in built-in theme resolution; values with `.tmTheme`, `/`, `\\`, or `~/` are treated as file paths.
 
 Examples:
 
@@ -120,6 +121,7 @@ Anno can load compatible `.tmTheme` files by explicit path, which makes it work 
 - Built-in theme names are anno-specific; bat theme names are not auto-resolved.
 - Point anno at the actual theme file instead of the bat theme name.
 - Relative, absolute, `~/...`, and explicit file-name paths like `custom.tmTheme` are treated as paths.
+- A name like `Catppuccin Mocha.tmTheme` counts as a path even without a directory prefix.
 
 Example:
 

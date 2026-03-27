@@ -21,6 +21,22 @@ pub struct BuiltInThemeAsset {
 }
 
 impl BuiltInThemeAsset {
+    pub const fn new(
+        canonical_name: &'static str,
+        aliases: &'static [&'static str],
+        file_name: &'static str,
+        mode: BuiltInThemeMode,
+        contents: &'static str,
+    ) -> Self {
+        Self {
+            canonical_name,
+            aliases,
+            file_name,
+            mode,
+            contents,
+        }
+    }
+
     pub fn names(self) -> impl Iterator<Item = &'static str> {
         std::iter::once(self.canonical_name).chain(self.aliases.iter().copied())
     }
@@ -31,31 +47,40 @@ impl BuiltInThemeAsset {
     }
 }
 
-const CATPPUCCIN_LATTE: BuiltInThemeAsset = BuiltInThemeAsset {
-    canonical_name: "catppuccin-latte",
-    aliases: &["catppuccin latte", "latte", "catppuccin_latte"],
-    file_name: "Catppuccin Latte.tmTheme",
-    mode: BuiltInThemeMode::Light,
-    contents: include_str!("themes/Catppuccin Latte.tmTheme"),
-};
+macro_rules! built_in_theme {
+    ($canonical_name:literal, [$($alias:literal),* $(,)?], $file_name:literal, $mode:expr) => {
+        BuiltInThemeAsset::new(
+            $canonical_name,
+            &[$($alias),*],
+            $file_name,
+            $mode,
+            include_str!(concat!("themes/", $file_name)),
+        )
+    };
+}
 
-const CATPPUCCIN_MOCHA: BuiltInThemeAsset = BuiltInThemeAsset {
-    canonical_name: "catppuccin-mocha",
-    aliases: &["catppuccin mocha", "mocha", "catppuccin_mocha"],
-    file_name: "Catppuccin Mocha.tmTheme",
-    mode: BuiltInThemeMode::Dark,
-    contents: include_str!("themes/Catppuccin Mocha.tmTheme"),
-};
+const DEFAULT_FALLBACK_THEME_INDEX: usize = 2;
 
-const NEVERFOREST: BuiltInThemeAsset = BuiltInThemeAsset {
-    canonical_name: "neverforest",
-    aliases: &[],
-    file_name: "neverforest.tmTheme",
-    mode: BuiltInThemeMode::Dark,
-    contents: include_str!("themes/neverforest.tmTheme"),
-};
-
-const BUILT_INS: [BuiltInThemeAsset; 3] = [CATPPUCCIN_LATTE, CATPPUCCIN_MOCHA, NEVERFOREST];
+const BUILT_INS: [BuiltInThemeAsset; 3] = [
+    built_in_theme!(
+        "catppuccin-latte",
+        ["catppuccin latte", "latte", "catppuccin_latte"],
+        "Catppuccin Latte.tmTheme",
+        BuiltInThemeMode::Light
+    ),
+    built_in_theme!(
+        "catppuccin-mocha",
+        ["catppuccin mocha", "mocha", "catppuccin_mocha"],
+        "Catppuccin Mocha.tmTheme",
+        BuiltInThemeMode::Dark
+    ),
+    built_in_theme!(
+        "neverforest",
+        [],
+        "neverforest.tmTheme",
+        BuiltInThemeMode::Dark
+    ),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,7 +188,7 @@ pub fn find_built_in_theme(name: &str) -> Option<&'static BuiltInThemeAsset> {
 }
 
 pub fn default_fallback_theme_asset() -> &'static BuiltInThemeAsset {
-    &NEVERFOREST
+    &BUILT_INS[DEFAULT_FALLBACK_THEME_INDEX]
 }
 
 pub fn default_fallback_resolved_theme() -> ResolvedThemeAsset {
@@ -319,6 +344,17 @@ mod tests {
     fn explicit_relative_paths_are_treated_as_paths() {
         let error = resolve_theme_asset("themes/missing").unwrap_err();
         assert!(matches!(error, ThemeAssetError::PathNotFound { .. }));
+    }
+
+    #[test]
+    fn theme_path_heuristics_are_explicit() {
+        assert!(!looks_like_theme_path("neverforest"));
+        assert!(!looks_like_theme_path("catppuccin mocha"));
+        assert!(looks_like_theme_path("missing.tmTheme"));
+        assert!(looks_like_theme_path("./missing"));
+        assert!(looks_like_theme_path("themes/missing"));
+        assert!(looks_like_theme_path("~/themes/missing"));
+        assert!(looks_like_theme_path(r"C:\themes\missing.tmTheme"));
     }
 
     #[test]
