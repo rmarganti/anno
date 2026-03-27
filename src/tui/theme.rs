@@ -24,6 +24,23 @@ pub struct UiTheme {
     pub input_box_title: Style,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ThemeSurface {
+    fg: ThemeColor,
+    bg: ThemeColor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DerivedThemePalette {
+    document: ThemeSurface,
+    cursor: ThemeSurface,
+    selection: ThemeSurface,
+    annotation_fg: ThemeColor,
+    status_bar: ThemeSurface,
+    status_mode: ThemeSurface,
+    input_border_fg: ThemeColor,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeOverrides {
@@ -134,128 +151,108 @@ impl UiTheme {
     }
 
     pub fn from_syntect_theme(theme: &SyntectTheme, overrides: Option<&ThemeOverrides>) -> Self {
+        let palette = DerivedThemePalette::from_syntect_theme(theme);
+        let overrides = overrides.cloned().unwrap_or_default();
+
+        Self {
+            document: style_with_surface(palette.document),
+            cursor: overrides
+                .cursor
+                .apply(style_with_surface(palette.cursor).add_modifier(Modifier::BOLD)),
+            selection_highlight: overrides
+                .selection
+                .apply(style_with_surface(palette.selection)),
+            annotation_highlight: overrides
+                .annotation
+                .apply(style_with_fg(palette.annotation_fg).add_modifier(Modifier::UNDERLINED)),
+            status_bar: style_with_surface(palette.status_bar),
+            status_mode: style_with_surface(palette.status_mode).add_modifier(Modifier::BOLD),
+            input_box: style_with_surface(palette.document),
+            input_box_border: style_with_fg(palette.input_border_fg),
+            input_box_title: style_with_fg(palette.input_border_fg).add_modifier(Modifier::BOLD),
+        }
+    }
+}
+
+impl DerivedThemePalette {
+    fn from_syntect_theme(theme: &SyntectTheme) -> Self {
         let settings = &theme.settings;
         let background = ThemeColor::from_syntect(settings.background).unwrap_or(DEFAULT_BG);
         let foreground = pick_readable_text(
-            background,
             &[
                 ThemeColor::from_syntect(settings.foreground).unwrap_or(DEFAULT_FG),
                 DEFAULT_FG,
                 ThemeColor::new(255, 255, 255),
                 ThemeColor::new(0, 0, 0),
             ],
+            background,
             MIN_TEXT_CONTRAST,
         );
         let accent = derive_accent(theme, foreground, background);
 
-        let cursor_bg = enforce_surface_contrast(
+        let document = ThemeSurface {
+            fg: foreground,
+            bg: background,
+        };
+
+        let cursor = surface_with_readable_text(
             ThemeColor::from_syntect(settings.caret)
                 .unwrap_or_else(|| accent.mix(foreground, 0.25)),
             background,
             accent,
-        );
-        let cursor_fg = pick_readable_text(
-            cursor_bg,
-            &[
-                foreground,
-                background,
-                ThemeColor::new(255, 255, 255),
-                ThemeColor::new(0, 0, 0),
-            ],
+            &[foreground, background],
             MIN_UI_CONTRAST,
         );
 
-        let selection_bg = enforce_surface_contrast(
+        let selection = surface_with_readable_text(
             ThemeColor::from_syntect(settings.selection)
                 .unwrap_or_else(|| accent.mix(background, 0.68)),
             background,
             accent,
-        );
-        let selection_fg = pick_readable_text(
-            selection_bg,
             &[
                 ThemeColor::from_syntect(settings.selection_foreground).unwrap_or(foreground),
                 foreground,
                 background,
-                ThemeColor::new(255, 255, 255),
-                ThemeColor::new(0, 0, 0),
             ],
             MIN_TEXT_CONTRAST,
         );
 
         let annotation_fg = pick_readable_text(
-            background,
             &[
                 ThemeColor::from_syntect(settings.highlight).unwrap_or(accent),
                 accent,
                 foreground,
             ],
+            background,
             MIN_UI_CONTRAST,
         );
 
-        let status_bg = enforce_surface_contrast(accent.mix(background, 0.84), background, accent);
-        let status_fg = pick_readable_text(
-            status_bg,
-            &[
-                foreground,
-                background,
-                ThemeColor::new(255, 255, 255),
-                ThemeColor::new(0, 0, 0),
-            ],
+        let status_bar = surface_with_readable_text(
+            accent.mix(background, 0.84),
+            background,
+            accent,
+            &[foreground, background],
             MIN_TEXT_CONTRAST,
         );
-        let status_mode_bg =
-            enforce_surface_contrast(accent.mix(background, 0.35), status_bg, accent);
-        let status_mode_fg = pick_readable_text(
-            status_mode_bg,
-            &[
-                foreground,
-                background,
-                ThemeColor::new(255, 255, 255),
-                ThemeColor::new(0, 0, 0),
-            ],
+        let status_mode = surface_with_readable_text(
+            accent.mix(background, 0.35),
+            status_bar.bg,
+            accent,
+            &[foreground, background],
             MIN_TEXT_CONTRAST,
         );
 
         let input_border_fg =
-            pick_readable_text(background, &[accent, foreground], MIN_UI_CONTRAST);
-
-        let overrides = overrides.cloned().unwrap_or_default();
+            pick_readable_text(&[accent, foreground], background, MIN_UI_CONTRAST);
 
         Self {
-            document: Style::default()
-                .bg(background.to_ratatui())
-                .fg(foreground.to_ratatui()),
-            cursor: overrides.cursor.apply(
-                Style::default()
-                    .bg(cursor_bg.to_ratatui())
-                    .fg(cursor_fg.to_ratatui())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            selection_highlight: overrides.selection.apply(
-                Style::default()
-                    .bg(selection_bg.to_ratatui())
-                    .fg(selection_fg.to_ratatui()),
-            ),
-            annotation_highlight: overrides.annotation.apply(
-                Style::default()
-                    .fg(annotation_fg.to_ratatui())
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
-            status_bar: Style::default()
-                .bg(status_bg.to_ratatui())
-                .fg(status_fg.to_ratatui()),
-            status_mode: Style::default()
-                .bg(status_mode_bg.to_ratatui())
-                .fg(status_mode_fg.to_ratatui())
-                .add_modifier(Modifier::BOLD),
-            input_box: Style::default()
-                .bg(background.to_ratatui())
-                .fg(foreground.to_ratatui()),
-            input_box_border: Style::default().fg(input_border_fg.to_ratatui()),
-            input_box_title: Style::default()
-                .fg(input_border_fg.to_ratatui())
-                .add_modifier(Modifier::BOLD),
+            document,
+            cursor,
+            selection,
+            annotation_fg,
+            status_bar,
+            status_mode,
+            input_border_fg,
         }
     }
 }
@@ -286,6 +283,16 @@ fn apply_modifier(style: Style, modifier: Modifier, enabled: Option<bool>) -> St
         Some(false) => style.remove_modifier(modifier),
         None => style,
     }
+}
+
+fn style_with_surface(surface: ThemeSurface) -> Style {
+    Style::default()
+        .bg(surface.bg.to_ratatui())
+        .fg(surface.fg.to_ratatui())
+}
+
+fn style_with_fg(fg: ThemeColor) -> Style {
+    Style::default().fg(fg.to_ratatui())
 }
 
 fn derive_accent(
@@ -325,8 +332,8 @@ fn enforce_surface_contrast(
 }
 
 fn pick_readable_text(
-    background: ThemeColor,
     candidates: &[ThemeColor],
+    background: ThemeColor,
     min_contrast: f32,
 ) -> ThemeColor {
     let mut best = candidates.first().copied().unwrap_or(DEFAULT_FG);
@@ -348,6 +355,18 @@ fn pick_readable_text(
     }
 
     best
+}
+
+fn surface_with_readable_text(
+    surface: ThemeColor,
+    background: ThemeColor,
+    accent: ThemeColor,
+    candidates: &[ThemeColor],
+    min_contrast: f32,
+) -> ThemeSurface {
+    let bg = enforce_surface_contrast(surface, background, accent);
+    let fg = pick_readable_text(candidates, bg, min_contrast);
+    ThemeSurface { fg, bg }
 }
 
 fn parse_hex_color(input: &str) -> Result<ThemeColor, String> {
@@ -375,13 +394,6 @@ mod tests {
 
     fn color(r: u8, g: u8, b: u8) -> SyntectColor {
         SyntectColor { r, g, b, a: 0xff }
-    }
-
-    fn rgb(color: Option<Color>, label: &str) -> ThemeColor {
-        match color {
-            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
-            other => panic!("expected rgb {label}, got {other:?}"),
-        }
     }
 
     #[test]
@@ -428,35 +440,27 @@ mod tests {
             ..SyntectTheme::default()
         };
 
-        let derived = UiTheme::from_syntect_theme(&theme, None);
-        let selection_fg = match derived.selection_highlight.fg {
-            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
-            other => panic!("expected derived rgb foreground, got {other:?}"),
-        };
-        let selection_bg = match derived.selection_highlight.bg {
-            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
-            other => panic!("expected derived rgb background, got {other:?}"),
-        };
+        let derived = DerivedThemePalette::from_syntect_theme(&theme);
 
-        assert!(selection_fg.contrast_ratio(selection_bg) >= MIN_TEXT_CONTRAST);
+        assert!(derived.selection.fg.contrast_ratio(derived.selection.bg) >= MIN_TEXT_CONTRAST);
     }
 
     #[test]
     fn bundled_themes_keep_ui_overlays_readable() {
         for asset in built_in_theme_assets() {
             let syntect_theme = asset.load().unwrap();
-            let theme = UiTheme::from_syntect_theme(&syntect_theme, None);
-            let document_bg = rgb(theme.document.bg, "document background");
-            let cursor_bg = rgb(theme.cursor.bg, "cursor background");
-            let cursor_fg = rgb(theme.cursor.fg, "cursor foreground");
-            let selection_bg = rgb(theme.selection_highlight.bg, "selection background");
-            let selection_fg = rgb(theme.selection_highlight.fg, "selection foreground");
-            let annotation_fg = rgb(theme.annotation_highlight.fg, "annotation foreground");
-            let status_bg = rgb(theme.status_bar.bg, "status background");
-            let status_fg = rgb(theme.status_bar.fg, "status foreground");
-            let status_mode_bg = rgb(theme.status_mode.bg, "status mode background");
-            let status_mode_fg = rgb(theme.status_mode.fg, "status mode foreground");
-            let input_border_fg = rgb(theme.input_box_border.fg, "input border foreground");
+            let palette = DerivedThemePalette::from_syntect_theme(&syntect_theme);
+            let document_bg = palette.document.bg;
+            let cursor_bg = palette.cursor.bg;
+            let cursor_fg = palette.cursor.fg;
+            let selection_bg = palette.selection.bg;
+            let selection_fg = palette.selection.fg;
+            let annotation_fg = palette.annotation_fg;
+            let status_bg = palette.status_bar.bg;
+            let status_fg = palette.status_bar.fg;
+            let status_mode_bg = palette.status_mode.bg;
+            let status_mode_fg = palette.status_mode.fg;
+            let input_border_fg = palette.input_border_fg;
 
             assert!(
                 cursor_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
