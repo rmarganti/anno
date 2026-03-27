@@ -204,7 +204,8 @@ impl KeybindHandler {
             (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::MoveDown,
             (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
             (KeyCode::Enter, _) => Action::JumpToAnnotation,
-            (KeyCode::Tab | KeyCode::Esc, _) => Action::ExitToNormal,
+            (KeyCode::Tab, _) => Action::EnterAnnotationListMode,
+            (KeyCode::Esc, _) => Action::ExitToNormal,
 
             // dd starter
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
@@ -500,12 +501,17 @@ mod tests {
     }
 
     #[test]
-    fn annotation_list_exit() {
+    fn annotation_list_tab_toggles() {
         let mut h = KeybindHandler::new();
         assert_eq!(
             h.handle(Mode::AnnotationList, key(KeyCode::Tab)),
-            Action::ExitToNormal
+            Action::EnterAnnotationListMode
         );
+    }
+
+    #[test]
+    fn annotation_list_esc_exits() {
+        let mut h = KeybindHandler::new();
         assert_eq!(
             h.handle(Mode::AnnotationList, key(KeyCode::Esc)),
             Action::ExitToNormal

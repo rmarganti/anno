@@ -4,6 +4,8 @@ use ratatui::style::{Color, Modifier, Style};
 use serde::Deserialize;
 use syntect::highlighting::{Color as SyntectColor, Theme as SyntectTheme};
 
+use crate::annotation::types::AnnotationType;
+
 const DEFAULT_BG: ThemeColor = ThemeColor::new(24, 28, 26);
 const DEFAULT_FG: ThemeColor = ThemeColor::new(230, 226, 204);
 const DEFAULT_ACCENT: ThemeColor = ThemeColor::new(122, 166, 218);
@@ -11,17 +13,32 @@ const MIN_TEXT_CONTRAST: f32 = 4.5;
 const MIN_UI_CONTRAST: f32 = 3.0;
 const MIN_SURFACE_CONTRAST: f32 = 1.25;
 
+const DELETION_BASE: ThemeColor = ThemeColor::new(224, 108, 117);
+const COMMENT_BASE: ThemeColor = ThemeColor::new(229, 192, 123);
+const REPLACEMENT_BASE: ThemeColor = ThemeColor::new(97, 175, 239);
+const INSERTION_BASE: ThemeColor = ThemeColor::new(152, 195, 121);
+const GLOBAL_COMMENT_BASE: ThemeColor = ThemeColor::new(198, 120, 221);
+
 /// Centralized style definitions for the application UI.
 pub struct UiTheme {
     pub document: Style,
     pub cursor: Style,
     pub selection_highlight: Style,
     pub annotation_highlight: Style,
+    pub selected_annotation_highlight: Style,
     pub status_bar: Style,
     pub status_mode: Style,
     pub input_box: Style,
     pub input_box_border: Style,
     pub input_box_title: Style,
+    pub panel: Style,
+    pub panel_selected: Style,
+    pub panel_border: Style,
+    deletion_color: Color,
+    comment_color: Color,
+    replacement_color: Color,
+    insertion_color: Color,
+    global_comment_color: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,9 +53,18 @@ struct DerivedThemePalette {
     cursor: ThemeSurface,
     selection: ThemeSurface,
     annotation_fg: ThemeColor,
+    selected_annotation: ThemeSurface,
     status_bar: ThemeSurface,
     status_mode: ThemeSurface,
     input_border_fg: ThemeColor,
+    panel: ThemeSurface,
+    panel_selected: ThemeSurface,
+    panel_border_fg: ThemeColor,
+    deletion_fg: ThemeColor,
+    comment_fg: ThemeColor,
+    replacement_fg: ThemeColor,
+    insertion_fg: ThemeColor,
+    global_comment_fg: ThemeColor,
 }
 
 /// User-configurable overrides for document overlays derived from the active theme.
@@ -173,11 +199,30 @@ impl UiTheme {
             annotation_highlight: overrides
                 .annotation
                 .apply(style_with_fg(palette.annotation_fg).add_modifier(Modifier::UNDERLINED)),
+            selected_annotation_highlight: style_with_surface(palette.selected_annotation),
             status_bar: style_with_surface(palette.status_bar),
             status_mode: style_with_surface(palette.status_mode).add_modifier(Modifier::BOLD),
             input_box: style_with_surface(palette.document),
             input_box_border: style_with_fg(palette.input_border_fg),
             input_box_title: style_with_fg(palette.input_border_fg).add_modifier(Modifier::BOLD),
+            panel: style_with_surface(palette.panel),
+            panel_selected: style_with_surface(palette.panel_selected),
+            panel_border: style_with_fg(palette.panel_border_fg),
+            deletion_color: palette.deletion_fg.to_ratatui(),
+            comment_color: palette.comment_fg.to_ratatui(),
+            replacement_color: palette.replacement_fg.to_ratatui(),
+            insertion_color: palette.insertion_fg.to_ratatui(),
+            global_comment_color: palette.global_comment_fg.to_ratatui(),
+        }
+    }
+
+    pub fn annotation_type_color(&self, annotation_type: &AnnotationType) -> Color {
+        match annotation_type {
+            AnnotationType::Deletion => self.deletion_color,
+            AnnotationType::Comment => self.comment_color,
+            AnnotationType::Replacement => self.replacement_color,
+            AnnotationType::Insertion => self.insertion_color,
+            AnnotationType::GlobalComment => self.global_comment_color,
         }
     }
 }
@@ -235,6 +280,14 @@ impl DerivedThemePalette {
             MIN_UI_CONTRAST,
         );
 
+        let selected_annotation = surface_with_readable_text(
+            accent.mix(background, 0.78),
+            background,
+            accent,
+            &[foreground, background],
+            MIN_TEXT_CONTRAST,
+        );
+
         let status_bar = surface_with_readable_text(
             accent.mix(background, 0.84),
             background,
@@ -253,14 +306,39 @@ impl DerivedThemePalette {
         let input_border_fg =
             pick_readable_text(&[accent, foreground], background, MIN_UI_CONTRAST);
 
+        let panel = surface_with_readable_text(
+            accent.mix(background, 0.86),
+            background,
+            accent,
+            &[status_bar.fg, foreground, background],
+            MIN_TEXT_CONTRAST,
+        );
+        let panel_selected = surface_with_readable_text(
+            accent.mix(background, 0.38),
+            panel.bg,
+            accent,
+            &[status_mode.fg, foreground, background],
+            MIN_TEXT_CONTRAST,
+        );
+        let panel_border_fg = pick_readable_text(&[accent, foreground], panel.bg, MIN_UI_CONTRAST);
+
         Self {
             document,
             cursor,
             selection,
             annotation_fg,
+            selected_annotation,
             status_bar,
             status_mode,
             input_border_fg,
+            panel,
+            panel_selected,
+            panel_border_fg,
+            deletion_fg: derive_annotation_color(DELETION_BASE, background, foreground),
+            comment_fg: derive_annotation_color(COMMENT_BASE, background, foreground),
+            replacement_fg: derive_annotation_color(REPLACEMENT_BASE, background, foreground),
+            insertion_fg: derive_annotation_color(INSERTION_BASE, background, foreground),
+            global_comment_fg: derive_annotation_color(GLOBAL_COMMENT_BASE, background, foreground),
         }
     }
 }
@@ -277,12 +355,16 @@ impl StyleOverride {
             style = style.fg(fg.to_ratatui());
         }
         if let Some(bg) = self.bg {
-            style = style.bg(bg.to_ratatui());
+            style = style.bg(fg_or_bg_to_ratatui(bg));
         }
         style = apply_modifier(style, Modifier::BOLD, self.bold);
         style = apply_modifier(style, Modifier::ITALIC, self.italic);
         apply_modifier(style, Modifier::UNDERLINED, self.underlined)
     }
+}
+
+fn fg_or_bg_to_ratatui(color: ThemeColor) -> Color {
+    color.to_ratatui()
 }
 
 fn apply_modifier(style: Style, modifier: Modifier, enabled: Option<bool>) -> Style {
@@ -322,6 +404,26 @@ fn derive_accent(
         accent.lighten(0.3).mix(foreground, 0.15)
     } else {
         accent.darken(0.3).mix(foreground, 0.15)
+    }
+}
+
+fn derive_annotation_color(
+    base: ThemeColor,
+    background: ThemeColor,
+    foreground: ThemeColor,
+) -> ThemeColor {
+    let adjusted = if background.is_dark() {
+        base.lighten(0.08)
+    } else {
+        base.darken(0.12)
+    };
+
+    if adjusted.contrast_ratio(background) >= MIN_UI_CONTRAST {
+        adjusted
+    } else if background.is_dark() {
+        adjusted.lighten(0.24).mix(foreground, 0.1)
+    } else {
+        adjusted.darken(0.24).mix(foreground, 0.1)
     }
 }
 
@@ -469,6 +571,10 @@ mod tests {
             let status_mode_bg = palette.status_mode.bg;
             let status_mode_fg = palette.status_mode.fg;
             let input_border_fg = palette.input_border_fg;
+            let panel_bg = palette.panel.bg;
+            let panel_fg = palette.panel.fg;
+            let panel_selected_bg = palette.panel_selected.bg;
+            let panel_selected_fg = palette.panel_selected.fg;
 
             assert!(
                 cursor_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
@@ -513,6 +619,26 @@ mod tests {
             assert!(
                 input_border_fg.contrast_ratio(document_bg) >= MIN_UI_CONTRAST,
                 "{} input borders should remain visible",
+                asset.canonical_name
+            );
+            assert!(
+                panel_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
+                "{} panel should stand off from the document background",
+                asset.canonical_name
+            );
+            assert!(
+                panel_fg.contrast_ratio(panel_bg) >= MIN_TEXT_CONTRAST,
+                "{} panel text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                panel_selected_bg.contrast_ratio(panel_bg) >= MIN_SURFACE_CONTRAST,
+                "{} selected panel row should stand off from the panel background",
+                asset.canonical_name
+            );
+            assert!(
+                panel_selected_fg.contrast_ratio(panel_selected_bg) >= MIN_TEXT_CONTRAST,
+                "{} selected panel row text should remain readable",
                 asset.canonical_name
             );
         }
@@ -579,5 +705,26 @@ mod tests {
     fn theme_color_deserializes_from_hex() {
         let color: ThemeColor = serde_json::from_str("\"#7aa2f7\"").unwrap();
         assert_eq!(color, ThemeColor::new(122, 162, 247));
+    }
+
+    #[test]
+    fn annotation_type_colors_remain_visible_against_document_background() {
+        let theme = UiTheme::default();
+        let document_bg = ThemeColor::new(24, 28, 26);
+
+        for annotation_type in [
+            AnnotationType::Deletion,
+            AnnotationType::Comment,
+            AnnotationType::Replacement,
+            AnnotationType::Insertion,
+            AnnotationType::GlobalComment,
+        ] {
+            let color = match theme.annotation_type_color(&annotation_type) {
+                Color::Rgb(r, g, b) => ThemeColor::new(r, g, b),
+                _ => panic!("expected rgb annotation color"),
+            };
+
+            assert!(color.contrast_ratio(document_bg) >= MIN_UI_CONTRAST);
+        }
     }
 }
