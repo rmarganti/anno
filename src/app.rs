@@ -60,7 +60,8 @@ impl App {
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
         let highlighter = SyntectHighlighter::from_startup(&startup)?;
-        let theme = UiTheme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme));
+        let theme =
+            UiTheme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme_overlays));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);

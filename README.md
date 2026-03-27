@@ -80,11 +80,15 @@ Supported top-level keys:
 - `theme`: built-in theme name or explicit `.tmTheme` path.
 - `theme_mode`: `auto`, `light`, or `dark`.
 - `syntax`: syntax name, token, or extension.
-- `app_theme`: optional TUI style overrides for `cursor`, `selection`, and `annotation`.
+- `app_theme`: optional document-overlay overrides for `cursor`, `selection`, and `annotation`.
 
 The settings parser also accepts `themeMode` / `theme-mode` and `appTheme` / `app-theme` as aliases for the snake_case keys above.
 
-Each `app_theme` section supports:
+`app_theme` is intentionally narrow: it only affects document overlays layered on top of the
+resolved syntax theme. It does not override widget chrome such as the status bar, mode pill,
+input box, borders, or titles.
+
+Each supported `app_theme` section supports:
 
 - `fg`: hex RGB color like `#abcdef`
 - `bg`: hex RGB color like `#112233`

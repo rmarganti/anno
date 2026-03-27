@@ -12,7 +12,7 @@ use crate::highlight::theme_assets::{
     ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
-use crate::tui::theme::ThemeOverrides;
+use crate::tui::theme::ThemeOverlayOverrides;
 
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
@@ -102,7 +102,7 @@ pub struct StartupSettings {
     pub theme: ResolvedValue<ResolvedThemeAsset>,
     pub theme_provenance: ThemeProvenance,
     pub syntax: ResolvedValue<ResolvedSyntax>,
-    pub app_theme: ThemeOverrides,
+    pub app_theme_overlays: ThemeOverlayOverrides,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -169,7 +169,7 @@ struct SettingsFile {
     #[serde(default)]
     syntax: Option<String>,
     #[serde(default, alias = "appTheme", alias = "app-theme")]
-    app_theme: ThemeOverrides,
+    app_theme: ThemeOverlayOverrides,
 }
 
 impl StartupSettings {
@@ -212,7 +212,7 @@ impl StartupSettings {
             theme: theme.resolved,
             theme_provenance: theme.provenance,
             syntax,
-            app_theme: config.app_theme,
+            app_theme_overlays: config.app_theme,
         })
     }
 
@@ -653,7 +653,7 @@ mod tests {
                 assert_eq!(startup.syntax.source, SettingSource::Cli);
                 assert_eq!(startup.syntax.value.syntax_name, "Rust");
                 assert_eq!(
-                    startup.app_theme.cursor.bg,
+                    startup.app_theme_overlays.cursor.bg,
                     Some(crate::tui::theme::ThemeColor::new(17, 34, 51))
                 );
             },
@@ -953,5 +953,23 @@ mod tests {
             settings.app_theme.annotation.fg,
             Some(crate::tui::theme::ThemeColor::new(171, 205, 239))
         );
+    }
+
+    #[test]
+    fn settings_file_rejects_widget_style_keys_in_app_theme() {
+        let error = serde_json::from_str::<SettingsFile>(
+            r##"{
+                "app_theme": {
+                    "status_bar": { "fg": "#abcdef" }
+                }
+            }"##,
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("status_bar"));
+        assert!(message.contains("cursor"));
+        assert!(message.contains("selection"));
+        assert!(message.contains("annotation"));
     }
 }

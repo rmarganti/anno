@@ -48,7 +48,7 @@ impl SyntectHighlighter {
                 },
                 source: crate::startup::SettingSource::Fallback,
             },
-            app_theme: crate::tui::theme::ThemeOverrides::default(),
+            app_theme_overlays: crate::tui::theme::ThemeOverlayOverrides::default(),
         })
         .expect("default startup settings should be valid")
     }
@@ -210,7 +210,7 @@ mod tests {
                 },
                 source: SettingSource::Cli,
             },
-            app_theme: crate::tui::theme::ThemeOverrides::default(),
+            app_theme_overlays: crate::tui::theme::ThemeOverlayOverrides::default(),
         }
     }
 

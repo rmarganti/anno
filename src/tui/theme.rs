@@ -41,9 +41,14 @@ struct DerivedThemePalette {
     input_border_fg: ThemeColor,
 }
 
+/// User-configurable overrides for document overlays derived from the active theme.
+///
+/// This surface intentionally covers only cursor, selection, and annotation styling.
+/// Widget chrome such as the status bar, mode pill, and input box still comes from
+/// `UiTheme` derivation rather than `app_theme` settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ThemeOverrides {
+pub struct ThemeOverlayOverrides {
     #[serde(default)]
     pub cursor: StyleOverride,
     #[serde(default)]
@@ -150,7 +155,10 @@ impl UiTheme {
         Self::from_syntect_theme(&SyntectTheme::default(), None)
     }
 
-    pub fn from_syntect_theme(theme: &SyntectTheme, overrides: Option<&ThemeOverrides>) -> Self {
+    pub fn from_syntect_theme(
+        theme: &SyntectTheme,
+        overrides: Option<&ThemeOverlayOverrides>,
+    ) -> Self {
         let palette = DerivedThemePalette::from_syntect_theme(theme);
         let overrides = overrides.cloned().unwrap_or_default();
 
@@ -520,7 +528,7 @@ mod tests {
             },
             ..SyntectTheme::default()
         };
-        let overrides = ThemeOverrides {
+        let overrides = ThemeOverlayOverrides {
             cursor: StyleOverride {
                 fg: Some(ThemeColor::new(1, 2, 3)),
                 bg: Some(ThemeColor::new(4, 5, 6)),
