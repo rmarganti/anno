@@ -19,7 +19,7 @@ use crate::tui::command_line::{CommandLine, CommandLineEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -46,7 +46,7 @@ pub struct App {
     /// The exit result to return.
     exit_result: Option<ExitResult>,
     /// Centralized theme styles.
-    theme: Theme,
+    theme: UiTheme,
     /// Document view component (viewport, cursor, rendering).
     document_view: DocumentView,
     /// Annotation creation state machine.
@@ -60,7 +60,7 @@ impl App {
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
         let highlighter = SyntectHighlighter::from_startup(&startup)?;
-        let theme = Theme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme));
+        let theme = UiTheme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);

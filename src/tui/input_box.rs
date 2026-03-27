@@ -8,7 +8,7 @@ use ratatui::{
 };
 use tui_textarea::{Input, Key, TextArea};
 
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// State for the modal input box widget, backed by `tui-textarea`.
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl<'a> InputBox<'a> {
     }
 
     /// Render the input box centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme) {
         let box_width = (area.width as usize * 2 / 3)
             .max(30)
             .min(area.width as usize) as u16;

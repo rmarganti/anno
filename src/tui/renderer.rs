@@ -5,7 +5,7 @@ use ratatui::{
 
 use crate::annotation::types::TextRange;
 use crate::highlight::StyledSpan;
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CursorPosition, RenderSlice};
 
 /// Intermediate result of text-to-lines conversion.
@@ -39,7 +39,7 @@ pub struct PrepareVisibleLinesParams<'a> {
     pub plain_lines: &'a [String],
     pub cursor_row: usize,
     pub cursor_col: usize,
-    pub theme: &'a Theme,
+    pub theme: &'a UiTheme,
     pub selection: Option<(CursorPosition, CursorPosition)>,
     pub annotation_ranges: &'a [TextRange],
 }
@@ -180,7 +180,7 @@ fn slice_styled_spans(spans: &[StyledSpan], start_col: usize, end_col: usize) ->
 }
 
 /// Apply a block cursor overlay to a pre-styled `Line` at the given column.
-pub fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize, theme: &Theme) -> Line<'static> {
+pub fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize, theme: &UiTheme) -> Line<'static> {
     // Flatten all spans into chars with their original style.
     let mut chars_with_style: Vec<(char, Style)> = Vec::new();
     for span in line.spans.iter() {
@@ -231,7 +231,7 @@ fn apply_annotation_overlays(
     end_col: usize,
     plain_lines: &[String],
     annotation_ranges: &[TextRange],
-    theme: &Theme,
+    theme: &UiTheme,
 ) -> Line<'static> {
     // Collect all column ranges within this display slice that need highlighting.
     let mut highlight_cols: Vec<(usize, usize)> = Vec::new();
@@ -331,13 +331,13 @@ mod tests {
 
     use super::*;
     use crate::highlight::{Highlighter, StyledSpan};
-    use crate::tui::theme::Theme;
+    use crate::tui::theme::UiTheme;
     use crate::tui::viewport::RenderSlice;
 
     // ── Helpers ───────────────────────────────────────────────────────
 
-    fn default_theme() -> Theme {
-        Theme::new()
+    fn default_theme() -> UiTheme {
+        UiTheme::new()
     }
 
     /// A no-op highlighter that returns unstyled spans for every line.
@@ -634,7 +634,7 @@ pub fn apply_selection_to_line(
     line: Line<'_>,
     col_start: usize,
     col_end: usize,
-    theme: &Theme,
+    theme: &UiTheme,
 ) -> Line<'static> {
     let mut chars_with_style: Vec<(char, Style)> = Vec::new();
     for span in line.spans.iter() {

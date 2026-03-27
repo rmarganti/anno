@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::keybinds::mode::Mode;
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// Data needed to render the status bar.
 pub struct StatusBarProps<'a> {
@@ -21,7 +21,7 @@ pub struct StatusBarProps<'a> {
 }
 
 /// Render the status bar into the given area.
-pub fn render(frame: &mut Frame, area: Rect, theme: &Theme, props: &StatusBarProps) {
+pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarProps) {
     let mode_label = match props.mode {
         Mode::Normal => " NORMAL ",
         Mode::Visual => " VISUAL ",
@@ -78,7 +78,7 @@ mod tests {
                     width: 80,
                     height: 1,
                 };
-                render(frame, area, &Theme::default(), props);
+                render(frame, area, &UiTheme::default(), props);
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();

@@ -10,7 +10,7 @@ use crate::highlight::StyledSpan;
 use crate::keybinds::handler::Action;
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
@@ -130,7 +130,7 @@ impl DocumentView {
         &mut self,
         frame: &mut Frame,
         area: ratatui::layout::Rect,
-        theme: &Theme,
+        theme: &UiTheme,
         is_visual: bool,
         annotation_ranges: &[TextRange],
     ) {
@@ -327,7 +327,7 @@ mod tests {
         let backend = TestBackend::new(160, 12);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut view = make_view(&["hello"]);
-        let theme = Theme::default();
+        let theme = UiTheme::default();
 
         terminal
             .draw(|frame| {

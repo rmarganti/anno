@@ -12,7 +12,7 @@ const MIN_UI_CONTRAST: f32 = 3.0;
 const MIN_SURFACE_CONTRAST: f32 = 1.25;
 
 /// Centralized style definitions for the application UI.
-pub struct Theme {
+pub struct UiTheme {
     pub document: Style,
     pub cursor: Style,
     pub selection_highlight: Style,
@@ -128,7 +128,7 @@ impl<'de> Deserialize<'de> for ThemeColor {
     }
 }
 
-impl Theme {
+impl UiTheme {
     pub fn new() -> Self {
         Self::from_syntect_theme(&SyntectTheme::default(), None)
     }
@@ -260,7 +260,7 @@ impl Theme {
     }
 }
 
-impl Default for Theme {
+impl Default for UiTheme {
     fn default() -> Self {
         Self::new()
     }
@@ -398,7 +398,7 @@ mod tests {
             ..SyntectTheme::default()
         };
 
-        let derived = Theme::from_syntect_theme(&theme, None);
+        let derived = UiTheme::from_syntect_theme(&theme, None);
 
         assert_eq!(derived.document.fg, Some(Color::Rgb(220, 220, 220)));
         assert_eq!(derived.document.bg, Some(Color::Rgb(16, 18, 20)));
@@ -428,7 +428,7 @@ mod tests {
             ..SyntectTheme::default()
         };
 
-        let derived = Theme::from_syntect_theme(&theme, None);
+        let derived = UiTheme::from_syntect_theme(&theme, None);
         let selection_fg = match derived.selection_highlight.fg {
             Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
             other => panic!("expected derived rgb foreground, got {other:?}"),
@@ -445,7 +445,7 @@ mod tests {
     fn bundled_themes_keep_ui_overlays_readable() {
         for asset in built_in_theme_assets() {
             let syntect_theme = asset.load().unwrap();
-            let theme = Theme::from_syntect_theme(&syntect_theme, None);
+            let theme = UiTheme::from_syntect_theme(&syntect_theme, None);
             let document_bg = rgb(theme.document.bg, "document background");
             let cursor_bg = rgb(theme.cursor.bg, "cursor background");
             let cursor_fg = rgb(theme.cursor.fg, "cursor foreground");
@@ -532,7 +532,7 @@ mod tests {
             },
         };
 
-        let derived = Theme::from_syntect_theme(&theme, Some(&overrides));
+        let derived = UiTheme::from_syntect_theme(&theme, Some(&overrides));
 
         assert_eq!(derived.cursor.fg, Some(Color::Rgb(1, 2, 3)));
         assert_eq!(derived.cursor.bg, Some(Color::Rgb(4, 5, 6)));
