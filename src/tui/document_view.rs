@@ -1,8 +1,8 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Flex, Layout},
     text::Line,
     widgets::{Block, Paragraph},
+    Frame,
 };
 
 use crate::annotation::types::TextRange;

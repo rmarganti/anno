@@ -1,101 +1,15 @@
 use ratatui::style::{Color, Modifier, Style};
-use std::str::FromStr;
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{
-    Color as SyntectColor, FontStyle, ScopeSelectors, StyleModifier, Theme, ThemeItem,
-    ThemeSettings,
-};
+use syntect::highlighting::{Color as SyntectColor, FontStyle, Theme};
 use syntect::parsing::SyntaxSet;
 
 use super::{Highlighter, StyledSpan};
+use crate::startup::{StartupError, StartupSettings};
 
 /// Magic value stored in the alpha byte of a `syntect::highlighting::Color` to signal
 /// that `r` should be interpreted as an ANSI 256-color palette index rather than an
 /// RGB red component. Alpha = 0 is syntect's own "no color / inherit" sentinel.
 const ANSI_SENTINEL: u8 = 1;
-
-/// Construct a `syntect::highlighting::Color` that encodes an ANSI palette index.
-/// In `to_ratatui_color` this is decoded back to `Color::Indexed(idx)`.
-const fn ansi(idx: u8) -> SyntectColor {
-    SyntectColor {
-        r: idx,
-        g: 0,
-        b: 0,
-        a: ANSI_SENTINEL,
-    }
-}
-
-/// The syntect transparent/inherit sentinel: a = 0.
-/// `to_ratatui_color` maps this to `Color::Reset` (terminal default foreground).
-const INHERIT: SyntectColor = SyntectColor {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 0,
-};
-
-/// Build a programmatic syntect `Theme` that maps Markdown scope roles to ANSI
-/// terminal palette colors. Using palette indices (rather than RGB) means the
-/// user's terminal color scheme controls the appearance of highlighted text.
-///
-/// Color mapping (base16 role → ANSI index):
-///
-/// | Role              | ANSI | Used for                              |
-/// |-------------------|------|---------------------------------------|
-/// | base0B (green)    |  2   | Headings, bold markers                |
-/// | base0A (yellow)   |  3   | Keywords, important punctuation       |
-/// | base0D (blue)     |  4   | Strings, lists                        |
-/// | base0C (cyan)     |  6   | Inline code, support                  |
-/// | base08 (red)      |  1   | Functions, links                      |
-/// | base0E (magenta)  |  5   | Tags, emphasis markers                |
-/// | base0F (dark gray)|  8   | Deprecated / embedded content         |
-/// | (default)         |  —   | Plain text → Color::Reset (terminal)  |
-fn build_ansi_theme() -> Theme {
-    fn item(scope_str: &str, fg: SyntectColor, font_style: Option<FontStyle>) -> ThemeItem {
-        ThemeItem {
-            scope: ScopeSelectors::from_str(scope_str).expect("valid scope selector"),
-            style: StyleModifier {
-                foreground: Some(fg),
-                background: None,
-                font_style,
-            },
-        }
-    }
-
-    Theme {
-        name: Some("anno-ansi".to_owned()),
-        author: None,
-        settings: ThemeSettings {
-            foreground: Some(INHERIT),
-            background: None,
-            ..ThemeSettings::default()
-        },
-        scopes: vec![
-            // Headings — green (base0B)
-            item("markup.heading", ansi(2), Some(FontStyle::BOLD)),
-            // Bold text — green (base0B), bold modifier
-            item("markup.bold", ansi(2), Some(FontStyle::BOLD)),
-            // Italic text — magenta (base0E), italic modifier
-            item("markup.italic", ansi(5), Some(FontStyle::ITALIC)),
-            // Inline code — cyan (base0C)
-            item("markup.raw.inline", ansi(6), None),
-            // Fenced code blocks — green (base0B)
-            item("markup.raw.block", ansi(2), None),
-            // Blockquotes — dark gray (base0F)
-            item("markup.quote", ansi(8), None),
-            // List markers — blue (base0D)
-            item("markup.list", ansi(4), None),
-            // Punctuation (*, #, `, etc.) — yellow (base0A)
-            item("punctuation.definition", ansi(3), None),
-            // Link text [...] — red (base08)
-            item("entity.name.tag", ansi(1), None),
-            // Link URL (...) — red (base08), underlined
-            item("markup.underline.link", ansi(1), Some(FontStyle::UNDERLINE)),
-            // HTML comments — dark gray (base0F)
-            item("comment", ansi(8), None),
-        ],
-    }
-}
 
 /// Syntect-based highlighter using the built-in Markdown grammar to
 /// statefully highlight an entire document (headings, code fences,
@@ -103,19 +17,45 @@ fn build_ansi_theme() -> Theme {
 pub struct SyntectHighlighter {
     syntax_set: SyntaxSet,
     theme: Theme,
+    syntax_name: String,
     no_color: bool,
 }
 
 impl SyntectHighlighter {
-    /// Create a new highlighter. Respects the `NO_COLOR` env var — when set,
-    /// all output is unstyled.
     pub fn new() -> Self {
+        Self::from_startup(&StartupSettings {
+            theme_mode: crate::startup::ResolvedValue {
+                value: crate::startup::ThemeMode::Auto,
+                source: crate::startup::SettingSource::Auto,
+            },
+            theme: crate::startup::ResolvedValue {
+                value: crate::highlight::theme_assets::resolve_theme_asset("neverforest")
+                    .expect("fallback theme should exist"),
+                source: crate::startup::SettingSource::Fallback,
+            },
+            syntax: crate::startup::ResolvedValue {
+                value: crate::startup::ResolvedSyntax {
+                    requested: "markdown".to_owned(),
+                    syntax_name: "Markdown".to_owned(),
+                },
+                source: crate::startup::SettingSource::Fallback,
+            },
+        })
+        .expect("default startup settings should be valid")
+    }
+
+    pub fn from_startup(startup: &StartupSettings) -> Result<Self, StartupError> {
         let no_color = std::env::var("NO_COLOR").is_ok();
-        Self {
+        Ok(Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme: build_ansi_theme(),
+            theme: startup
+                .theme
+                .value
+                .load_theme()
+                .map_err(StartupError::ThemeAsset)?,
+            syntax_name: startup.syntax.value.syntax_name.clone(),
             no_color,
-        }
+        })
     }
 
     /// Convert a syntect RGBA color to a ratatui Color.
@@ -167,7 +107,7 @@ impl Highlighter for SyntectHighlighter {
 
         let syntax = self
             .syntax_set
-            .find_syntax_by_extension("md")
+            .find_syntax_by_name(&self.syntax_name)
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
         let mut h = HighlightLines::new(syntax, &self.theme);
@@ -200,12 +140,40 @@ mod tests {
     use ratatui::style::Color;
 
     use super::*;
+    use crate::highlight::theme_assets::resolve_theme_asset;
+    use crate::startup::{
+        ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode,
+    };
 
     fn make_highlighter(no_color: bool) -> SyntectHighlighter {
         SyntectHighlighter {
             syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme: build_ansi_theme(),
+            theme: resolve_theme_asset("neverforest")
+                .unwrap()
+                .load_theme()
+                .unwrap(),
+            syntax_name: "Markdown".to_owned(),
             no_color,
+        }
+    }
+
+    fn startup_with_syntax(syntax_name: &str) -> StartupSettings {
+        StartupSettings {
+            theme_mode: ResolvedValue {
+                value: ThemeMode::Dark,
+                source: SettingSource::Auto,
+            },
+            theme: ResolvedValue {
+                value: resolve_theme_asset("neverforest").unwrap(),
+                source: SettingSource::Fallback,
+            },
+            syntax: ResolvedValue {
+                value: ResolvedSyntax {
+                    requested: syntax_name.to_owned(),
+                    syntax_name: syntax_name.to_owned(),
+                },
+                source: SettingSource::Cli,
+            },
         }
     }
 
@@ -274,48 +242,6 @@ mod tests {
         assert!(has_styling, "heading should have non-default styling");
     }
 
-    // --- ANSI color tests ---
-
-    #[test]
-    fn heading_uses_ansi_color_not_rgb() {
-        let h = SyntectHighlighter::new();
-        let spans = highlight_one(&h, "# Heading");
-        // Every colored span must use an Indexed or Reset color, never Rgb.
-        for span in &spans {
-            if let Some(fg) = span.style.fg {
-                assert!(
-                    matches!(fg, Color::Indexed(_) | Color::Reset),
-                    "heading span has RGB color {:?} — expected ANSI palette color",
-                    fg
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn heading_foreground_is_green_ansi2() {
-        let h = SyntectHighlighter::new();
-        let spans = highlight_one(&h, "# Heading");
-        // The heading text (and its `#` marker) should be ANSI 2 (green / base0B).
-        let has_green = spans.iter().any(|s| s.style.fg == Some(Color::Indexed(2)));
-        assert!(
-            has_green,
-            "heading should contain a span with ANSI color 2 (green)"
-        );
-    }
-
-    #[test]
-    fn inline_code_uses_ansi_cyan() {
-        let h = SyntectHighlighter::new();
-        let spans = highlight_one(&h, "`code`");
-        // Inline code should be ANSI 6 (cyan / base0C).
-        let has_cyan = spans.iter().any(|s| s.style.fg == Some(Color::Indexed(6)));
-        assert!(
-            has_cyan,
-            "inline code should contain a span with ANSI color 6 (cyan)"
-        );
-    }
-
     #[test]
     fn to_ratatui_color_ansi_sentinel() {
         let c = SyntectColor {
@@ -381,5 +307,26 @@ mod tests {
             assert_eq!(spans[0].text, lines[i]);
             assert_eq!(spans[0].style, Style::default());
         }
+    }
+
+    #[test]
+    fn startup_settings_can_change_syntax() {
+        let h = SyntectHighlighter::from_startup(&startup_with_syntax("Rust")).unwrap();
+        let spans = highlight_one(&h, "fn main() {}");
+        let has_styling = spans.iter().any(|s| s.style != Style::default());
+        assert!(has_styling, "rust override should style rust code");
+    }
+
+    #[test]
+    fn loaded_theme_produces_non_default_colors() {
+        let h = SyntectHighlighter::new();
+        let spans = highlight_one(&h, "# Heading");
+        let has_color = spans.iter().any(|s| {
+            matches!(
+                s.style.fg,
+                Some(Color::Indexed(_)) | Some(Color::Rgb(_, _, _)) | Some(Color::Reset)
+            )
+        });
+        assert!(has_color, "theme should apply foreground colors");
     }
 }

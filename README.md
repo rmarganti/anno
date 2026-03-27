@@ -19,12 +19,17 @@ cargo build --release
 # Annotate a file
 anno document.md
 
+# Pick a built-in theme and syntax override
+anno --theme mocha --theme-mode dark --syntax rust notes.txt
+
 # Pipe from stdin
 cat document.md | anno
 
 # Save annotations to a file
 anno document.md > feedback.md
 ```
+
+Anno also reads optional startup settings from `~/.config/anno/settings.json`. Supported keys are `theme`, `theme_mode`, and `syntax`, with CLI flags taking precedence over config values.
 
 On exit with `:q`, annotations are printed to stdout as structured markdown. Use `:q!` to quit without output.
 

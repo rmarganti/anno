@@ -3,6 +3,7 @@ mod app;
 mod highlight;
 mod input;
 mod keybinds;
+mod startup;
 mod tui;
 
 use std::io::{self, IsTerminal, Write};
@@ -12,20 +13,13 @@ use clap::Parser;
 
 use app::{App, ExitResult};
 use input::{FileSource, InputSource, StdinSource};
-
-/// Anno — Terminal Markdown Annotation TUI
-#[derive(Parser)]
-#[command(name = "anno", about = "Annotate markdown files in the terminal")]
-struct Cli {
-    /// Markdown file to annotate
-    file: Option<String>,
-}
+use startup::{Cli, StartupSettings};
 
 fn main() {
     let cli = Cli::parse();
 
-    let source: Box<dyn InputSource> = if let Some(path) = cli.file {
-        Box::new(FileSource::new(path))
+    let source: Box<dyn InputSource> = if let Some(path) = cli.file.as_ref() {
+        Box::new(FileSource::new(path.clone()))
     } else if !io::stdin().is_terminal() {
         Box::new(StdinSource)
     } else {
@@ -42,7 +36,21 @@ fn main() {
         }
     };
 
-    let app = App::new(source_name, content);
+    let startup = match StartupSettings::resolve(&cli, &source_name) {
+        Ok(settings) => settings,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let app = match App::new(source_name, content, startup) {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            process::exit(1);
+        }
+    };
 
     let mut terminal = ratatui::init();
     let result = app.run(&mut terminal);

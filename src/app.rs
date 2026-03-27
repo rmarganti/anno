@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
+    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -12,6 +12,7 @@ use crate::annotation::store::AnnotationStore;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::app_command::{AppCommand, QuitKind};
 use crate::tui::command_line::{CommandLine, CommandLineEvent};
@@ -53,14 +54,18 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(source_name: String, content: String) -> Self {
-        let highlighter = SyntectHighlighter::new();
+    pub fn new(
+        source_name: String,
+        content: String,
+        startup: StartupSettings,
+    ) -> Result<Self, StartupError> {
+        let highlighter = SyntectHighlighter::from_startup(&startup)?;
         let theme = Theme::new();
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
 
-        Self {
+        Ok(Self {
             source_name,
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
@@ -71,7 +76,7 @@ impl App {
             theme,
             document_view,
             annotation_controller: AnnotationController::new(),
-        }
+        })
     }
 
     /// Run the application main loop. Returns the exit result.

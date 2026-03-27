@@ -135,7 +135,7 @@ pub fn find_built_in_theme(name: &str) -> Option<&'static BuiltInThemeAsset> {
 
 pub fn resolve_theme_asset(requested: &str) -> Result<ResolvedThemeAsset, ThemeAssetError> {
     if looks_like_theme_path(requested) {
-        let path = PathBuf::from(requested);
+        let path = expand_tilde(requested);
         if !path.exists() {
             return Err(ThemeAssetError::PathNotFound { path });
         }
@@ -182,6 +182,24 @@ fn normalize_theme_name(input: &str) -> String {
     }
 
     normalized.trim_matches('-').to_owned()
+}
+
+fn expand_tilde(input: &str) -> PathBuf {
+    let trimmed = input.trim();
+
+    if trimmed == "~" {
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(trimmed));
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+
+    PathBuf::from(trimmed)
 }
 
 fn looks_like_theme_path(input: &str) -> bool {
@@ -265,6 +283,23 @@ mod tests {
         assert!(matches!(resolved.source, ThemeAssetSource::Path(_)));
 
         fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn tilde_paths_expand_to_home_directory() {
+        let home = std::env::var("HOME").unwrap();
+        let temp_dir = PathBuf::from(home.clone()).join(".config/anno-test");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let temp_path = temp_dir.join(format!("theme-{}.tmTheme", std::process::id()));
+        fs::write(&temp_path, include_str!("themes/Catppuccin Latte.tmTheme")).unwrap();
+
+        let requested = format!("~/{}", temp_path.strip_prefix(home).unwrap().display());
+        let resolved = resolve_theme_asset(&requested).unwrap();
+        assert!(matches!(resolved.source, ThemeAssetSource::Path(_)));
+
+        fs::remove_file(temp_path).unwrap();
+        fs::remove_dir(temp_dir).unwrap();
     }
 
     #[test]
