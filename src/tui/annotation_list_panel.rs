@@ -194,7 +194,7 @@ fn type_glyph(annotation_type: &AnnotationType) -> &'static str {
         AnnotationType::Deletion => "✕",
         AnnotationType::Comment => "▸",
         AnnotationType::Replacement => "⇄",
-        AnnotationType::Insertion => "＋",
+        AnnotationType::Insertion => "+",
         AnnotationType::GlobalComment => "◆",
     }
 }
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(type_glyph(&AnnotationType::Deletion), "✕");
         assert_eq!(type_glyph(&AnnotationType::Comment), "▸");
         assert_eq!(type_glyph(&AnnotationType::Replacement), "⇄");
-        assert_eq!(type_glyph(&AnnotationType::Insertion), "＋");
+        assert_eq!(type_glyph(&AnnotationType::Insertion), "+");
         assert_eq!(type_glyph(&AnnotationType::GlobalComment), "◆");
     }
 }
