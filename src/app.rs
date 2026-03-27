@@ -247,9 +247,9 @@ impl App {
 
         // Split main_area into panel + document when the panel is shown.
         let (panel_area, doc_area) = if show_panel {
-            let [panel, doc] = Layout::horizontal([
-                Constraint::Length(PANEL_WIDTH),
+            let [doc, panel] = Layout::horizontal([
                 Constraint::Min(1),
+                Constraint::Length(PANEL_WIDTH),
             ])
             .areas(main_area);
             (Some(panel), doc)
