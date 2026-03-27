@@ -1,7 +1,6 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Modifier,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -34,13 +33,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
     let wrap_indicator = if props.word_wrap { "wrap " } else { "" };
 
     let mut status_spans = vec![
-        Span::styled(
-            mode_label,
-            theme
-                .status_mode
-                .add_modifier(Modifier::BOLD)
-                .remove_modifier(Modifier::REVERSED),
-        ),
+        Span::styled(mode_label, theme.status_mode),
         Span::raw(format!(" {}  ", props.source_name)),
         Span::raw(format!("{} annotation(s)  ", props.annotation_count)),
         Span::raw(format!("{cursor_pos}  ")),

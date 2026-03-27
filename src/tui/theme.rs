@@ -519,6 +519,19 @@ mod tests {
     }
 
     #[test]
+    fn status_mode_style_encodes_its_emphasis() {
+        let derived = UiTheme::default();
+
+        assert!(derived.status_mode.add_modifier.contains(Modifier::BOLD));
+        assert!(
+            !derived
+                .status_mode
+                .sub_modifier
+                .contains(Modifier::REVERSED)
+        );
+    }
+
+    #[test]
     fn overrides_apply_without_touching_syntax_scope_rules() {
         let theme = SyntectTheme {
             settings: ThemeSettings {
