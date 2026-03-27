@@ -12,7 +12,7 @@ use crate::highlight::theme_assets::{
     ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
-use crate::tui::theme::ThemeOverlayOverrides;
+use crate::tui::theme::{DocumentBackground, ThemeOverlayOverrides};
 
 #[path = "startup/theme_resolution.rs"]
 mod theme_resolution;
@@ -100,6 +100,7 @@ pub struct ThemeProvenance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupSettings {
+    pub document_background: DocumentBackground,
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
     pub theme_provenance: ThemeProvenance,
@@ -166,6 +167,8 @@ impl std::error::Error for StartupError {}
 struct SettingsFile {
     #[serde(default)]
     theme: Option<String>,
+    #[serde(default)]
+    background: DocumentBackground,
     #[serde(default, alias = "themeMode", alias = "theme-mode")]
     theme_mode: Option<ThemeMode>,
     #[serde(default)]
@@ -200,6 +203,7 @@ impl StartupSettings {
         )?;
 
         Ok(Self {
+            document_background: config.background,
             theme_mode,
             theme: theme.resolved,
             theme_provenance: theme.provenance,
@@ -500,6 +504,7 @@ mod tests {
                 assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
                 assert_eq!(startup.theme_mode.source, SettingSource::Cli);
                 assert_eq!(startup.theme.source, SettingSource::Cli);
+                assert_eq!(startup.document_background, DocumentBackground::Theme);
                 assert_eq!(startup.theme.value.requested, "mocha");
                 assert_eq!(
                     startup.theme_provenance.requested_theme.as_deref(),
@@ -522,6 +527,7 @@ mod tests {
 
             let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 
+            assert_eq!(startup.document_background, DocumentBackground::Theme);
             assert_eq!(startup.theme.source, SettingSource::Fallback);
             assert_eq!(startup.theme.value.requested, "neverforest");
             assert_eq!(
@@ -794,6 +800,7 @@ mod tests {
     fn settings_file_accepts_app_theme_overrides() {
         let settings: SettingsFile = serde_json::from_str(
             r##"{
+                "background": "default",
                 "app_theme": {
                     "cursor": { "bg": "#112233" },
                     "selection": { "underlined": true },
@@ -803,6 +810,7 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(settings.background, DocumentBackground::Default);
         assert_eq!(
             settings.app_theme.cursor.bg,
             Some(crate::tui::theme::ThemeColor::new(17, 34, 51))
@@ -830,5 +838,16 @@ mod tests {
         assert!(message.contains("cursor"));
         assert!(message.contains("selection"));
         assert!(message.contains("annotation"));
+    }
+
+    #[test]
+    fn startup_settings_resolve_accepts_default_background() {
+        with_temp_home(Some(r#"{ "background": "default" }"#), || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.document_background, DocumentBackground::Default);
+        });
     }
 }
