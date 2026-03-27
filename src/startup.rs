@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind,
+    default_fallback_resolved_theme, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::ThemeOverlayOverrides;
@@ -75,13 +76,6 @@ impl ResolvedSyntax {
             .or_else(|| syntax_set.find_syntax_by_name(&self.syntax_name))
             .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThemeProvenanceKind {
-    BuiltIn,
-    Path,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -328,7 +322,7 @@ where
             });
         }
 
-        let fallback = resolve_default_theme(&resolver)?;
+        let fallback = resolve_default_theme();
         return Ok(ThemeSelection {
             resolved: ResolvedValue {
                 value: fallback.clone(),
@@ -344,7 +338,7 @@ where
         });
     }
 
-    let fallback = resolve_default_theme(&resolver)?;
+    let fallback = resolve_default_theme();
     Ok(ThemeSelection {
         resolved: ResolvedValue {
             value: fallback.clone(),
@@ -360,11 +354,8 @@ where
     })
 }
 
-fn resolve_default_theme<F>(resolver: &F) -> Result<ResolvedThemeAsset, StartupError>
-where
-    F: Fn(&str) -> Result<ResolvedThemeAsset, ThemeAssetError>,
-{
-    resolver("neverforest").map_err(StartupError::ThemeAsset)
+fn resolve_default_theme() -> ResolvedThemeAsset {
+    default_fallback_resolved_theme()
 }
 
 fn build_theme_provenance(
@@ -383,24 +374,10 @@ fn build_theme_provenance(
         theme_mode_source: theme_mode.source,
         requested_theme,
         requested_theme_source,
-        resolved_theme: resolved_theme_label(resolved_theme),
+        resolved_theme: resolved_theme.label(),
         resolved_theme_source,
-        resolved_theme_kind: resolved_theme_kind(resolved_theme),
+        resolved_theme_kind: resolved_theme.kind(),
         fallback,
-    }
-}
-
-fn resolved_theme_label(theme: &ResolvedThemeAsset) -> String {
-    match &theme.source {
-        ThemeAssetSource::BuiltIn(asset) => asset.canonical_name.to_owned(),
-        ThemeAssetSource::Path(path) => path.display().to_string(),
-    }
-}
-
-fn resolved_theme_kind(theme: &ResolvedThemeAsset) -> ThemeProvenanceKind {
-    match &theme.source {
-        ThemeAssetSource::BuiltIn(_) => ThemeProvenanceKind::BuiltIn,
-        ThemeAssetSource::Path(_) => ThemeProvenanceKind::Path,
     }
 }
 

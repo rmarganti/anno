@@ -2,6 +2,7 @@ use std::fmt;
 use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 
+use serde::Serialize;
 use syntect::highlighting::{Theme, ThemeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +57,13 @@ const NEVERFOREST: BuiltInThemeAsset = BuiltInThemeAsset {
 
 const BUILT_INS: [BuiltInThemeAsset; 3] = [CATPPUCCIN_LATTE, CATPPUCCIN_MOCHA, NEVERFOREST];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeAssetKind {
+    BuiltIn,
+    Path,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThemeAssetSource {
     BuiltIn(&'static BuiltInThemeAsset),
@@ -69,6 +77,13 @@ pub struct ResolvedThemeAsset {
 }
 
 impl ResolvedThemeAsset {
+    pub fn from_built_in_requested(asset: &'static BuiltInThemeAsset, requested: &str) -> Self {
+        Self {
+            requested: requested.to_owned(),
+            source: ThemeAssetSource::BuiltIn(asset),
+        }
+    }
+
     pub fn load_theme(&self) -> Result<Theme, ThemeAssetError> {
         match &self.source {
             ThemeAssetSource::BuiltIn(asset) => asset.load(),
@@ -78,6 +93,20 @@ impl ResolvedThemeAsset {
                     source,
                 })
             }
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match &self.source {
+            ThemeAssetSource::BuiltIn(asset) => asset.canonical_name.to_owned(),
+            ThemeAssetSource::Path(path) => path.display().to_string(),
+        }
+    }
+
+    pub fn kind(&self) -> ThemeAssetKind {
+        match self.source {
+            ThemeAssetSource::BuiltIn(_) => ThemeAssetKind::BuiltIn,
+            ThemeAssetSource::Path(_) => ThemeAssetKind::Path,
         }
     }
 }
@@ -133,6 +162,15 @@ pub fn find_built_in_theme(name: &str) -> Option<&'static BuiltInThemeAsset> {
     })
 }
 
+pub fn default_fallback_theme_asset() -> &'static BuiltInThemeAsset {
+    &NEVERFOREST
+}
+
+pub fn default_fallback_resolved_theme() -> ResolvedThemeAsset {
+    let asset = default_fallback_theme_asset();
+    ResolvedThemeAsset::from_built_in_requested(asset, asset.canonical_name)
+}
+
 pub fn resolve_theme_asset(requested: &str) -> Result<ResolvedThemeAsset, ThemeAssetError> {
     if looks_like_theme_path(requested) {
         let path = expand_tilde(requested);
@@ -152,10 +190,9 @@ pub fn resolve_theme_asset(requested: &str) -> Result<ResolvedThemeAsset, ThemeA
         requested: requested.to_owned(),
     })?;
 
-    Ok(ResolvedThemeAsset {
-        requested: requested.to_owned(),
-        source: ThemeAssetSource::BuiltIn(asset),
-    })
+    Ok(ResolvedThemeAsset::from_built_in_requested(
+        asset, requested,
+    ))
 }
 
 fn normalize_theme_name(input: &str) -> String {
@@ -241,6 +278,17 @@ mod tests {
             names,
             vec!["catppuccin-latte", "catppuccin-mocha", "neverforest"]
         );
+    }
+
+    #[test]
+    fn default_fallback_theme_is_centralized() {
+        let fallback = default_fallback_resolved_theme();
+        assert_eq!(
+            fallback.requested,
+            default_fallback_theme_asset().canonical_name
+        );
+        assert_eq!(fallback.label(), "neverforest");
+        assert_eq!(fallback.kind(), ThemeAssetKind::BuiltIn);
     }
 
     #[test]

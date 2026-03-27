@@ -4,6 +4,7 @@ use syntect::highlighting::{Color as SyntectColor, FontStyle, Style as SyntectSt
 use syntect::parsing::SyntaxSet;
 
 use super::{Highlighter, StyledSpan};
+use crate::highlight::theme_assets::default_fallback_resolved_theme;
 use crate::startup::{ResolvedSyntax, StartupError, StartupSettings};
 
 /// Magic value stored in the alpha byte of a `syntect::highlighting::Color` to signal
@@ -21,14 +22,14 @@ pub struct SyntectHighlighter {
 
 impl SyntectHighlighter {
     pub fn new() -> Self {
+        let fallback_theme = default_fallback_resolved_theme();
         Self::from_startup(&StartupSettings {
             theme_mode: crate::startup::ResolvedValue {
                 value: crate::startup::ThemeMode::Auto,
                 source: crate::startup::SettingSource::Auto,
             },
             theme: crate::startup::ResolvedValue {
-                value: crate::highlight::theme_assets::resolve_theme_asset("neverforest")
-                    .expect("fallback theme should exist"),
+                value: fallback_theme.clone(),
                 source: crate::startup::SettingSource::Fallback,
             },
             theme_provenance: crate::startup::ThemeProvenance {
@@ -36,9 +37,9 @@ impl SyntectHighlighter {
                 theme_mode_source: crate::startup::SettingSource::Auto,
                 requested_theme: None,
                 requested_theme_source: None,
-                resolved_theme: "neverforest".to_owned(),
+                resolved_theme: fallback_theme.label(),
                 resolved_theme_source: crate::startup::SettingSource::Fallback,
-                resolved_theme_kind: crate::startup::ThemeProvenanceKind::BuiltIn,
+                resolved_theme_kind: fallback_theme.kind(),
                 fallback: Some(crate::startup::ThemeProvenanceFallback::DefaultThemeSelection),
             },
             syntax: crate::startup::ResolvedValue {
@@ -162,10 +163,10 @@ mod tests {
     use ratatui::style::Color;
 
     use super::*;
-    use crate::highlight::theme_assets::resolve_theme_asset;
+    use crate::highlight::theme_assets::{default_fallback_resolved_theme, resolve_theme_asset};
     use crate::startup::{
         ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode, ThemeProvenance,
-        ThemeProvenanceFallback, ThemeProvenanceKind,
+        ThemeProvenanceFallback,
     };
 
     fn make_highlighter(no_color: bool) -> SyntectHighlighter {
@@ -184,13 +185,14 @@ mod tests {
     }
 
     fn startup_with_syntax(syntax_name: &str) -> StartupSettings {
+        let fallback_theme = default_fallback_resolved_theme();
         StartupSettings {
             theme_mode: ResolvedValue {
                 value: ThemeMode::Dark,
                 source: SettingSource::Auto,
             },
             theme: ResolvedValue {
-                value: resolve_theme_asset("neverforest").unwrap(),
+                value: fallback_theme.clone(),
                 source: SettingSource::Fallback,
             },
             theme_provenance: ThemeProvenance {
@@ -198,9 +200,9 @@ mod tests {
                 theme_mode_source: SettingSource::Auto,
                 requested_theme: None,
                 requested_theme_source: None,
-                resolved_theme: "neverforest".to_owned(),
+                resolved_theme: fallback_theme.label(),
                 resolved_theme_source: SettingSource::Fallback,
-                resolved_theme_kind: ThemeProvenanceKind::BuiltIn,
+                resolved_theme_kind: fallback_theme.kind(),
                 fallback: Some(ThemeProvenanceFallback::DefaultThemeSelection),
             },
             syntax: ResolvedValue {
