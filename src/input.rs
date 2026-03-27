@@ -2,9 +2,18 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceMetadata {
+    pub display_name: String,
+    pub syntax_hint: Option<String>,
+}
+
 pub trait InputSource {
     fn read_content(&self) -> Result<String, InputError>;
     fn name(&self) -> &str;
+    fn metadata(&self) -> SourceMetadata;
 }
 
 #[derive(Debug)]
@@ -45,6 +54,13 @@ impl InputSource for FileSource {
     fn name(&self) -> &str {
         &self.path
     }
+
+    fn metadata(&self) -> SourceMetadata {
+        SourceMetadata {
+            display_name: self.path.clone(),
+            syntax_hint: Some(self.path.clone()),
+        }
+    }
 }
 
 pub struct StdinSource;
@@ -60,6 +76,13 @@ impl InputSource for StdinSource {
 
     fn name(&self) -> &str {
         "[stdin]"
+    }
+
+    fn metadata(&self) -> SourceMetadata {
+        SourceMetadata {
+            display_name: self.name().to_owned(),
+            syntax_hint: None,
+        }
     }
 }
 
@@ -86,6 +109,8 @@ mod tests {
         let content = source.read_content().unwrap();
         assert_eq!(content, "# Hello\nWorld");
         assert_eq!(source.name(), path);
+        assert_eq!(source.metadata().display_name, path);
+        assert_eq!(source.metadata().syntax_hint.as_deref(), Some(path));
 
         std::fs::remove_file(path).unwrap();
     }
@@ -94,5 +119,7 @@ mod tests {
     fn stdin_source_name() {
         let source = StdinSource;
         assert_eq!(source.name(), "[stdin]");
+        assert_eq!(source.metadata().display_name, "[stdin]");
+        assert_eq!(source.metadata().syntax_hint, None);
     }
 }

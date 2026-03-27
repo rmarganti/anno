@@ -267,10 +267,7 @@ mod tests {
             h.handle(Mode::Normal, char_key('b')),
             Action::MoveWordBackward
         );
-        assert_eq!(
-            h.handle(Mode::Normal, char_key('e')),
-            Action::MoveWordEnd
-        );
+        assert_eq!(h.handle(Mode::Normal, char_key('e')), Action::MoveWordEnd);
         assert_eq!(h.handle(Mode::Normal, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Normal, char_key('$')), Action::MoveLineEnd);
     }
@@ -418,10 +415,7 @@ mod tests {
             h.handle(Mode::Visual, char_key('b')),
             Action::MoveWordBackward
         );
-        assert_eq!(
-            h.handle(Mode::Visual, char_key('e')),
-            Action::MoveWordEnd
-        );
+        assert_eq!(h.handle(Mode::Visual, char_key('e')), Action::MoveWordEnd);
         assert_eq!(h.handle(Mode::Visual, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Visual, char_key('$')), Action::MoveLineEnd);
     }

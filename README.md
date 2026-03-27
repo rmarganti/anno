@@ -19,11 +19,114 @@ cargo build --release
 # Annotate a file
 anno document.md
 
+# Pick a built-in theme and syntax override
+anno --theme mocha --theme-mode dark --syntax rust notes.txt
+
 # Pipe from stdin
 cat document.md | anno
 
 # Save annotations to a file
 anno document.md > feedback.md
+```
+
+Anno also reads optional startup settings from `~/.config/anno/settings.json`. CLI flags override config values. When no explicit syntax is set, anno auto-detects from filenames and shebang-style first lines, then falls back to plain text.
+
+## Themes And Startup Settings
+
+Use `--theme`, `--theme-mode`, and `--syntax` on the command line, or set the same values in `~/.config/anno/settings.json`.
+
+### CLI flags
+
+- `--theme <NAME_OR_PATH>` picks either a built-in theme name or an explicit path to a `.tmTheme` file.
+- `--theme-mode <auto|light|dark>` controls automatic built-in theme selection when no explicit theme is set.
+- `--syntax <NAME_OR_EXTENSION>` overrides syntax highlighting detection.
+- Bare values like `mocha` or `neverforest` stay in built-in theme resolution; values with `.tmTheme`, `/`, `\\`, or `~/` are treated as file paths.
+
+Examples:
+
+```bash
+# Use the dark Catppuccin default selected by theme mode
+anno --theme-mode dark notes.md
+
+# Use a built-in theme directly
+anno --theme catppuccin-latte notes.md
+
+# Use an external tmTheme file explicitly
+anno --theme "~/.config/bat/themes/Catppuccin Mocha.tmTheme" notes.md
+```
+
+### settings.json schema
+
+```json
+{
+  "theme": "catppuccin-mocha",
+  "theme_mode": "dark",
+  "syntax": "rust",
+  "app_theme": {
+    "cursor": {
+      "bg": "#112233"
+    },
+    "selection": {
+      "underlined": true
+    },
+    "annotation": {
+      "fg": "#abcdef"
+    }
+  }
+}
+```
+
+Supported top-level keys:
+
+- `theme`: built-in theme name or explicit `.tmTheme` path.
+- `theme_mode`: `auto`, `light`, or `dark`.
+- `syntax`: syntax name, token, or extension.
+- `app_theme`: optional document-overlay overrides for `cursor`, `selection`, and `annotation`.
+
+The settings parser also accepts `themeMode` / `theme-mode` and `appTheme` / `app-theme` as aliases for the snake_case keys above.
+
+`app_theme` is intentionally narrow: it only affects document overlays layered on top of the
+resolved syntax theme. It does not override widget chrome such as the status bar, mode pill,
+input box, borders, or titles.
+
+Each supported `app_theme` section supports:
+
+- `fg`: hex RGB color like `#abcdef`
+- `bg`: hex RGB color like `#112233`
+- `bold`: `true` or `false`
+- `italic`: `true` or `false`
+- `underlined`: `true` or `false`
+
+### Built-in themes and defaults
+
+Built-in themes are:
+
+- `catppuccin-latte` (aliases include `latte` and `catppuccin latte`)
+- `catppuccin-mocha` (aliases include `mocha` and `catppuccin mocha`)
+- `neverforest`
+
+Theme selection works like this:
+
+- An explicit CLI theme wins over everything else.
+- Otherwise, `settings.json.theme` is used.
+- Otherwise, `theme_mode=light` chooses `catppuccin-latte`.
+- Otherwise, `theme_mode=dark` chooses `catppuccin-mocha`.
+- Otherwise, anno falls back to `neverforest`.
+- If automatic Catppuccin resolution ever fails, anno also falls back to `neverforest`.
+
+### Interoperability with bat themes
+
+Anno can load compatible `.tmTheme` files by explicit path, which makes it work with theme files you already use with `bat`.
+
+- Built-in theme names are anno-specific; bat theme names are not auto-resolved.
+- Point anno at the actual theme file instead of the bat theme name.
+- Relative, absolute, `~/...`, and explicit file-name paths like `custom.tmTheme` are treated as paths.
+- A name like `Catppuccin Mocha.tmTheme` counts as a path even without a directory prefix.
+
+Example:
+
+```bash
+anno --theme "$(bat --config-dir)/themes/Catppuccin Mocha.tmTheme" notes.rs
 ```
 
 On exit with `:q`, annotations are printed to stdout as structured markdown. Use `:q!` to quit without output.

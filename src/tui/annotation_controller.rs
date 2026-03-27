@@ -151,24 +151,22 @@ impl AnnotationController {
             .map(|ib| ib.text())
             .unwrap_or_default();
 
-        if let Some(pending) = self.pending_annotation.take() {
-            if !text.is_empty() {
-                let annotation = match pending {
-                    PendingAnnotation::Comment {
-                        range,
-                        selected_text,
-                    } => Annotation::comment(range, selected_text, text),
-                    PendingAnnotation::Replacement {
-                        range,
-                        selected_text,
-                    } => Annotation::replacement(range, selected_text, text),
-                    PendingAnnotation::Insertion { position } => {
-                        Annotation::insertion(position, text)
-                    }
-                    PendingAnnotation::GlobalComment => Annotation::global_comment(text),
-                };
-                annotations.add(annotation);
-            }
+        if let Some(pending) = self.pending_annotation.take()
+            && !text.is_empty()
+        {
+            let annotation = match pending {
+                PendingAnnotation::Comment {
+                    range,
+                    selected_text,
+                } => Annotation::comment(range, selected_text, text),
+                PendingAnnotation::Replacement {
+                    range,
+                    selected_text,
+                } => Annotation::replacement(range, selected_text, text),
+                PendingAnnotation::Insertion { position } => Annotation::insertion(position, text),
+                PendingAnnotation::GlobalComment => Annotation::global_comment(text),
+            };
+            annotations.add(annotation);
         }
 
         self.input_box = None;

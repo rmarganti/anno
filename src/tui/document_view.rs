@@ -1,8 +1,8 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout},
     text::Line,
     widgets::{Block, Paragraph},
-    Frame,
 };
 
 use crate::annotation::types::TextRange;
@@ -10,7 +10,7 @@ use crate::highlight::StyledSpan;
 use crate::keybinds::handler::Action;
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
@@ -74,8 +74,7 @@ impl DocumentView {
             }
             Action::MoveWordEnd => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport
-                    .move_word_end(&lines, &self.display_layout);
+                self.viewport.move_word_end(&lines, &self.display_layout);
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
@@ -131,10 +130,12 @@ impl DocumentView {
         &mut self,
         frame: &mut Frame,
         area: ratatui::layout::Rect,
-        theme: &Theme,
+        theme: &UiTheme,
         is_visual: bool,
         annotation_ranges: &[TextRange],
     ) {
+        frame.render_widget(Block::default().style(theme.document), area);
+
         // Update viewport dimensions (account for status row handled by caller).
         let doc_height = area.height as usize;
         let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
@@ -161,8 +162,8 @@ impl DocumentView {
             None
         };
 
-        let visible_lines: Vec<Line<'static>> = renderer::prepare_visible_lines_from_slices(
-            &renderer::PrepareVisibleLinesParams {
+        let visible_lines: Vec<Line<'static>> =
+            renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
                 slices: &render_slices,
                 styled_lines: &self.styled_lines,
                 plain_lines: &self.doc_lines,
@@ -171,10 +172,11 @@ impl DocumentView {
                 theme,
                 selection,
                 annotation_ranges,
-            },
-        );
+            });
 
-        let doc = Paragraph::new(visible_lines).block(Block::default());
+        let doc = Paragraph::new(visible_lines)
+            .style(theme.document)
+            .block(Block::default().style(theme.document));
         frame.render_widget(doc, main_area);
     }
 
@@ -208,6 +210,7 @@ mod tests {
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::Action;
     use crate::tui::viewport::CursorPosition;
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
     // ── Helpers ───────────────────────────────────────────────────────
 
@@ -317,6 +320,36 @@ mod tests {
         let consumed = view.handle_action(&Action::MoveDocumentTop);
         assert!(consumed);
         assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn render_fills_background_across_full_area_width() {
+        let backend = TestBackend::new(160, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut view = make_view(&["hello"]);
+        let theme = UiTheme::default();
+
+        terminal
+            .draw(|frame| {
+                view.render(
+                    frame,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: 160,
+                        height: 12,
+                    },
+                    &theme,
+                    false,
+                    &[],
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        let right_edge_cell = buffer.cell((159, 0)).unwrap();
+        assert_eq!(right_edge_cell.style().bg, theme.document.bg,);
+        assert_ne!(right_edge_cell.style().bg, Some(Color::Reset));
     }
 
     #[test]

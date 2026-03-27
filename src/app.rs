@@ -12,13 +12,14 @@ use crate::annotation::store::AnnotationStore;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::app_command::{AppCommand, QuitKind};
 use crate::tui::command_line::{CommandLine, CommandLineEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// The result of running the application: whether to print annotations on exit.
 pub enum ExitResult {
@@ -45,7 +46,7 @@ pub struct App {
     /// The exit result to return.
     exit_result: Option<ExitResult>,
     /// Centralized theme styles.
-    theme: Theme,
+    theme: UiTheme,
     /// Document view component (viewport, cursor, rendering).
     document_view: DocumentView,
     /// Annotation creation state machine.
@@ -53,14 +54,19 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(source_name: String, content: String) -> Self {
-        let highlighter = SyntectHighlighter::new();
-        let theme = Theme::new();
+    pub fn new(
+        source_name: String,
+        content: String,
+        startup: StartupSettings,
+    ) -> Result<Self, StartupError> {
+        let highlighter = SyntectHighlighter::from_startup(&startup)?;
+        let theme =
+            UiTheme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme_overlays));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
 
-        Self {
+        Ok(Self {
             source_name,
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
@@ -71,7 +77,7 @@ impl App {
             theme,
             document_view,
             annotation_controller: AnnotationController::new(),
-        }
+        })
     }
 
     /// Run the application main loop. Returns the exit result.
@@ -131,24 +137,28 @@ impl App {
 
             // -- Annotation creation from Visual mode --
             Action::CreateDeletion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .create_deletion(&mut self.document_view, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
             Action::CreateComment => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Comment", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
             Action::CreateReplacement => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Replacement", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
 
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_insertion(&self.document_view);
                 self.apply_annotation_action(action);
             }
@@ -159,7 +169,8 @@ impl App {
 
             // -- Input mode --
             Action::InputForward(key_event) => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .handle_input_key(key_event, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
@@ -193,7 +204,6 @@ impl App {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-
         }
     }
 
@@ -238,6 +248,7 @@ impl App {
         status_bar::render(
             frame,
             status_area,
+            &self.theme,
             &StatusBarProps {
                 mode: self.mode,
                 source_name: &self.source_name,
@@ -251,7 +262,7 @@ impl App {
 
         // -- Input box overlay --
         if let Some(ib) = self.annotation_controller.input_box() {
-            ib.render(frame, main_area);
+            ib.render(frame, main_area, &self.theme);
         }
     }
 }
