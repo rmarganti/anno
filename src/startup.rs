@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind,
-    default_fallback_resolved_theme, resolve_theme_asset,
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::ThemeOverlayOverrides;
+
+#[path = "startup/theme_resolution.rs"]
+mod theme_resolution;
 
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
@@ -62,6 +64,12 @@ pub enum ThemeProvenanceFallback {
 pub struct ResolvedValue<T> {
     pub value: T,
     pub source: SettingSource,
+}
+
+impl<T> ResolvedValue<T> {
+    fn new(value: T, source: SettingSource) -> Self {
+        Self { value, source }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -175,24 +183,14 @@ impl StartupSettings {
         let config = load_settings_file()?;
         let syntax_set = SyntaxSet::load_defaults_newlines();
 
-        let theme_mode = if let Some(value) = cli.theme_mode {
-            ResolvedValue {
-                value,
-                source: SettingSource::Cli,
-            }
-        } else if let Some(value) = config.theme_mode {
-            ResolvedValue {
-                value,
-                source: SettingSource::Config,
-            }
-        } else {
-            ResolvedValue {
-                value: ThemeMode::Auto,
-                source: SettingSource::Auto,
-            }
-        };
+        let theme_mode = resolve_theme_mode(cli.theme_mode, config.theme_mode);
 
-        let theme = resolve_theme(cli.theme.as_deref(), config.theme.as_deref(), &theme_mode)?;
+        let theme = theme_resolution::resolve_theme(
+            cli.theme.as_deref(),
+            config.theme.as_deref(),
+            &theme_mode,
+            resolve_theme_asset,
+        )?;
         let syntax = resolve_syntax(
             cli.syntax.as_deref(),
             config.syntax.as_deref(),
@@ -252,135 +250,6 @@ fn settings_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".config/anno/settings.json"))
 }
 
-fn resolve_theme(
-    cli: Option<&str>,
-    config: Option<&str>,
-    theme_mode: &ResolvedValue<ThemeMode>,
-) -> Result<ThemeSelection, StartupError> {
-    resolve_theme_with(cli, config, theme_mode, resolve_theme_asset)
-}
-
-fn resolve_theme_with<F>(
-    cli: Option<&str>,
-    config: Option<&str>,
-    theme_mode: &ResolvedValue<ThemeMode>,
-    resolver: F,
-) -> Result<ThemeSelection, StartupError>
-where
-    F: Fn(&str) -> Result<ResolvedThemeAsset, ThemeAssetError>,
-{
-    if let Some(requested) = normalize_optional(cli) {
-        return resolver(requested)
-            .map(|value| ThemeSelection {
-                resolved: ResolvedValue {
-                    value: value.clone(),
-                    source: SettingSource::Cli,
-                },
-                provenance: build_theme_provenance(
-                    theme_mode,
-                    Some((requested, SettingSource::Cli)),
-                    &value,
-                    SettingSource::Cli,
-                    None,
-                ),
-            })
-            .map_err(StartupError::ThemeAsset);
-    }
-
-    if let Some(requested) = normalize_optional(config) {
-        return resolver(requested)
-            .map(|value| ThemeSelection {
-                resolved: ResolvedValue {
-                    value: value.clone(),
-                    source: SettingSource::Config,
-                },
-                provenance: build_theme_provenance(
-                    theme_mode,
-                    Some((requested, SettingSource::Config)),
-                    &value,
-                    SettingSource::Config,
-                    None,
-                ),
-            })
-            .map_err(StartupError::ThemeAsset);
-    }
-
-    if let Some(requested) = auto_theme_name(theme_mode.value) {
-        if let Ok(value) = resolver(requested) {
-            return Ok(ThemeSelection {
-                resolved: ResolvedValue {
-                    value: value.clone(),
-                    source: SettingSource::Auto,
-                },
-                provenance: build_theme_provenance(
-                    theme_mode,
-                    None,
-                    &value,
-                    SettingSource::Auto,
-                    None,
-                ),
-            });
-        }
-
-        let fallback = resolve_default_theme();
-        return Ok(ThemeSelection {
-            resolved: ResolvedValue {
-                value: fallback.clone(),
-                source: SettingSource::Fallback,
-            },
-            provenance: build_theme_provenance(
-                theme_mode,
-                None,
-                &fallback,
-                SettingSource::Fallback,
-                Some(ThemeProvenanceFallback::AutoThemeResolutionFailed),
-            ),
-        });
-    }
-
-    let fallback = resolve_default_theme();
-    Ok(ThemeSelection {
-        resolved: ResolvedValue {
-            value: fallback.clone(),
-            source: SettingSource::Fallback,
-        },
-        provenance: build_theme_provenance(
-            theme_mode,
-            None,
-            &fallback,
-            SettingSource::Fallback,
-            Some(ThemeProvenanceFallback::DefaultThemeSelection),
-        ),
-    })
-}
-
-fn resolve_default_theme() -> ResolvedThemeAsset {
-    default_fallback_resolved_theme()
-}
-
-fn build_theme_provenance(
-    theme_mode: &ResolvedValue<ThemeMode>,
-    requested_theme: Option<(&str, SettingSource)>,
-    resolved_theme: &ResolvedThemeAsset,
-    resolved_theme_source: SettingSource,
-    fallback: Option<ThemeProvenanceFallback>,
-) -> ThemeProvenance {
-    let (requested_theme, requested_theme_source) = requested_theme
-        .map(|(requested, source)| (Some(requested.to_owned()), Some(source)))
-        .unwrap_or((None, None));
-
-    ThemeProvenance {
-        theme_mode: theme_mode.value,
-        theme_mode_source: theme_mode.source,
-        requested_theme,
-        requested_theme_source,
-        resolved_theme: resolved_theme.label(),
-        resolved_theme_source,
-        resolved_theme_kind: resolved_theme.kind(),
-        fallback,
-    }
-}
-
 fn resolve_syntax(
     cli: Option<&str>,
     config: Option<&str>,
@@ -388,33 +257,29 @@ fn resolve_syntax(
     content: &str,
     syntax_set: &SyntaxSet,
 ) -> Result<ResolvedValue<ResolvedSyntax>, StartupError> {
-    if let Some(requested) = normalize_optional(cli) {
-        return resolve_syntax_request(requested, syntax_set, SettingSource::Cli);
-    }
-
-    if let Some(requested) = normalize_optional(config) {
-        return resolve_syntax_request(requested, syntax_set, SettingSource::Config);
+    if let Some((requested, source)) = resolve_requested_string(cli, config) {
+        return resolve_syntax_request(requested, syntax_set, source);
     }
 
     if let Some((requested, syntax)) = detect_syntax(source, content, syntax_set) {
-        return Ok(ResolvedValue {
-            value: ResolvedSyntax {
+        return Ok(ResolvedValue::new(
+            ResolvedSyntax {
                 requested,
                 syntax_name: syntax.name.clone(),
             },
-            source: SettingSource::Auto,
-        });
+            SettingSource::Auto,
+        ));
     }
 
     let fallback = syntax_set.find_syntax_plain_text();
 
-    Ok(ResolvedValue {
-        value: ResolvedSyntax {
+    Ok(ResolvedValue::new(
+        ResolvedSyntax {
             requested: "plain text".to_owned(),
             syntax_name: fallback.name.clone(),
         },
-        source: SettingSource::Fallback,
-    })
+        SettingSource::Fallback,
+    ))
 }
 
 fn resolve_syntax_request(
@@ -426,13 +291,13 @@ fn resolve_syntax_request(
         requested: requested.to_owned(),
     })?;
 
-    Ok(ResolvedValue {
-        value: ResolvedSyntax {
+    Ok(ResolvedValue::new(
+        ResolvedSyntax {
             requested: requested.to_owned(),
             syntax_name: syntax.name.clone(),
         },
         source,
-    })
+    ))
 }
 
 fn detect_syntax<'a>(
@@ -490,12 +355,22 @@ fn normalize_optional(value: Option<&str>) -> Option<&str> {
     })
 }
 
-fn auto_theme_name(theme_mode: ThemeMode) -> Option<&'static str> {
-    match theme_mode {
-        ThemeMode::Auto => None,
-        ThemeMode::Light => Some("catppuccin-latte"),
-        ThemeMode::Dark => Some("catppuccin-mocha"),
-    }
+fn resolve_theme_mode(
+    cli: Option<ThemeMode>,
+    config: Option<ThemeMode>,
+) -> ResolvedValue<ThemeMode> {
+    cli.map(|value| ResolvedValue::new(value, SettingSource::Cli))
+        .or_else(|| config.map(|value| ResolvedValue::new(value, SettingSource::Config)))
+        .unwrap_or_else(|| ResolvedValue::new(ThemeMode::Auto, SettingSource::Auto))
+}
+
+fn resolve_requested_string<'a>(
+    cli: Option<&'a str>,
+    config: Option<&'a str>,
+) -> Option<(&'a str, SettingSource)> {
+    normalize_optional(cli)
+        .map(|value| (value, SettingSource::Cli))
+        .or_else(|| normalize_optional(config).map(|value| (value, SettingSource::Config)))
 }
 
 #[cfg(test)]
@@ -507,6 +382,7 @@ mod tests {
     use super::*;
     use crate::highlight::theme_assets::ThemeAssetError;
     use crate::input::SourceMetadata;
+    use crate::startup::theme_resolution::resolve_theme;
     use crate::test_support::env_lock;
 
     fn cli_from(args: &[&str]) -> Cli {
@@ -559,7 +435,7 @@ mod tests {
     }
 
     fn resolved_theme_mode(value: ThemeMode, source: SettingSource) -> ResolvedValue<ThemeMode> {
-        ResolvedValue { value, source }
+        ResolvedValue::new(value, source)
     }
 
     #[test]
@@ -568,6 +444,7 @@ mod tests {
             Some("mocha"),
             Some("latte"),
             &resolved_theme_mode(ThemeMode::Light, SettingSource::Cli),
+            resolve_theme_asset,
         )
         .unwrap();
         assert_eq!(theme.resolved.source, SettingSource::Cli);
@@ -585,6 +462,7 @@ mod tests {
             None,
             Some("latte"),
             &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+            resolve_theme_asset,
         )
         .unwrap();
         assert_eq!(theme.resolved.source, SettingSource::Config);
@@ -659,6 +537,7 @@ mod tests {
             None,
             None,
             &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+            resolve_theme_asset,
         )
         .unwrap();
         assert_eq!(theme.resolved.source, SettingSource::Auto);
@@ -673,6 +552,7 @@ mod tests {
             None,
             None,
             &resolved_theme_mode(ThemeMode::Auto, SettingSource::Auto),
+            resolve_theme_asset,
         )
         .unwrap();
         assert_eq!(theme.resolved.source, SettingSource::Fallback);
@@ -689,6 +569,7 @@ mod tests {
             Some("missing-theme"),
             None,
             &resolved_theme_mode(ThemeMode::Dark, SettingSource::Auto),
+            resolve_theme_asset,
         )
         .unwrap_err();
         assert!(matches!(error, StartupError::ThemeAsset(_)));
@@ -710,7 +591,7 @@ mod tests {
 
     #[test]
     fn auto_theme_failure_uses_neverforest_fallback() {
-        let theme = resolve_theme_with(
+        let theme = resolve_theme(
             None,
             None,
             &resolved_theme_mode(ThemeMode::Dark, SettingSource::Auto),
@@ -737,6 +618,7 @@ mod tests {
             None,
             Some("mocha"),
             &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+            resolve_theme_asset,
         )
         .unwrap();
         let json = serde_json::to_string(&theme.provenance).unwrap();
