@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use uuid::Uuid;
 
@@ -69,6 +69,7 @@ impl AnnotationListPanel {
     }
 
     /// Select a specific annotation by UUID.
+    #[cfg(test)]
     pub fn select_by_id(&mut self, id: Uuid) {
         self.selected_id = Some(id);
     }

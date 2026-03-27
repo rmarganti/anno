@@ -35,12 +35,8 @@ impl ConfirmDialog {
     /// Returns the semantic result of the key press.
     pub fn handle_key(&self, key_event: KeyEvent) -> ConfirmDialogEvent {
         match key_event.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                ConfirmDialogEvent::Confirm
-            }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                ConfirmDialogEvent::Cancel
-            }
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => ConfirmDialogEvent::Confirm,
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => ConfirmDialogEvent::Cancel,
             _ => ConfirmDialogEvent::Consumed,
         }
     }

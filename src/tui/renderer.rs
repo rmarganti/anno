@@ -70,9 +70,7 @@ pub fn prepare_visible_lines_from_slices(
         // Apply annotation highlight overlay.
         let line = apply_annotation_overlays(
             line,
-            doc_row,
-            start_col,
-            end_col,
+            slice,
             params.plain_lines,
             params.annotation_ranges,
             params.selected_annotation_range,
@@ -228,14 +226,16 @@ pub fn apply_cursor_to_line(line: Line<'_>, cursor_col: usize, theme: &UiTheme) 
 /// Apply annotation underline overlays to a line for all annotation ranges that intersect it.
 fn apply_annotation_overlays(
     line: Line<'static>,
-    doc_row: usize,
-    start_col: usize,
-    end_col: usize,
+    slice: &RenderSlice,
     plain_lines: &[String],
     annotation_ranges: &[TextRange],
     selected_annotation_range: Option<&TextRange>,
     theme: &UiTheme,
 ) -> Line<'static> {
+    let doc_row = slice.doc_row;
+    let start_col = slice.start_col;
+    let end_col = slice.end_col;
+
     // Collect all column ranges within this display slice that need highlighting.
     let mut highlight_cols: Vec<(usize, usize)> = Vec::new();
     // Separate tracking for the selected annotation range.
@@ -280,10 +280,10 @@ fn apply_annotation_overlays(
         }
     }
 
-    if let Some(range) = selected_annotation_range {
-        if let Some(cols) = intersect_range(range) {
-            selected_cols.push(cols);
-        }
+    if let Some(range) = selected_annotation_range
+        && let Some(cols) = intersect_range(range)
+    {
+        selected_cols.push(cols);
     }
 
     if highlight_cols.is_empty() && selected_cols.is_empty() {

@@ -1,8 +1,8 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout},
     text::Line,
     widgets::{Block, Paragraph},
-    Frame,
 };
 
 use crate::annotation::types::TextRange;
@@ -225,7 +225,7 @@ mod tests {
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::Action;
     use crate::tui::viewport::CursorPosition;
-    use ratatui::{backend::TestBackend, layout::Rect, style::Color, Terminal};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
     // ── Helpers ───────────────────────────────────────────────────────
 

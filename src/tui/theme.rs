@@ -529,10 +529,12 @@ mod tests {
             derived.selection_highlight.bg,
             Some(Color::Rgb(44, 92, 128))
         );
-        assert!(derived
-            .annotation_highlight
-            .add_modifier
-            .contains(Modifier::UNDERLINED));
+        assert!(
+            derived
+                .annotation_highlight
+                .add_modifier
+                .contains(Modifier::UNDERLINED)
+        );
     }
 
     #[test]
@@ -647,10 +649,12 @@ mod tests {
         let derived = UiTheme::default();
 
         assert!(derived.status_mode.add_modifier.contains(Modifier::BOLD));
-        assert!(!derived
-            .status_mode
-            .sub_modifier
-            .contains(Modifier::REVERSED));
+        assert!(
+            !derived
+                .status_mode
+                .sub_modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 
     #[test]
@@ -683,14 +687,18 @@ mod tests {
 
         assert_eq!(derived.cursor.fg, Some(Color::Rgb(1, 2, 3)));
         assert_eq!(derived.cursor.bg, Some(Color::Rgb(4, 5, 6)));
-        assert!(derived
-            .selection_highlight
-            .add_modifier
-            .contains(Modifier::UNDERLINED));
-        assert!(derived
-            .annotation_highlight
-            .add_modifier
-            .contains(Modifier::BOLD));
+        assert!(
+            derived
+                .selection_highlight
+                .add_modifier
+                .contains(Modifier::UNDERLINED)
+        );
+        assert!(
+            derived
+                .annotation_highlight
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
     }
 
     #[test]

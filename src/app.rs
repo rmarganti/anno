@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
-    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -141,13 +141,12 @@ impl App {
                     return;
                 }
                 Action::JumpToAnnotation => {
-                    if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
-                        if let Some(annotation) = self.annotations.get(id) {
-                            if let Some(range) = annotation.range {
-                                self.document_view
-                                    .set_cursor(range.start.line, range.start.column);
-                            }
-                        }
+                    if let Some(id) = self.annotation_list_panel.selected_annotation_id()
+                        && let Some(annotation) = self.annotations.get(id)
+                        && let Some(range) = annotation.range
+                    {
+                        self.document_view
+                            .set_cursor(range.start.line, range.start.column);
                     }
                     return;
                 }
@@ -314,11 +313,11 @@ impl App {
             })
         };
 
-        if let Some(annotation) = target {
-            if let Some(range) = annotation.range {
-                self.document_view
-                    .set_cursor(range.start.line, range.start.column);
-            }
+        if let Some(annotation) = target
+            && let Some(range) = annotation.range
+        {
+            self.document_view
+                .set_cursor(range.start.line, range.start.column);
         }
     }
 
