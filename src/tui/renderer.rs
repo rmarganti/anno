@@ -325,6 +325,55 @@ fn apply_annotation_overlays(
     Line::from(spans)
 }
 
+/// Apply a selection highlight overlay to a pre-styled `Line` over the given column range.
+pub fn apply_selection_to_line(
+    line: Line<'_>,
+    col_start: usize,
+    col_end: usize,
+    theme: &UiTheme,
+) -> Line<'static> {
+    let mut chars_with_style: Vec<(char, Style)> = Vec::new();
+    for span in &line.spans {
+        for c in span.content.chars() {
+            chars_with_style.push((c, span.style));
+        }
+    }
+
+    if chars_with_style.is_empty() {
+        return Line::from(Span::styled(" ", theme.selection_highlight));
+    }
+
+    let end = col_end.min(chars_with_style.len().saturating_sub(1));
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut current_text = String::new();
+    let mut current_style: Option<Style> = None;
+
+    for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
+        let effective_style = if i >= col_start && i <= end {
+            style.patch(theme.selection_highlight)
+        } else {
+            style
+        };
+
+        match current_style {
+            Some(s) if s == effective_style => current_text.push(ch),
+            _ => {
+                if let Some(s) = current_style {
+                    spans.push(Span::styled(std::mem::take(&mut current_text), s));
+                }
+                current_text.push(ch);
+                current_style = Some(effective_style);
+            }
+        }
+    }
+    if let Some(s) = current_style {
+        spans.push(Span::styled(current_text, s));
+    }
+
+    Line::from(spans)
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::text::{Line, Span};
@@ -627,55 +676,4 @@ mod tests {
 
         assert_eq!(collect_text(&lines[0]), "cde");
     }
-}
-
-/// Apply a selection highlight overlay to a pre-styled `Line` over the given column range.
-pub fn apply_selection_to_line(
-    line: Line<'_>,
-    col_start: usize,
-    col_end: usize,
-    theme: &UiTheme,
-) -> Line<'static> {
-    let mut chars_with_style: Vec<(char, Style)> = Vec::new();
-    for span in line.spans.iter() {
-        for c in span.content.chars() {
-            chars_with_style.push((c, span.style));
-        }
-    }
-
-    if chars_with_style.is_empty() {
-        // Empty line in selection: render a space with selection bg.
-        return Line::from(Span::styled(" ", theme.selection_highlight));
-    }
-
-    let end = col_end.min(chars_with_style.len().saturating_sub(1));
-
-    let mut spans: Vec<Span> = Vec::new();
-    let mut current_text = String::new();
-    let mut current_style: Option<Style> = None;
-
-    for (i, &(ch, style)) in chars_with_style.iter().enumerate() {
-        let effective_style = if i >= col_start && i <= end {
-            // Merge: keep fg from original style if set, override bg with selection.
-            style.patch(theme.selection_highlight)
-        } else {
-            style
-        };
-
-        match current_style {
-            Some(s) if s == effective_style => current_text.push(ch),
-            _ => {
-                if let Some(s) = current_style {
-                    spans.push(Span::styled(std::mem::take(&mut current_text), s));
-                }
-                current_text.push(ch);
-                current_style = Some(effective_style);
-            }
-        }
-    }
-    if let Some(s) = current_style {
-        spans.push(Span::styled(current_text, s));
-    }
-
-    Line::from(spans)
 }

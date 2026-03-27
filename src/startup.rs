@@ -308,16 +308,16 @@ fn detect_syntax<'a>(
     if let Some(source_name) = source.syntax_hint.as_deref() {
         let path = Path::new(source_name);
 
-        if let Some(file_name) = path.file_name().and_then(|value| value.to_str()) {
-            if let Some(syntax) = syntax_set.find_syntax_by_token(file_name) {
-                return Some((file_name.to_owned(), syntax));
-            }
+        if let Some(file_name) = path.file_name().and_then(|value| value.to_str())
+            && let Some(syntax) = syntax_set.find_syntax_by_token(file_name)
+        {
+            return Some((file_name.to_owned(), syntax));
         }
 
-        if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
-            if let Some(syntax) = find_syntax(extension, syntax_set) {
-                return Some((extension.to_owned(), syntax));
-            }
+        if let Some(extension) = path.extension().and_then(|value| value.to_str())
+            && let Some(syntax) = find_syntax(extension, syntax_set)
+        {
+            return Some((extension.to_owned(), syntax));
         }
     }
 

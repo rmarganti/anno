@@ -174,6 +174,7 @@ impl fmt::Display for ThemeAssetError {
 
 impl std::error::Error for ThemeAssetError {}
 
+#[cfg(test)]
 pub fn built_in_theme_assets() -> &'static [BuiltInThemeAsset] {
     &BUILT_INS
 }
@@ -255,10 +256,10 @@ fn expand_tilde(input: &str) -> PathBuf {
             .unwrap_or_else(|| PathBuf::from(trimmed));
     }
 
-    if let Some(rest) = trimmed.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
+    if let Some(rest) = trimmed.strip_prefix("~/")
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        return PathBuf::from(home).join(rest);
     }
 
     PathBuf::from(trimmed)
