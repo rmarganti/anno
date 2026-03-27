@@ -1,15 +1,15 @@
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 use uuid::Uuid;
 
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::AnnotationType;
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// Fixed width of the annotation list panel in columns.
 pub const PANEL_WIDTH: u16 = 36;
@@ -74,31 +74,23 @@ impl AnnotationListPanel {
     }
 
     /// Render the panel into the given area.
-    pub fn render(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        store: &AnnotationStore,
-        theme: &Theme,
-    ) {
-        let bg_style = Style::default().bg(theme.panel_bg);
-
-        // Fill background.
-        let blank_line = " ".repeat(area.width as usize);
-        let bg_lines: Vec<Line> = (0..area.height)
-            .map(|_| Line::from(Span::styled(blank_line.clone(), bg_style)))
-            .collect();
-        frame.render_widget(Paragraph::new(bg_lines), area);
+    pub fn render(&self, frame: &mut Frame, area: Rect, store: &AnnotationStore, theme: &UiTheme) {
+        let block = Block::default()
+            .borders(Borders::LEFT)
+            .style(theme.panel)
+            .border_style(theme.panel_border);
+        let inner = vertical_padding(block.inner(area), 1);
+        frame.render_widget(block, area);
 
         let ordered = store.ordered();
 
         if ordered.is_empty() {
             let msg = Paragraph::new("No annotations")
                 .alignment(Alignment::Center)
-                .style(bg_style);
+                .style(theme.panel);
             // Center vertically.
-            let y = area.y + area.height / 2;
-            let centered_area = Rect::new(area.x, y, area.width, 1);
+            let y = inner.y + inner.height / 2;
+            let centered_area = Rect::new(inner.x, y, inner.width, 1);
             frame.render_widget(msg, centered_area);
             return;
         }
@@ -106,7 +98,7 @@ impl AnnotationListPanel {
         let current_idx = self.resolve_index(&ordered);
 
         for (i, annotation) in ordered.iter().enumerate() {
-            if i as u16 >= area.height {
+            if i as u16 >= inner.height {
                 break;
             }
 
@@ -114,7 +106,7 @@ impl AnnotationListPanel {
             let base_style = if is_selected {
                 theme.panel_selected
             } else {
-                bg_style
+                theme.panel
             };
 
             let type_color = theme.annotation_type_color(&annotation.annotation_type);
@@ -122,9 +114,19 @@ impl AnnotationListPanel {
 
             // Build the line: "██ ✕ preview text..."
             // Indicator (2 chars) + space + glyph + space + preview
-            let indicator = Span::styled("██", Style::default().fg(type_color).bg(base_style.bg.unwrap_or(theme.panel_bg)));
+            let indicator = Span::styled(
+                "██",
+                Style::default()
+                    .fg(type_color)
+                    .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
+            );
             let spacer = Span::styled(" ", base_style);
-            let glyph_span = Span::styled(glyph, Style::default().fg(type_color).bg(base_style.bg.unwrap_or(theme.panel_bg)));
+            let glyph_span = Span::styled(
+                glyph,
+                Style::default()
+                    .fg(type_color)
+                    .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
+            );
             let spacer2 = Span::styled(" ", base_style);
 
             // Preview text: use annotation.text if non-empty, else selected_text, else type name.
@@ -140,7 +142,7 @@ impl AnnotationListPanel {
             // Used columns: 2 (indicator) + 1 (space) + glyph_width + 1 (space)
             let glyph_width = 1; // All our glyphs are single-width for layout purposes.
             let used = 2 + 1 + glyph_width + 1;
-            let available = (area.width as usize).saturating_sub(used);
+            let available = (inner.width as usize).saturating_sub(used);
             let preview: String = preview_source
                 .chars()
                 .filter(|c| !c.is_control())
@@ -151,7 +153,7 @@ impl AnnotationListPanel {
             let preview_span = Span::styled(padded, base_style);
 
             let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);
-            let line_area = Rect::new(area.x, area.y + i as u16, area.width, 1);
+            let line_area = Rect::new(inner.x, inner.y + i as u16, inner.width, 1);
             frame.render_widget(Paragraph::new(line), line_area);
         }
     }
@@ -159,10 +161,7 @@ impl AnnotationListPanel {
     /// Resolve `selected_id` to an index in the ordered list.
     /// If the selected UUID is gone (deleted), clamp to the nearest valid index.
     /// If nothing is selected, defaults to 0.
-    fn resolve_index(
-        &self,
-        ordered: &[&crate::annotation::types::Annotation],
-    ) -> usize {
+    fn resolve_index(&self, ordered: &[&crate::annotation::types::Annotation]) -> usize {
         if ordered.is_empty() {
             return 0;
         }
@@ -179,6 +178,20 @@ impl AnnotationListPanel {
             }
             None => 0,
         }
+    }
+}
+
+fn vertical_padding(area: Rect, padding: u16) -> Rect {
+    let total_padding = padding.saturating_mul(2);
+    if area.height <= total_padding {
+        Rect::new(area.x, area.y, area.width, 0)
+    } else {
+        Rect::new(
+            area.x,
+            area.y.saturating_add(padding),
+            area.width,
+            area.height - total_padding,
+        )
     }
 }
 

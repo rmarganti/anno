@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
+    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -12,6 +12,7 @@ use crate::annotation::store::AnnotationStore;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::annotation_list_panel::{AnnotationListPanel, PANEL_WIDTH};
 use crate::tui::app_command::{AppCommand, QuitKind};
@@ -20,7 +21,7 @@ use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
-use crate::tui::theme::Theme;
+use crate::tui::theme::UiTheme;
 
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
@@ -51,7 +52,7 @@ pub struct App {
     /// The exit result to return.
     exit_result: Option<ExitResult>,
     /// Centralized theme styles.
-    theme: Theme,
+    theme: UiTheme,
     /// Document view component (viewport, cursor, rendering).
     document_view: DocumentView,
     /// Annotation creation state machine.
@@ -63,14 +64,19 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(source_name: String, content: String) -> Self {
-        let highlighter = SyntectHighlighter::new();
-        let theme = Theme::new();
+    pub fn new(
+        source_name: String,
+        content: String,
+        startup: StartupSettings,
+    ) -> Result<Self, StartupError> {
+        let highlighter = SyntectHighlighter::from_startup(&startup)?;
+        let theme =
+            UiTheme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme_overlays));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
 
-        Self {
+        Ok(Self {
             source_name,
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
@@ -83,7 +89,7 @@ impl App {
             annotation_controller: AnnotationController::new(),
             annotation_list_panel: AnnotationListPanel::new(),
             confirm_dialog: None,
-        }
+        })
     }
 
     /// Run the application main loop. Returns the exit result.
@@ -125,18 +131,21 @@ impl App {
         if self.mode == Mode::AnnotationList {
             match action {
                 Action::MoveDown => {
-                    self.annotation_list_panel.move_selection_down(&self.annotations);
+                    self.annotation_list_panel
+                        .move_selection_down(&self.annotations);
                     return;
                 }
                 Action::MoveUp => {
-                    self.annotation_list_panel.move_selection_up(&self.annotations);
+                    self.annotation_list_panel
+                        .move_selection_up(&self.annotations);
                     return;
                 }
                 Action::JumpToAnnotation => {
                     if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
                         if let Some(annotation) = self.annotations.get(id) {
                             if let Some(range) = annotation.range {
-                                self.document_view.set_cursor(range.start.line, range.start.column);
+                                self.document_view
+                                    .set_cursor(range.start.line, range.start.column);
                             }
                         }
                     }
@@ -208,24 +217,28 @@ impl App {
 
             // -- Annotation creation from Visual mode --
             Action::CreateDeletion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .create_deletion(&mut self.document_view, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
             Action::CreateComment => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Comment", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
             Action::CreateReplacement => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Replacement", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
 
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_insertion(&self.document_view);
                 self.apply_annotation_action(action);
             }
@@ -236,7 +249,8 @@ impl App {
 
             // -- Input mode --
             Action::InputForward(key_event) => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .handle_input_key(key_event, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
@@ -270,7 +284,6 @@ impl App {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-
         }
     }
 
@@ -303,7 +316,8 @@ impl App {
 
         if let Some(annotation) = target {
             if let Some(range) = annotation.range {
-                self.document_view.set_cursor(range.start.line, range.start.column);
+                self.document_view
+                    .set_cursor(range.start.line, range.start.column);
             }
         }
     }
@@ -343,11 +357,9 @@ impl App {
 
         // Split main_area into panel + document when the panel is shown.
         let (panel_area, doc_area) = if show_panel {
-            let [doc, panel] = Layout::horizontal([
-                Constraint::Min(1),
-                Constraint::Length(PANEL_WIDTH),
-            ])
-            .areas(main_area);
+            let [doc, panel] =
+                Layout::horizontal([Constraint::Min(1), Constraint::Length(PANEL_WIDTH)])
+                    .areas(main_area);
             (Some(panel), doc)
         } else {
             (None, main_area)
@@ -392,6 +404,7 @@ impl App {
         status_bar::render(
             frame,
             status_area,
+            &self.theme,
             &StatusBarProps {
                 mode: self.mode,
                 source_name: &self.source_name,
@@ -405,7 +418,7 @@ impl App {
 
         // -- Input box overlay --
         if let Some(ib) = self.annotation_controller.input_box() {
-            ib.render(frame, main_area);
+            ib.render(frame, main_area, &self.theme);
         }
 
         // -- Confirm dialog overlay --

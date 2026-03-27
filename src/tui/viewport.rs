@@ -68,7 +68,13 @@ impl DisplayLayout {
                         // Search backward from chunk_end for a whitespace boundary.
                         // Walk the char_indices to find positions.
                         let mut last_ws = None;
-                        for (idx, (_, ch)) in line.chars().enumerate().skip(col).take(chunk_end - col).enumerate() {
+                        for (idx, (_, ch)) in line
+                            .chars()
+                            .enumerate()
+                            .skip(col)
+                            .take(chunk_end - col)
+                            .enumerate()
+                        {
                             let abs_idx = col + idx;
                             if ch.is_whitespace() {
                                 last_ws = Some(abs_idx + 1); // break after whitespace
@@ -334,11 +340,7 @@ impl Viewport {
                 }
             } else {
                 // Last line — stay at end.
-                self.cursor.col = if chars.is_empty() {
-                    0
-                } else {
-                    chars.len() - 1
-                };
+                self.cursor.col = if chars.is_empty() { 0 } else { chars.len() - 1 };
             }
         } else {
             // Advance to end of word.
