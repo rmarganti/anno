@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
+    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::ThemeOverrides;
@@ -489,10 +489,62 @@ fn auto_theme_name(theme_mode: ThemeMode) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::panic::{self, AssertUnwindSafe};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
+    use crate::highlight::theme_assets::ThemeAssetError;
+    use crate::input::SourceMetadata;
+    use crate::test_support::env_lock;
 
     fn cli_from(args: &[&str]) -> Cli {
         Cli::parse_from(args)
+    }
+
+    fn with_temp_home<F>(settings: Option<&str>, test: F)
+    where
+        F: FnOnce(),
+    {
+        let _guard = env_lock();
+        let original_home = env::var_os("HOME");
+        let temp_home = std::env::temp_dir().join(format!(
+            "anno-startup-tests-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config_dir = temp_home.join(".config/anno");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        if let Some(contents) = settings {
+            fs::write(config_dir.join("settings.json"), contents).unwrap();
+        }
+
+        unsafe { env::set_var("HOME", &temp_home) };
+
+        let result = panic::catch_unwind(AssertUnwindSafe(test));
+
+        if let Some(home) = original_home {
+            unsafe { env::set_var("HOME", home) };
+        } else {
+            unsafe { env::remove_var("HOME") };
+        }
+
+        fs::remove_dir_all(&temp_home).unwrap();
+
+        if let Err(error) = result {
+            panic::resume_unwind(error);
+        }
+    }
+
+    fn file_source(name: &str) -> SourceMetadata {
+        SourceMetadata {
+            display_name: name.to_owned(),
+            syntax_hint: Some(name.to_owned()),
+        }
     }
 
     fn resolved_theme_mode(value: ThemeMode, source: SettingSource) -> ResolvedValue<ThemeMode> {
@@ -527,6 +579,67 @@ mod tests {
         assert_eq!(theme.resolved.source, SettingSource::Config);
         assert_eq!(theme.resolved.value.requested, "latte");
         assert_eq!(theme.provenance.fallback, None);
+    }
+
+    #[test]
+    fn startup_settings_resolve_prefers_cli_over_settings_file() {
+        with_temp_home(
+            Some(
+                r##"{
+                    "theme": "latte",
+                    "theme_mode": "light",
+                    "syntax": "python",
+                    "app_theme": {
+                        "cursor": { "bg": "#112233" }
+                    }
+                }"##,
+            ),
+            || {
+                let cli = cli_from(&[
+                    "anno",
+                    "--theme",
+                    "mocha",
+                    "--theme-mode",
+                    "dark",
+                    "--syntax",
+                    "rust",
+                    "demo.md",
+                ]);
+
+                let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+                assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
+                assert_eq!(startup.theme_mode.source, SettingSource::Cli);
+                assert_eq!(startup.theme.source, SettingSource::Cli);
+                assert_eq!(startup.theme.value.requested, "mocha");
+                assert_eq!(
+                    startup.theme_provenance.requested_theme.as_deref(),
+                    Some("mocha")
+                );
+                assert_eq!(startup.syntax.source, SettingSource::Cli);
+                assert_eq!(startup.syntax.value.syntax_name, "Rust");
+                assert_eq!(
+                    startup.app_theme.cursor.bg,
+                    Some(crate::tui::theme::ThemeColor::new(17, 34, 51))
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_neverforest_when_no_theme_is_selected() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.theme.source, SettingSource::Fallback);
+            assert_eq!(startup.theme.value.requested, "neverforest");
+            assert_eq!(
+                startup.theme_provenance.fallback,
+                Some(ThemeProvenanceFallback::DefaultThemeSelection)
+            );
+        });
     }
 
     #[test]
@@ -568,6 +681,20 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, StartupError::ThemeAsset(_)));
+    }
+
+    #[test]
+    fn startup_settings_surface_invalid_configured_theme_errors() {
+        with_temp_home(Some(r#"{ "theme": "missing-theme" }"#), || {
+            let cli = cli_from(&["anno", "demo.md"]);
+            let error = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap_err();
+
+            assert!(matches!(
+                error,
+                StartupError::ThemeAsset(ThemeAssetError::BuiltInNotFound { requested })
+                if requested == "missing-theme"
+            ));
+        });
     }
 
     #[test]
@@ -640,6 +767,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(syntax.source, SettingSource::Auto);
+        assert_eq!(syntax.value.syntax_name, "Rust");
+    }
+
+    #[test]
+    fn syntax_override_accepts_dot_extension() {
+        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let syntax =
+            resolve_syntax(Some(".rs"), None, &file_source("demo.txt"), "", &syntax_set).unwrap();
+
+        assert_eq!(syntax.source, SettingSource::Cli);
+        assert_eq!(syntax.value.requested, ".rs");
         assert_eq!(syntax.value.syntax_name, "Rust");
     }
 

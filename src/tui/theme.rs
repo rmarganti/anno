@@ -368,12 +368,20 @@ fn parse_hex_color(input: &str) -> Result<ThemeColor, String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::highlight::theme_assets::built_in_theme_assets;
     use syntect::highlighting::ThemeSettings;
 
     use super::*;
 
     fn color(r: u8, g: u8, b: u8) -> SyntectColor {
         SyntectColor { r, g, b, a: 0xff }
+    }
+
+    fn rgb(color: Option<Color>, label: &str) -> ThemeColor {
+        match color {
+            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
+            other => panic!("expected rgb {label}, got {other:?}"),
+        }
     }
 
     #[test]
@@ -429,6 +437,71 @@ mod tests {
         };
 
         assert!(selection_fg.contrast_ratio(selection_bg) >= MIN_TEXT_CONTRAST);
+    }
+
+    #[test]
+    fn bundled_themes_keep_ui_overlays_readable() {
+        for asset in built_in_theme_assets() {
+            let syntect_theme = asset.load().unwrap();
+            let theme = Theme::from_syntect_theme(&syntect_theme, None);
+            let document_bg = rgb(theme.document.bg, "document background");
+            let cursor_bg = rgb(theme.cursor.bg, "cursor background");
+            let cursor_fg = rgb(theme.cursor.fg, "cursor foreground");
+            let selection_bg = rgb(theme.selection_highlight.bg, "selection background");
+            let selection_fg = rgb(theme.selection_highlight.fg, "selection foreground");
+            let annotation_fg = rgb(theme.annotation_highlight.fg, "annotation foreground");
+            let status_bg = rgb(theme.status_bar.bg, "status background");
+            let status_fg = rgb(theme.status_bar.fg, "status foreground");
+            let status_mode_bg = rgb(theme.status_mode.bg, "status mode background");
+            let status_mode_fg = rgb(theme.status_mode.fg, "status mode foreground");
+            let input_border_fg = rgb(theme.input_box_border.fg, "input border foreground");
+
+            assert!(
+                cursor_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
+                "{} cursor should stand off from the document background",
+                asset.canonical_name
+            );
+            assert!(
+                cursor_fg.contrast_ratio(cursor_bg) >= MIN_UI_CONTRAST,
+                "{} cursor text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                selection_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
+                "{} selection should stand off from the document background",
+                asset.canonical_name
+            );
+            assert!(
+                selection_fg.contrast_ratio(selection_bg) >= MIN_TEXT_CONTRAST,
+                "{} selection text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                annotation_fg.contrast_ratio(document_bg) >= MIN_UI_CONTRAST,
+                "{} annotations should remain visible",
+                asset.canonical_name
+            );
+            assert!(
+                status_fg.contrast_ratio(status_bg) >= MIN_TEXT_CONTRAST,
+                "{} status bar text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                status_mode_bg.contrast_ratio(status_bg) >= MIN_SURFACE_CONTRAST,
+                "{} status mode pill should stand off from the status bar",
+                asset.canonical_name
+            );
+            assert!(
+                status_mode_fg.contrast_ratio(status_mode_bg) >= MIN_TEXT_CONTRAST,
+                "{} status mode text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                input_border_fg.contrast_ratio(document_bg) >= MIN_UI_CONTRAST,
+                "{} input borders should remain visible",
+                asset.canonical_name
+            );
+        }
     }
 
     #[test]

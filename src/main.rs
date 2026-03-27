@@ -4,6 +4,8 @@ mod highlight;
 mod input;
 mod keybinds;
 mod startup;
+#[cfg(test)]
+mod test_support;
 mod tui;
 
 use std::io::{self, IsTerminal, Write};
