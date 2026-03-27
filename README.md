@@ -29,7 +29,7 @@ cat document.md | anno
 anno document.md > feedback.md
 ```
 
-Anno also reads optional startup settings from `~/.config/anno/settings.json`. Supported keys are `theme`, `theme_mode`, and `syntax`, with CLI flags taking precedence over config values.
+Anno also reads optional startup settings from `~/.config/anno/settings.json`. Supported keys are `theme`, `theme_mode`, and `syntax`, with CLI flags taking precedence over config values. When no explicit syntax is set, anno auto-detects from filenames and shebang-style first lines, then falls back to plain text.
 
 On exit with `:q`, annotations are printed to stdout as structured markdown. Use `:q!` to quit without output.
 

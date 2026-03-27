@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource,
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
 };
+use crate::input::SourceMetadata;
 use crate::tui::theme::ThemeOverrides;
 
 #[derive(Debug, Parser)]
@@ -28,7 +29,7 @@ pub struct Cli {
     #[arg(long)]
     pub syntax: Option<String>,
 
-    /// Markdown file to annotate
+    /// Text file to annotate
     pub file: Option<String>,
 }
 
@@ -157,7 +158,11 @@ struct SettingsFile {
 }
 
 impl StartupSettings {
-    pub fn resolve(cli: &Cli, source_name: &str) -> Result<Self, StartupError> {
+    pub fn resolve(
+        cli: &Cli,
+        source: &SourceMetadata,
+        content: &str,
+    ) -> Result<Self, StartupError> {
         let config = load_settings_file()?;
         let syntax_set = SyntaxSet::load_defaults_newlines();
 
@@ -182,7 +187,8 @@ impl StartupSettings {
         let syntax = resolve_syntax(
             cli.syntax.as_deref(),
             config.syntax.as_deref(),
-            source_name,
+            source,
+            content,
             &syntax_set,
         )?;
 
@@ -367,7 +373,8 @@ fn resolved_theme_kind(theme: &ResolvedThemeAsset) -> ThemeProvenanceKind {
 fn resolve_syntax(
     cli: Option<&str>,
     config: Option<&str>,
-    source_name: &str,
+    source: &SourceMetadata,
+    content: &str,
     syntax_set: &SyntaxSet,
 ) -> Result<ResolvedValue<ResolvedSyntax>, StartupError> {
     if let Some(requested) = normalize_optional(cli) {
@@ -378,24 +385,21 @@ fn resolve_syntax(
         return resolve_syntax_request(requested, syntax_set, SettingSource::Config);
     }
 
-    if let Some(syntax) = detect_syntax(source_name, syntax_set) {
+    if let Some((requested, syntax)) = detect_syntax(source, content, syntax_set) {
         return Ok(ResolvedValue {
             value: ResolvedSyntax {
-                requested: source_name.to_owned(),
+                requested,
                 syntax_name: syntax.name.clone(),
             },
             source: SettingSource::Auto,
         });
     }
 
-    let fallback = syntax_set
-        .find_syntax_by_extension("md")
-        .or_else(|| syntax_set.find_syntax_by_name("Markdown"))
-        .expect("markdown syntax should exist");
+    let fallback = syntax_set.find_syntax_plain_text();
 
     Ok(ResolvedValue {
         value: ResolvedSyntax {
-            requested: "markdown".to_owned(),
+            requested: "plain text".to_owned(),
             syntax_name: fallback.name.clone(),
         },
         source: SettingSource::Fallback,
@@ -420,18 +424,37 @@ fn resolve_syntax_request(
     })
 }
 
-fn detect_syntax<'a>(source_name: &str, syntax_set: &'a SyntaxSet) -> Option<&'a SyntaxReference> {
-    let path = Path::new(source_name);
+fn detect_syntax<'a>(
+    source: &SourceMetadata,
+    content: &str,
+    syntax_set: &'a SyntaxSet,
+) -> Option<(String, &'a SyntaxReference)> {
+    if let Some(source_name) = source.syntax_hint.as_deref() {
+        let path = Path::new(source_name);
 
-    if let Some(file_name) = path.file_name().and_then(|value| value.to_str()) {
-        if let Some(syntax) = syntax_set.find_syntax_by_token(file_name) {
-            return Some(syntax);
+        if let Some(file_name) = path.file_name().and_then(|value| value.to_str()) {
+            if let Some(syntax) = syntax_set.find_syntax_by_token(file_name) {
+                return Some((file_name.to_owned(), syntax));
+            }
+        }
+
+        if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
+            if let Some(syntax) = find_syntax(extension, syntax_set) {
+                return Some((extension.to_owned(), syntax));
+            }
         }
     }
 
-    path.extension()
-        .and_then(|value| value.to_str())
-        .and_then(|value| find_syntax(value, syntax_set))
+    content
+        .lines()
+        .next()
+        .and_then(|line| syntax_set.find_syntax_by_first_line(line))
+        .map(|syntax| {
+            (
+                content.lines().next().unwrap_or_default().to_owned(),
+                syntax,
+            )
+        })
 }
 
 fn find_syntax<'a>(requested: &str, syntax_set: &'a SyntaxSet) -> Option<&'a SyntaxReference> {
@@ -587,7 +610,17 @@ mod tests {
     #[test]
     fn syntax_override_accepts_extension() {
         let syntax_set = SyntaxSet::load_defaults_newlines();
-        let syntax = resolve_syntax(Some("rs"), None, "notes.md", &syntax_set).unwrap();
+        let syntax = resolve_syntax(
+            Some("rs"),
+            None,
+            &SourceMetadata {
+                display_name: "notes.md".to_owned(),
+                syntax_hint: Some("notes.md".to_owned()),
+            },
+            "",
+            &syntax_set,
+        )
+        .unwrap();
         assert_eq!(syntax.source, SettingSource::Cli);
         assert_eq!(syntax.value.syntax_name, "Rust");
     }
@@ -595,17 +628,73 @@ mod tests {
     #[test]
     fn source_name_auto_detects_syntax() {
         let syntax_set = SyntaxSet::load_defaults_newlines();
-        let syntax = resolve_syntax(None, None, "src/main.rs", &syntax_set).unwrap();
+        let syntax = resolve_syntax(
+            None,
+            None,
+            &SourceMetadata {
+                display_name: "src/main.rs".to_owned(),
+                syntax_hint: Some("src/main.rs".to_owned()),
+            },
+            "",
+            &syntax_set,
+        )
+        .unwrap();
         assert_eq!(syntax.source, SettingSource::Auto);
         assert_eq!(syntax.value.syntax_name, "Rust");
     }
 
     #[test]
-    fn stdin_falls_back_to_markdown() {
+    fn stdin_shebang_auto_detects_syntax() {
         let syntax_set = SyntaxSet::load_defaults_newlines();
-        let syntax = resolve_syntax(None, None, "[stdin]", &syntax_set).unwrap();
+        let syntax = resolve_syntax(
+            None,
+            None,
+            &SourceMetadata {
+                display_name: "[stdin]".to_owned(),
+                syntax_hint: None,
+            },
+            "#!/usr/bin/env python\nprint('hi')\n",
+            &syntax_set,
+        )
+        .unwrap();
+        assert_eq!(syntax.source, SettingSource::Auto);
+        assert_eq!(syntax.value.syntax_name, "Python");
+    }
+
+    #[test]
+    fn stdin_falls_back_to_plain_text() {
+        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let syntax = resolve_syntax(
+            None,
+            None,
+            &SourceMetadata {
+                display_name: "[stdin]".to_owned(),
+                syntax_hint: None,
+            },
+            "just some text",
+            &syntax_set,
+        )
+        .unwrap();
         assert_eq!(syntax.source, SettingSource::Fallback);
-        assert_eq!(syntax.value.syntax_name, "Markdown");
+        assert_eq!(syntax.value.syntax_name, "Plain Text");
+    }
+
+    #[test]
+    fn config_syntax_wins_over_detected_source_hint() {
+        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let syntax = resolve_syntax(
+            None,
+            Some("rust"),
+            &SourceMetadata {
+                display_name: "notes.txt".to_owned(),
+                syntax_hint: Some("notes.txt".to_owned()),
+            },
+            "",
+            &syntax_set,
+        )
+        .unwrap();
+        assert_eq!(syntax.source, SettingSource::Config);
+        assert_eq!(syntax.value.syntax_name, "Rust");
     }
 
     #[test]

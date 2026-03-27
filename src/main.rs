@@ -27,7 +27,8 @@ fn main() {
         process::exit(1);
     };
 
-    let source_name = source.name().to_string();
+    let source_metadata = source.metadata();
+    let source_name = source_metadata.display_name.clone();
     let content = match source.read_content() {
         Ok(c) => c,
         Err(e) => {
@@ -36,7 +37,7 @@ fn main() {
         }
     };
 
-    let startup = match StartupSettings::resolve(&cli, &source_name) {
+    let startup = match StartupSettings::resolve(&cli, &source_metadata, &content) {
         Ok(settings) => settings,
         Err(e) => {
             eprintln!("Error: {e}");
