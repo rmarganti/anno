@@ -47,6 +47,13 @@ fn main() {
         }
     };
 
+    if startup::should_log_startup() {
+        match startup.startup_log_json(&source_metadata) {
+            Ok(log) => eprintln!("{log}"),
+            Err(e) => eprintln!("Warning: failed to serialize startup log: {e}"),
+        }
+    }
+
     let app = match App::new(source_name, content, startup) {
         Ok(app) => app,
         Err(e) => {

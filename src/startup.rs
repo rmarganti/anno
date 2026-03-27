@@ -57,13 +57,13 @@ pub enum ThemeProvenanceFallback {
     DefaultThemeSelection,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedValue<T> {
     pub value: T,
     pub source: SettingSource,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedSyntax {
     pub requested: String,
     pub syntax_name: String,
@@ -103,6 +103,13 @@ pub struct StartupSettings {
     pub theme_provenance: ThemeProvenance,
     pub syntax: ResolvedValue<ResolvedSyntax>,
     pub app_theme: ThemeOverrides,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StartupLog {
+    pub source: SourceMetadata,
+    pub theme: ThemeProvenance,
+    pub syntax: ResolvedValue<ResolvedSyntax>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +215,25 @@ impl StartupSettings {
             app_theme: config.app_theme,
         })
     }
+
+    pub fn startup_log(&self, source: &SourceMetadata) -> StartupLog {
+        StartupLog {
+            source: source.clone(),
+            theme: self.theme_provenance.clone(),
+            syntax: self.syntax.clone(),
+        }
+    }
+
+    pub fn startup_log_json(&self, source: &SourceMetadata) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&self.startup_log(source))
+    }
+}
+
+pub fn should_log_startup() -> bool {
+    env::var_os("ANNO_LOG_STARTUP").is_some_and(|value| {
+        let normalized = value.to_string_lossy().trim().to_ascii_lowercase();
+        !matches!(normalized.as_str(), "" | "0" | "false" | "no" | "off")
+    })
 }
 
 fn load_settings_file() -> Result<SettingsFile, StartupError> {
@@ -740,6 +766,49 @@ mod tests {
 
         assert!(json.contains("\"resolved_theme\":\"catppuccin-mocha\""));
         assert!(json.contains("\"resolved_theme_kind\":\"built_in\""));
+    }
+
+    #[test]
+    fn startup_log_serializes_source_theme_and_syntax() {
+        with_temp_home(Some(r#"{ "theme": "mocha", "syntax": "rust" }"#), || {
+            let cli = cli_from(&["anno", "demo.md"]);
+            let source = file_source("demo.md");
+            let startup = StartupSettings::resolve(&cli, &source, "").unwrap();
+
+            let json = startup.startup_log_json(&source).unwrap();
+
+            assert!(json.contains("\"display_name\":\"demo.md\""));
+            assert!(json.contains("\"resolved_theme\":\"catppuccin-mocha\""));
+            assert!(json.contains("\"syntax_name\":\"Rust\""));
+            assert!(json.contains("\"source\":\"config\""));
+        });
+    }
+
+    #[test]
+    fn startup_logging_env_var_accepts_common_truthy_values() {
+        let _guard = env_lock();
+        unsafe { env::set_var("ANNO_LOG_STARTUP", "true") };
+        assert!(should_log_startup());
+
+        unsafe { env::set_var("ANNO_LOG_STARTUP", "1") };
+        assert!(should_log_startup());
+
+        unsafe { env::remove_var("ANNO_LOG_STARTUP") };
+    }
+
+    #[test]
+    fn startup_logging_env_var_rejects_common_falsey_values() {
+        let _guard = env_lock();
+
+        for value in ["", "0", "false", "no", "off"] {
+            unsafe { env::set_var("ANNO_LOG_STARTUP", value) };
+            assert!(
+                !should_log_startup(),
+                "{value} should disable startup logging"
+            );
+        }
+
+        unsafe { env::remove_var("ANNO_LOG_STARTUP") };
     }
 
     #[test]

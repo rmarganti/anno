@@ -2,7 +2,9 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SourceMetadata {
     pub display_name: String,
     pub syntax_hint: Option<String>,
