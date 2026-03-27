@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
-    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};

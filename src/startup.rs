@@ -5,10 +5,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
-use crate::highlight::theme_assets::{resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError};
+use crate::highlight::theme_assets::{
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
@@ -29,7 +31,7 @@ pub struct Cli {
     pub file: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeMode {
     Auto,
@@ -37,12 +39,20 @@ pub enum ThemeMode {
     Dark,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SettingSource {
     Cli,
     Config,
     Auto,
     Fallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeProvenanceFallback {
+    AutoThemeResolutionFailed,
+    DefaultThemeSelection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,11 +67,37 @@ pub struct ResolvedSyntax {
     pub syntax_name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeProvenanceKind {
+    BuiltIn,
+    Path,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ThemeProvenance {
+    pub theme_mode: ThemeMode,
+    pub theme_mode_source: SettingSource,
+    pub requested_theme: Option<String>,
+    pub requested_theme_source: Option<SettingSource>,
+    pub resolved_theme: String,
+    pub resolved_theme_source: SettingSource,
+    pub resolved_theme_kind: ThemeProvenanceKind,
+    pub fallback: Option<ThemeProvenanceFallback>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupSettings {
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
+    pub theme_provenance: ThemeProvenance,
     pub syntax: ResolvedValue<ResolvedSyntax>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ThemeSelection {
+    resolved: ResolvedValue<ResolvedThemeAsset>,
+    provenance: ThemeProvenance,
 }
 
 #[derive(Debug)]
@@ -138,11 +174,7 @@ impl StartupSettings {
             }
         };
 
-        let theme = resolve_theme(
-            cli.theme.as_deref(),
-            config.theme.as_deref(),
-            theme_mode.value,
-        )?;
+        let theme = resolve_theme(cli.theme.as_deref(), config.theme.as_deref(), &theme_mode)?;
         let syntax = resolve_syntax(
             cli.syntax.as_deref(),
             config.syntax.as_deref(),
@@ -152,7 +184,8 @@ impl StartupSettings {
 
         Ok(Self {
             theme_mode,
-            theme,
+            theme: theme.resolved,
+            theme_provenance: theme.provenance,
             syntax,
         })
     }
@@ -183,37 +216,147 @@ fn settings_path() -> Option<PathBuf> {
 fn resolve_theme(
     cli: Option<&str>,
     config: Option<&str>,
-    theme_mode: ThemeMode,
-) -> Result<ResolvedValue<ResolvedThemeAsset>, StartupError> {
+    theme_mode: &ResolvedValue<ThemeMode>,
+) -> Result<ThemeSelection, StartupError> {
+    resolve_theme_with(cli, config, theme_mode, resolve_theme_asset)
+}
+
+fn resolve_theme_with<F>(
+    cli: Option<&str>,
+    config: Option<&str>,
+    theme_mode: &ResolvedValue<ThemeMode>,
+    resolver: F,
+) -> Result<ThemeSelection, StartupError>
+where
+    F: Fn(&str) -> Result<ResolvedThemeAsset, ThemeAssetError>,
+{
     if let Some(requested) = normalize_optional(cli) {
-        return resolve_theme_asset(requested)
-            .map(|value| ResolvedValue {
-                value,
-                source: SettingSource::Cli,
+        return resolver(requested)
+            .map(|value| ThemeSelection {
+                resolved: ResolvedValue {
+                    value: value.clone(),
+                    source: SettingSource::Cli,
+                },
+                provenance: build_theme_provenance(
+                    theme_mode,
+                    Some((requested, SettingSource::Cli)),
+                    &value,
+                    SettingSource::Cli,
+                    None,
+                ),
             })
             .map_err(StartupError::ThemeAsset);
     }
 
     if let Some(requested) = normalize_optional(config) {
-        return resolve_theme_asset(requested)
-            .map(|value| ResolvedValue {
-                value,
-                source: SettingSource::Config,
+        return resolver(requested)
+            .map(|value| ThemeSelection {
+                resolved: ResolvedValue {
+                    value: value.clone(),
+                    source: SettingSource::Config,
+                },
+                provenance: build_theme_provenance(
+                    theme_mode,
+                    Some((requested, SettingSource::Config)),
+                    &value,
+                    SettingSource::Config,
+                    None,
+                ),
             })
             .map_err(StartupError::ThemeAsset);
     }
 
-    if let Some(requested) = auto_theme_name(theme_mode) {
-        return Ok(ResolvedValue {
-            value: resolve_theme_asset(requested).expect("built-in auto theme should exist"),
-            source: SettingSource::Auto,
+    if let Some(requested) = auto_theme_name(theme_mode.value) {
+        if let Ok(value) = resolver(requested) {
+            return Ok(ThemeSelection {
+                resolved: ResolvedValue {
+                    value: value.clone(),
+                    source: SettingSource::Auto,
+                },
+                provenance: build_theme_provenance(
+                    theme_mode,
+                    None,
+                    &value,
+                    SettingSource::Auto,
+                    None,
+                ),
+            });
+        }
+
+        let fallback = resolve_default_theme(&resolver)?;
+        return Ok(ThemeSelection {
+            resolved: ResolvedValue {
+                value: fallback.clone(),
+                source: SettingSource::Fallback,
+            },
+            provenance: build_theme_provenance(
+                theme_mode,
+                None,
+                &fallback,
+                SettingSource::Fallback,
+                Some(ThemeProvenanceFallback::AutoThemeResolutionFailed),
+            ),
         });
     }
 
-    Ok(ResolvedValue {
-        value: resolve_theme_asset("neverforest").expect("fallback theme should exist"),
-        source: SettingSource::Fallback,
+    let fallback = resolve_default_theme(&resolver)?;
+    Ok(ThemeSelection {
+        resolved: ResolvedValue {
+            value: fallback.clone(),
+            source: SettingSource::Fallback,
+        },
+        provenance: build_theme_provenance(
+            theme_mode,
+            None,
+            &fallback,
+            SettingSource::Fallback,
+            Some(ThemeProvenanceFallback::DefaultThemeSelection),
+        ),
     })
+}
+
+fn resolve_default_theme<F>(resolver: &F) -> Result<ResolvedThemeAsset, StartupError>
+where
+    F: Fn(&str) -> Result<ResolvedThemeAsset, ThemeAssetError>,
+{
+    resolver("neverforest").map_err(StartupError::ThemeAsset)
+}
+
+fn build_theme_provenance(
+    theme_mode: &ResolvedValue<ThemeMode>,
+    requested_theme: Option<(&str, SettingSource)>,
+    resolved_theme: &ResolvedThemeAsset,
+    resolved_theme_source: SettingSource,
+    fallback: Option<ThemeProvenanceFallback>,
+) -> ThemeProvenance {
+    let (requested_theme, requested_theme_source) = requested_theme
+        .map(|(requested, source)| (Some(requested.to_owned()), Some(source)))
+        .unwrap_or((None, None));
+
+    ThemeProvenance {
+        theme_mode: theme_mode.value,
+        theme_mode_source: theme_mode.source,
+        requested_theme,
+        requested_theme_source,
+        resolved_theme: resolved_theme_label(resolved_theme),
+        resolved_theme_source,
+        resolved_theme_kind: resolved_theme_kind(resolved_theme),
+        fallback,
+    }
+}
+
+fn resolved_theme_label(theme: &ResolvedThemeAsset) -> String {
+    match &theme.source {
+        ThemeAssetSource::BuiltIn(asset) => asset.canonical_name.to_owned(),
+        ThemeAssetSource::Path(path) => path.display().to_string(),
+    }
+}
+
+fn resolved_theme_kind(theme: &ResolvedThemeAsset) -> ThemeProvenanceKind {
+    match &theme.source {
+        ThemeAssetSource::BuiltIn(_) => ThemeProvenanceKind::BuiltIn,
+        ThemeAssetSource::Path(_) => ThemeProvenanceKind::Path,
+    }
 }
 
 fn resolve_syntax(
@@ -324,32 +467,116 @@ mod tests {
         Cli::parse_from(args)
     }
 
+    fn resolved_theme_mode(value: ThemeMode, source: SettingSource) -> ResolvedValue<ThemeMode> {
+        ResolvedValue { value, source }
+    }
+
     #[test]
     fn cli_theme_wins_over_config() {
-        let theme = resolve_theme(Some("mocha"), Some("latte"), ThemeMode::Light).unwrap();
-        assert_eq!(theme.source, SettingSource::Cli);
-        assert_eq!(theme.value.requested, "mocha");
+        let theme = resolve_theme(
+            Some("mocha"),
+            Some("latte"),
+            &resolved_theme_mode(ThemeMode::Light, SettingSource::Cli),
+        )
+        .unwrap();
+        assert_eq!(theme.resolved.source, SettingSource::Cli);
+        assert_eq!(theme.resolved.value.requested, "mocha");
+        assert_eq!(theme.provenance.requested_theme.as_deref(), Some("mocha"));
+        assert_eq!(
+            theme.provenance.requested_theme_source,
+            Some(SettingSource::Cli)
+        );
     }
 
     #[test]
     fn config_theme_wins_over_auto_theme() {
-        let theme = resolve_theme(None, Some("latte"), ThemeMode::Dark).unwrap();
-        assert_eq!(theme.source, SettingSource::Config);
-        assert_eq!(theme.value.requested, "latte");
+        let theme = resolve_theme(
+            None,
+            Some("latte"),
+            &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+        )
+        .unwrap();
+        assert_eq!(theme.resolved.source, SettingSource::Config);
+        assert_eq!(theme.resolved.value.requested, "latte");
+        assert_eq!(theme.provenance.fallback, None);
     }
 
     #[test]
     fn dark_mode_gets_auto_dark_theme() {
-        let theme = resolve_theme(None, None, ThemeMode::Dark).unwrap();
-        assert_eq!(theme.source, SettingSource::Auto);
-        assert_eq!(theme.value.requested, "catppuccin-mocha");
+        let theme = resolve_theme(
+            None,
+            None,
+            &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+        )
+        .unwrap();
+        assert_eq!(theme.resolved.source, SettingSource::Auto);
+        assert_eq!(theme.resolved.value.requested, "catppuccin-mocha");
+        assert_eq!(theme.provenance.resolved_theme, "catppuccin-mocha");
+        assert_eq!(theme.provenance.fallback, None);
     }
 
     #[test]
     fn auto_mode_falls_back_to_neverforest() {
-        let theme = resolve_theme(None, None, ThemeMode::Auto).unwrap();
-        assert_eq!(theme.source, SettingSource::Fallback);
-        assert_eq!(theme.value.requested, "neverforest");
+        let theme = resolve_theme(
+            None,
+            None,
+            &resolved_theme_mode(ThemeMode::Auto, SettingSource::Auto),
+        )
+        .unwrap();
+        assert_eq!(theme.resolved.source, SettingSource::Fallback);
+        assert_eq!(theme.resolved.value.requested, "neverforest");
+        assert_eq!(
+            theme.provenance.fallback,
+            Some(ThemeProvenanceFallback::DefaultThemeSelection)
+        );
+    }
+
+    #[test]
+    fn explicit_theme_errors_do_not_fallback() {
+        let error = resolve_theme(
+            Some("missing-theme"),
+            None,
+            &resolved_theme_mode(ThemeMode::Dark, SettingSource::Auto),
+        )
+        .unwrap_err();
+        assert!(matches!(error, StartupError::ThemeAsset(_)));
+    }
+
+    #[test]
+    fn auto_theme_failure_uses_neverforest_fallback() {
+        let theme = resolve_theme_with(
+            None,
+            None,
+            &resolved_theme_mode(ThemeMode::Dark, SettingSource::Auto),
+            |requested| match requested {
+                "catppuccin-mocha" => Err(ThemeAssetError::BuiltInNotFound {
+                    requested: requested.to_owned(),
+                }),
+                other => resolve_theme_asset(other),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(theme.resolved.source, SettingSource::Fallback);
+        assert_eq!(theme.resolved.value.requested, "neverforest");
+        assert_eq!(
+            theme.provenance.fallback,
+            Some(ThemeProvenanceFallback::AutoThemeResolutionFailed)
+        );
+    }
+
+    #[test]
+    fn theme_provenance_serializes_for_logs() {
+        let theme = resolve_theme(
+            None,
+            Some("mocha"),
+            &resolved_theme_mode(ThemeMode::Dark, SettingSource::Config),
+        )
+        .unwrap();
+        let json = serde_json::to_string(&theme.provenance).unwrap();
+
+        assert!(json.contains("\"resolved_theme\":\"catppuccin-mocha\""));
+        assert!(json.contains("\"resolved_theme_kind\":\"built_in\""));
     }
 
     #[test]

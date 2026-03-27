@@ -1,10 +1,10 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Flex, Layout, Rect},
     style::{Color, Modifier, Style},
     text::Span,
     widgets::{Block, Borders, Clear},
-    Frame,
 };
 use tui_textarea::{Input, Key, TextArea};
 

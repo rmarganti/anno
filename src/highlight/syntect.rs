@@ -33,6 +33,16 @@ impl SyntectHighlighter {
                     .expect("fallback theme should exist"),
                 source: crate::startup::SettingSource::Fallback,
             },
+            theme_provenance: crate::startup::ThemeProvenance {
+                theme_mode: crate::startup::ThemeMode::Auto,
+                theme_mode_source: crate::startup::SettingSource::Auto,
+                requested_theme: None,
+                requested_theme_source: None,
+                resolved_theme: "neverforest".to_owned(),
+                resolved_theme_source: crate::startup::SettingSource::Fallback,
+                resolved_theme_kind: crate::startup::ThemeProvenanceKind::BuiltIn,
+                fallback: Some(crate::startup::ThemeProvenanceFallback::DefaultThemeSelection),
+            },
             syntax: crate::startup::ResolvedValue {
                 value: crate::startup::ResolvedSyntax {
                     requested: "markdown".to_owned(),
@@ -142,7 +152,8 @@ mod tests {
     use super::*;
     use crate::highlight::theme_assets::resolve_theme_asset;
     use crate::startup::{
-        ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode,
+        ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode, ThemeProvenance,
+        ThemeProvenanceFallback, ThemeProvenanceKind,
     };
 
     fn make_highlighter(no_color: bool) -> SyntectHighlighter {
@@ -166,6 +177,16 @@ mod tests {
             theme: ResolvedValue {
                 value: resolve_theme_asset("neverforest").unwrap(),
                 source: SettingSource::Fallback,
+            },
+            theme_provenance: ThemeProvenance {
+                theme_mode: ThemeMode::Dark,
+                theme_mode_source: SettingSource::Auto,
+                requested_theme: None,
+                requested_theme_source: None,
+                resolved_theme: "neverforest".to_owned(),
+                resolved_theme_source: SettingSource::Fallback,
+                resolved_theme_kind: ThemeProvenanceKind::BuiltIn,
+                fallback: Some(ThemeProvenanceFallback::DefaultThemeSelection),
             },
             syntax: ResolvedValue {
                 value: ResolvedSyntax {
