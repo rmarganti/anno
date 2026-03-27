@@ -2,9 +2,9 @@ use std::io;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
-    DefaultTerminal, Frame,
 };
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
@@ -59,16 +59,8 @@ impl App {
         content: String,
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
-        let syntect_theme = startup
-            .theme
-            .value
-            .load_theme()
-            .map_err(StartupError::ThemeAsset)?;
-        let highlighter = SyntectHighlighter::from_parts(
-            startup.syntax.value.syntax_name.clone(),
-            syntect_theme.clone(),
-        );
-        let theme = Theme::from_syntect_theme(&syntect_theme, Some(&startup.app_theme));
+        let highlighter = SyntectHighlighter::from_startup(&startup)?;
+        let theme = Theme::from_syntect_theme(highlighter.theme(), Some(&startup.app_theme));
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);

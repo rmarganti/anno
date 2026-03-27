@@ -1,23 +1,21 @@
 use ratatui::style::{Color, Modifier, Style};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Color as SyntectColor, FontStyle, Theme};
+use syntect::highlighting::{Color as SyntectColor, FontStyle, Style as SyntectStyle, Theme};
 use syntect::parsing::SyntaxSet;
 
 use super::{Highlighter, StyledSpan};
-use crate::startup::{StartupError, StartupSettings};
+use crate::startup::{ResolvedSyntax, StartupError, StartupSettings};
 
 /// Magic value stored in the alpha byte of a `syntect::highlighting::Color` to signal
 /// that `r` should be interpreted as an ANSI 256-color palette index rather than an
 /// RGB red component. Alpha = 0 is syntect's own "no color / inherit" sentinel.
 const ANSI_SENTINEL: u8 = 1;
 
-/// Syntect-based highlighter using the built-in Markdown grammar to
-/// statefully highlight an entire document (headings, code fences,
-/// inline formatting, etc.) in a single pass.
+/// Syntect-based highlighter using the resolved runtime syntax and theme.
 pub struct SyntectHighlighter {
     syntax_set: SyntaxSet,
     theme: Theme,
-    syntax_name: String,
+    syntax: ResolvedSyntax,
     no_color: bool,
 }
 
@@ -55,12 +53,12 @@ impl SyntectHighlighter {
         .expect("default startup settings should be valid")
     }
 
-    pub fn from_parts(syntax_name: String, theme: Theme) -> Self {
+    pub fn from_parts(syntax: ResolvedSyntax, theme: Theme) -> Self {
         let no_color = std::env::var("NO_COLOR").is_ok();
         Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme,
-            syntax_name,
+            syntax,
             no_color,
         }
     }
@@ -71,10 +69,11 @@ impl SyntectHighlighter {
             .value
             .load_theme()
             .map_err(StartupError::ThemeAsset)?;
-        Ok(Self::from_parts(
-            startup.syntax.value.syntax_name.clone(),
-            theme,
-        ))
+        Ok(Self::from_parts(startup.syntax.value.clone(), theme))
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
     }
 
     /// Convert a syntect RGBA color to a ratatui Color.
@@ -107,6 +106,18 @@ impl SyntectHighlighter {
         }
         modifier
     }
+
+    fn style_from_syntect(style: SyntectStyle) -> Style {
+        let mut ratatui_style = Style::default()
+            .fg(Self::to_ratatui_color(style.foreground))
+            .add_modifier(Self::to_ratatui_modifier(style.font_style));
+
+        if style.background.a != 0 {
+            ratatui_style = ratatui_style.bg(Self::to_ratatui_color(style.background));
+        }
+
+        ratatui_style
+    }
 }
 
 impl Default for SyntectHighlighter {
@@ -124,10 +135,7 @@ impl Highlighter for SyntectHighlighter {
                 .collect();
         }
 
-        let syntax = self
-            .syntax_set
-            .find_syntax_by_name(&self.syntax_name)
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+        let syntax = self.syntax.resolve_in(&self.syntax_set);
 
         let mut h = HighlightLines::new(syntax, &self.theme);
 
@@ -141,12 +149,7 @@ impl Highlighter for SyntectHighlighter {
                 } else {
                     regions
                         .into_iter()
-                        .map(|(style, text)| {
-                            let ratatui_style = Style::default()
-                                .fg(Self::to_ratatui_color(style.foreground))
-                                .add_modifier(Self::to_ratatui_modifier(style.font_style));
-                            StyledSpan::new(text, ratatui_style)
-                        })
+                        .map(|(style, text)| StyledSpan::new(text, Self::style_from_syntect(style)))
                         .collect()
                 }
             })
@@ -172,7 +175,10 @@ mod tests {
                 .unwrap()
                 .load_theme()
                 .unwrap(),
-            syntax_name: "Markdown".to_owned(),
+            syntax: ResolvedSyntax {
+                requested: "markdown".to_owned(),
+                syntax_name: "Markdown".to_owned(),
+            },
             no_color,
         }
     }
@@ -359,5 +365,44 @@ mod tests {
             )
         });
         assert!(has_color, "theme should apply foreground colors");
+    }
+
+    #[test]
+    fn startup_settings_drive_runtime_theme_and_syntax() {
+        let h = SyntectHighlighter::from_startup(&startup_with_syntax("Rust")).unwrap();
+
+        let spans = highlight_one(&h, "fn main() {}");
+        let has_styling = spans.iter().any(|s| s.style != Style::default());
+
+        assert_eq!(h.theme().name.as_deref(), Some("neverforest"));
+        assert!(
+            has_styling,
+            "resolved runtime syntax should style rust code"
+        );
+    }
+
+    #[test]
+    fn style_from_syntect_preserves_background_colors() {
+        let style = SyntectStyle {
+            foreground: SyntectColor {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+            },
+            background: SyntectColor {
+                r: 4,
+                g: 5,
+                b: 6,
+                a: 255,
+            },
+            font_style: FontStyle::BOLD,
+        };
+
+        let ratatui_style = SyntectHighlighter::style_from_syntect(style);
+
+        assert_eq!(ratatui_style.fg, Some(Color::Rgb(1, 2, 3)));
+        assert_eq!(ratatui_style.bg, Some(Color::Rgb(4, 5, 6)));
+        assert!(ratatui_style.add_modifier.contains(Modifier::BOLD));
     }
 }

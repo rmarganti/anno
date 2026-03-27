@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Modifier,
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 use crate::keybinds::mode::Mode;
@@ -61,7 +61,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &Theme, props: &StatusBarPro
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
     use super::*;
 

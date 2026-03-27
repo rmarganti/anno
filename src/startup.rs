@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource,
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetSource, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::ThemeOverrides;
@@ -67,6 +67,14 @@ pub struct ResolvedValue<T> {
 pub struct ResolvedSyntax {
     pub requested: String,
     pub syntax_name: String,
+}
+
+impl ResolvedSyntax {
+    pub fn resolve_in<'a>(&self, syntax_set: &'a SyntaxSet) -> &'a SyntaxReference {
+        find_syntax(&self.requested, syntax_set)
+            .or_else(|| syntax_set.find_syntax_by_name(&self.syntax_name))
+            .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
