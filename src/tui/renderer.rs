@@ -49,7 +49,9 @@ pub struct PrepareVisibleLinesParams<'a> {
 /// Each `RenderSlice` maps to one display row, referencing a sub-range of a document line.
 /// Styled spans are sliced to the column range, and cursor/selection overlays are applied
 /// using intersection with the slice's column range.
-pub fn prepare_visible_lines_from_slices(params: &PrepareVisibleLinesParams<'_>) -> Vec<Line<'static>> {
+pub fn prepare_visible_lines_from_slices(
+    params: &PrepareVisibleLinesParams<'_>,
+) -> Vec<Line<'static>> {
     let mut result: Vec<Line<'static>> = Vec::with_capacity(params.slices.len());
 
     for slice in params.slices {
@@ -86,7 +88,8 @@ pub fn prepare_visible_lines_from_slices(params: &PrepareVisibleLinesParams<'_>)
                 let doc_col_end = if doc_row == sel_end.row {
                     sel_end.col
                 } else {
-                    params.plain_lines
+                    params
+                        .plain_lines
                         .get(doc_row)
                         .map(|l| l.chars().count().saturating_sub(1))
                         .unwrap_or(0)
@@ -113,9 +116,19 @@ pub fn prepare_visible_lines_from_slices(params: &PrepareVisibleLinesParams<'_>)
         };
 
         // Apply cursor overlay.
-        if doc_row == params.cursor_row && params.cursor_col >= start_col && params.cursor_col < end_col {
-            result.push(apply_cursor_to_line(line, params.cursor_col - start_col, params.theme));
-        } else if doc_row == params.cursor_row && params.cursor_col == start_col && start_col == end_col {
+        if doc_row == params.cursor_row
+            && params.cursor_col >= start_col
+            && params.cursor_col < end_col
+        {
+            result.push(apply_cursor_to_line(
+                line,
+                params.cursor_col - start_col,
+                params.theme,
+            ));
+        } else if doc_row == params.cursor_row
+            && params.cursor_col == start_col
+            && start_col == end_col
+        {
             // Empty line with cursor.
             result.push(apply_cursor_to_line(line, 0, params.theme));
         } else {

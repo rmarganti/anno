@@ -1,4 +1,5 @@
 pub mod syntect;
+pub mod theme_assets;
 
 use ratatui::style::Style;
 

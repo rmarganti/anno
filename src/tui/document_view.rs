@@ -1,8 +1,8 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout},
     text::Line,
     widgets::{Block, Paragraph},
-    Frame,
 };
 
 use crate::annotation::types::TextRange;
@@ -74,8 +74,7 @@ impl DocumentView {
             }
             Action::MoveWordEnd => {
                 let lines: Vec<&str> = self.doc_lines.iter().map(|s| s.as_str()).collect();
-                self.viewport
-                    .move_word_end(&lines, &self.display_layout);
+                self.viewport.move_word_end(&lines, &self.display_layout);
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
@@ -161,8 +160,8 @@ impl DocumentView {
             None
         };
 
-        let visible_lines: Vec<Line<'static>> = renderer::prepare_visible_lines_from_slices(
-            &renderer::PrepareVisibleLinesParams {
+        let visible_lines: Vec<Line<'static>> =
+            renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
                 slices: &render_slices,
                 styled_lines: &self.styled_lines,
                 plain_lines: &self.doc_lines,
@@ -171,8 +170,7 @@ impl DocumentView {
                 theme,
                 selection,
                 annotation_ranges,
-            },
-        );
+            });
 
         let doc = Paragraph::new(visible_lines).block(Block::default());
         frame.render_widget(doc, main_area);

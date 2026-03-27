@@ -131,24 +131,28 @@ impl App {
 
             // -- Annotation creation from Visual mode --
             Action::CreateDeletion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .create_deletion(&mut self.document_view, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
             Action::CreateComment => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Comment", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
             Action::CreateReplacement => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_input_for_visual_annotation("Replacement", &mut self.document_view);
                 self.apply_annotation_action(action);
             }
 
             // -- Annotation creation from Normal mode --
             Action::CreateInsertion => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .start_insertion(&self.document_view);
                 self.apply_annotation_action(action);
             }
@@ -159,7 +163,8 @@ impl App {
 
             // -- Input mode --
             Action::InputForward(key_event) => {
-                let action = self.annotation_controller
+                let action = self
+                    .annotation_controller
                     .handle_input_key(key_event, &mut self.annotations);
                 self.apply_annotation_action(action);
             }
@@ -193,7 +198,6 @@ impl App {
                 self.exit_result = Some(ExitResult::QuitSilent);
                 self.should_quit = true;
             }
-
         }
     }
 
