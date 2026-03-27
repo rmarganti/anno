@@ -22,7 +22,6 @@ impl AnnotationStore {
     }
 
     /// Delete an annotation by its id. Returns `true` if it was found and removed.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn delete(&mut self, id: Uuid) -> bool {
         let len_before = self.annotations.len();
         self.annotations.retain(|a| a.id != id);
@@ -35,7 +34,6 @@ impl AnnotationStore {
     }
 
     /// Return whether the store is empty.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_empty(&self) -> bool {
         self.annotations.is_empty()
     }
@@ -61,7 +59,6 @@ impl AnnotationStore {
     }
 
     /// Get an annotation by id.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn get(&self, id: Uuid) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
     }

@@ -120,6 +120,16 @@ impl DocumentView {
         Some((range, text))
     }
 
+    /// Move the cursor to the given document row and column, clamping to valid bounds.
+    pub fn set_cursor(&mut self, row: usize, col: usize) {
+        let max_row = self.doc_lines.len().saturating_sub(1);
+        let clamped_row = row.min(max_row);
+        self.viewport.cursor.row = clamped_row;
+        let max_col = self.doc_lines[clamped_row].chars().count().saturating_sub(1);
+        self.viewport.cursor.col = col.min(max_col);
+        self.viewport.ensure_cursor_visible(&self.display_layout);
+    }
+
     /// Clear the visual anchor (e.g. when exiting Visual mode).
     pub fn clear_visual(&mut self) {
         self.visual_anchor = None;

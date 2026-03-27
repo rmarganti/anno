@@ -16,6 +16,7 @@ use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::annotation_list_panel::{AnnotationListPanel, PANEL_WIDTH};
 use crate::tui::app_command::{AppCommand, QuitKind};
 use crate::tui::command_line::{CommandLine, CommandLineEvent};
+use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
@@ -57,6 +58,8 @@ pub struct App {
     annotation_controller: AnnotationController,
     /// Annotation list sidebar panel.
     annotation_list_panel: AnnotationListPanel,
+    /// Active confirmation dialog overlay, if any.
+    confirm_dialog: Option<ConfirmDialog>,
 }
 
 impl App {
@@ -79,6 +82,7 @@ impl App {
             document_view,
             annotation_controller: AnnotationController::new(),
             annotation_list_panel: AnnotationListPanel::new(),
+            confirm_dialog: None,
         }
     }
 
@@ -98,7 +102,57 @@ impl App {
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
+        // If a confirm dialog is active, route all input to it.
+        if let Some(dialog) = self.confirm_dialog.take() {
+            match dialog.handle_key(key_event) {
+                ConfirmDialogEvent::Confirm => {
+                    if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
+                        self.annotations.delete(id);
+                    }
+                }
+                ConfirmDialogEvent::Cancel => {}
+                ConfirmDialogEvent::Consumed => {
+                    self.confirm_dialog = Some(dialog);
+                }
+            }
+            return;
+        }
+
         let action = self.keybinds.handle(self.mode, key_event);
+
+        // In AnnotationList mode, MoveDown/MoveUp control panel selection,
+        // not document cursor movement.
+        if self.mode == Mode::AnnotationList {
+            match action {
+                Action::MoveDown => {
+                    self.annotation_list_panel.move_selection_down(&self.annotations);
+                    return;
+                }
+                Action::MoveUp => {
+                    self.annotation_list_panel.move_selection_up(&self.annotations);
+                    return;
+                }
+                Action::JumpToAnnotation => {
+                    if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
+                        if let Some(annotation) = self.annotations.get(id) {
+                            if let Some(range) = annotation.range {
+                                self.document_view.set_cursor(range.start.line, range.start.column);
+                            }
+                        }
+                    }
+                    return;
+                }
+                Action::DeleteAnnotation => {
+                    self.confirm_dialog = Some(ConfirmDialog::new("Delete annotation? (y/n)"));
+                    return;
+                }
+                Action::ExitToNormal => {
+                    self.mode = Mode::Normal;
+                    return;
+                }
+                _ => {}
+            }
+        }
 
         // Let DocumentView handle movement and visual-mode actions first.
         if self.document_view.handle_action(&action) {
@@ -118,16 +172,24 @@ impl App {
             }
             Action::EnterAnnotationListMode => {
                 self.annotation_list_panel.toggle();
-                self.mode = if self.annotation_list_panel.is_visible() {
-                    Mode::AnnotationList
+                if self.annotation_list_panel.is_visible() && !self.annotations.is_empty() {
+                    self.mode = Mode::AnnotationList;
                 } else {
-                    Mode::Normal
-                };
+                    self.mode = Mode::Normal;
+                }
             }
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
                 self.document_view.clear_visual();
                 self.annotation_controller.cancel();
+            }
+
+            // -- Annotation navigation (Normal mode) --
+            Action::NextAnnotation => {
+                self.jump_to_adjacent_annotation(true);
+            }
+            Action::PrevAnnotation => {
+                self.jump_to_adjacent_annotation(false);
             }
 
             // -- Command mode --
@@ -209,6 +271,40 @@ impl App {
                 self.should_quit = true;
             }
 
+        }
+    }
+
+    fn jump_to_adjacent_annotation(&mut self, forward: bool) {
+        let cursor = self.document_view.cursor();
+        let cursor_pos = (cursor.row, cursor.col);
+        let ordered = self.annotations.ordered();
+
+        if ordered.is_empty() {
+            return;
+        }
+
+        let target = if forward {
+            ordered.iter().find(|a| {
+                if let Some(r) = a.range {
+                    (r.start.line, r.start.column) > cursor_pos
+                } else {
+                    false
+                }
+            })
+        } else {
+            ordered.iter().rev().find(|a| {
+                if let Some(r) = a.range {
+                    (r.start.line, r.start.column) < cursor_pos
+                } else {
+                    false
+                }
+            })
+        };
+
+        if let Some(annotation) = target {
+            if let Some(range) = annotation.range {
+                self.document_view.set_cursor(range.start.line, range.start.column);
+            }
         }
     }
 
@@ -299,6 +395,11 @@ impl App {
         // -- Input box overlay --
         if let Some(ib) = self.annotation_controller.input_box() {
             ib.render(frame, main_area);
+        }
+
+        // -- Confirm dialog overlay --
+        if let Some(ref dialog) = self.confirm_dialog {
+            dialog.render(frame, main_area);
         }
     }
 }

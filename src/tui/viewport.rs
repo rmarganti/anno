@@ -514,7 +514,7 @@ impl Viewport {
     }
 
     /// Adjust scroll offset so the cursor is within the visible area (display-row-based).
-    fn ensure_cursor_visible(&mut self, layout: &DisplayLayout) {
+    pub(crate) fn ensure_cursor_visible(&mut self, layout: &DisplayLayout) {
         if self.height == 0 {
             return;
         }
