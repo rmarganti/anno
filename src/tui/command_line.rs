@@ -51,7 +51,7 @@ impl CommandLine {
     /// `AppCommand` and resets the buffer.
     pub fn handle_confirm(&mut self) -> CommandLineEvent {
         let cmd = match self.buffer.as_str() {
-            "q" => AppCommand::Quit(QuitKind::WithOutput),
+            "q" | "wq" => AppCommand::Quit(QuitKind::WithOutput),
             "q!" => AppCommand::Quit(QuitKind::Silent),
             _ => {
                 self.buffer.clear();
