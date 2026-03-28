@@ -1,4 +1,6 @@
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyEvent};
 use ratatui::{
@@ -96,14 +98,27 @@ impl App {
     }
 
     /// Run the application main loop. Returns the exit result.
-    pub fn run(mut self, terminal: &mut DefaultTerminal) -> io::Result<ExitResult> {
+    ///
+    /// `signal_flag` is set to `true` by signal handlers registered in `main`
+    /// when SIGINT, SIGTERM, or SIGHUP is received.
+    pub fn run(
+        mut self,
+        terminal: &mut DefaultTerminal,
+        signal_flag: &AtomicBool,
+    ) -> io::Result<ExitResult> {
         while !self.should_quit {
+            if signal_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
             terminal.draw(|frame| {
                 self.render(frame);
             })?;
 
-            if let Event::Key(key_event) = event::read()? {
-                self.handle_key(key_event);
+            if event::poll(Duration::from_millis(100))? {
+                if let Event::Key(key_event) = event::read()? {
+                    self.handle_key(key_event);
+                }
             }
         }
 
@@ -255,6 +270,11 @@ impl App {
                     .annotation_controller
                     .handle_input_key(key_event, &mut self.annotations);
                 self.apply_annotation_action(action);
+            }
+
+            // -- Force quit (Ctrl-C) --
+            Action::ForceQuit => {
+                self.should_quit = true;
             }
 
             _ => {}

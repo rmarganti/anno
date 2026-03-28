@@ -9,9 +9,14 @@ mod test_support;
 mod tui;
 
 use std::io::{self, IsTerminal, Write};
+use std::panic;
 use std::process;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use clap::Parser;
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+use signal_hook::flag;
 
 use app::{App, ExitResult};
 use input::{FileSource, InputSource, StdinSource};
@@ -62,8 +67,22 @@ fn main() {
         }
     };
 
+    // Install a panic hook that restores the terminal before printing.
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        ratatui::restore();
+        default_hook(info);
+    }));
+
+    // Register signal handlers that restore the terminal on
+    // SIGINT, SIGTERM, and SIGHUP before the process exits.
+    let signal_flag = Arc::new(AtomicBool::new(false));
+    flag::register(SIGINT, Arc::clone(&signal_flag)).ok();
+    flag::register(SIGTERM, Arc::clone(&signal_flag)).ok();
+    flag::register(SIGHUP, Arc::clone(&signal_flag)).ok();
+
     let mut terminal = ratatui::init();
-    let result = app.run(&mut terminal);
+    let result = app.run(&mut terminal, &signal_flag);
     ratatui::restore();
 
     match result {

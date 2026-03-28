@@ -60,6 +60,9 @@ pub enum Action {
     // -- Word wrap --
     ToggleWordWrap,
 
+    // -- Quit --
+    ForceQuit,
+
     // -- No-op --
     None,
 }
@@ -146,6 +149,9 @@ impl KeybindHandler {
             // Word wrap toggle
             (KeyCode::Char('W'), KeyModifiers::SHIFT) => Action::ToggleWordWrap,
 
+            // Ctrl-C — force quit
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+
             _ => Action::None,
         }
     }
@@ -186,6 +192,9 @@ impl KeybindHandler {
             // Cancel selection
             (KeyCode::Esc, _) => Action::ExitToNormal,
 
+            // Ctrl-C — force quit
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+
             _ => Action::None,
         }
     }
@@ -207,6 +216,9 @@ impl KeybindHandler {
             (KeyCode::Tab, _) => Action::EnterAnnotationListMode,
             (KeyCode::Esc, _) => Action::ExitToNormal,
 
+            // Ctrl-C — force quit
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+
             // dd starter
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 self.pending = Some(KeyCode::Char('d'));
@@ -225,6 +237,10 @@ impl KeybindHandler {
     }
 
     fn handle_command(&mut self, event: KeyEvent) -> Action {
+        if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
+            return Action::ForceQuit;
+        }
+
         match event.code {
             KeyCode::Esc => Action::ExitToNormal,
             KeyCode::Enter => Action::CommandConfirm,

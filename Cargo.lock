@@ -32,6 +32,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "signal-hook",
  "syntect",
  "tui-textarea",
  "uuid",
