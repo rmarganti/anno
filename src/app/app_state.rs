@@ -41,6 +41,8 @@ pub struct AppState {
     annotation_list_panel: AnnotationListPanel,
     /// Active confirmation dialog overlay, if any.
     confirm_dialog: Option<ConfirmDialog>,
+    /// Whether the help overlay is visible.
+    help_visible: bool,
 }
 
 impl AppState {
@@ -78,6 +80,7 @@ impl AppState {
             annotation_controller: AnnotationController::new(),
             annotation_list_panel: AnnotationListPanel::new(),
             confirm_dialog: None,
+            help_visible: false,
         }
     }
 
@@ -107,6 +110,11 @@ impl AppState {
 
     pub fn has_confirm_dialog(&self) -> bool {
         self.confirm_dialog.is_some()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn is_help_visible(&self) -> bool {
+        self.help_visible
     }
 
     pub fn is_panel_visible(&self) -> bool {
@@ -153,6 +161,13 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
+        if self.help_visible {
+            self.help_visible = !matches!(key_event.code, crossterm::event::KeyCode::Esc)
+                && !matches!(key_event.code, crossterm::event::KeyCode::Char('?'))
+                && !matches!(key_event.code, crossterm::event::KeyCode::Char('q'));
+            return;
+        }
+
         // If a confirm dialog is active, route all input to it.
         if let Some(dialog) = self.confirm_dialog.take() {
             match dialog.handle_key(key_event) {
@@ -230,6 +245,9 @@ impl AppState {
                 } else {
                     self.mode = Mode::Normal;
                 }
+            }
+            Action::ToggleHelp => {
+                self.help_visible = !self.help_visible;
             }
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
@@ -462,6 +480,16 @@ pub(crate) mod test_harness {
             assert!(!self.state.is_panel_visible());
             self
         }
+
+        pub fn assert_help_visible(&mut self) -> &mut Self {
+            assert!(self.state.is_help_visible());
+            self
+        }
+
+        pub fn assert_help_hidden(&mut self) -> &mut Self {
+            assert!(!self.state.is_help_visible());
+            self
+        }
     }
 
     fn parse_key_sequence(sequence: &str) -> Vec<KeyEvent> {
@@ -540,6 +568,7 @@ mod tests {
         assert_eq!(state.annotation_count(), 0);
         assert!(!state.should_quit());
         assert!(!state.has_confirm_dialog());
+        assert!(!state.is_help_visible());
         assert!(!state.is_panel_visible());
         assert_eq!(state.command_buffer(), "");
         assert!(!state.word_wrap());
@@ -753,6 +782,57 @@ mod tests {
             .assert_panel_visible()
             .keys("<Tab>")
             .assert_panel_hidden();
+    }
+
+    #[test]
+    fn question_mark_toggles_help_on_from_normal_mode() {
+        harness("hello").keys("?").assert_help_visible();
+    }
+
+    #[test]
+    fn question_mark_toggles_help_off_when_already_visible() {
+        harness("hello")
+            .keys("??")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn escape_dismisses_help() {
+        harness("hello")
+            .keys("?<Esc>")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn q_dismisses_help() {
+        harness("hello")
+            .keys("?q")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn other_keys_are_consumed_while_help_is_visible() {
+        harness("hello")
+            .keys("?j")
+            .assert_help_visible()
+            .assert_cursor(0, 0)
+            .assert_mode(Mode::Normal)
+            .assert_not_quit();
+    }
+
+    #[test]
+    fn help_dismissal_preserves_the_active_mode() {
+        let mut harness = harness("hello");
+        harness.state_mut().mode = Mode::Visual;
+        harness.state_mut().help_visible = true;
+
+        harness
+            .keys("q")
+            .assert_help_hidden()
+            .assert_mode(Mode::Visual);
     }
 
     #[test]
