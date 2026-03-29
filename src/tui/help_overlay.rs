@@ -13,6 +13,7 @@ use crate::tui::theme::UiTheme;
 const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
 const DISMISS_HINT: &str = "Press ? or Esc to close";
+const OVERFLOW_HINT: &str = "More help below";
 
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
@@ -71,45 +72,29 @@ impl HelpOverlay {
             return;
         }
 
-        let ordered_sections = self.ordered_sections();
-        let mut y = inner.y;
-        let end_y = inner.y + content_height;
+        let content_lines = self.content_lines(theme, inner.width as usize);
+        let mut visible_line_count = content_height as usize;
+        let is_overflowing = content_lines.len() > visible_line_count;
+        if is_overflowing {
+            visible_line_count = visible_line_count.saturating_sub(1);
+        }
 
-        for section in ordered_sections {
-            if y >= end_y {
-                break;
-            }
-
-            let is_active = Some(section.title) == mode_title(self.mode);
-            let title_style = if is_active {
-                theme.input_box_title.add_modifier(Modifier::REVERSED)
-            } else {
-                theme.input_box_title
-            };
-
+        for (index, line) in content_lines.iter().take(visible_line_count).enumerate() {
             frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    truncate_to_width(section.title, inner.width as usize),
-                    title_style,
-                ))),
-                Rect::new(inner.x, y, inner.width, 1),
+                Paragraph::new(line.clone()).style(theme.input_box),
+                Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
             );
-            y += 1;
+        }
 
-            for entry in &section.entries {
-                if y >= end_y {
-                    break;
-                }
-
-                let key_width = inner.width.min(18) as usize;
-                let line =
-                    help_entry_line(entry.keys, entry.action, key_width, inner.width as usize);
-                frame.render_widget(
-                    Paragraph::new(line).style(theme.input_box),
-                    Rect::new(inner.x, y, inner.width, 1),
-                );
-                y += 1;
-            }
+        if is_overflowing {
+            let overflow_y = inner.y + content_height.saturating_sub(1);
+            let overflow_hint = truncate_to_width(OVERFLOW_HINT, inner.width as usize);
+            frame.render_widget(
+                Paragraph::new(overflow_hint)
+                    .alignment(Alignment::Center)
+                    .style(theme.panel_border.add_modifier(Modifier::ITALIC)),
+                Rect::new(inner.x, overflow_y, inner.width, 1),
+            );
         }
     }
 
@@ -126,6 +111,32 @@ impl HelpOverlay {
             }
         });
         ordered
+    }
+
+    fn content_lines(&self, theme: &UiTheme, width: usize) -> Vec<Line<'static>> {
+        let key_width = width.min(18);
+
+        self.ordered_sections()
+            .into_iter()
+            .flat_map(|section| {
+                let is_active = Some(section.title) == mode_title(self.mode);
+                let title_style = if is_active {
+                    theme.input_box_title.add_modifier(Modifier::REVERSED)
+                } else {
+                    theme.input_box_title
+                };
+
+                std::iter::once(Line::from(Span::styled(
+                    truncate_to_width(section.title, width),
+                    title_style,
+                )))
+                .chain(
+                    section.entries.iter().map(move |entry| {
+                        help_entry_line(entry.keys, entry.action, key_width, width)
+                    }),
+                )
+            })
+            .collect()
     }
 }
 
@@ -219,5 +230,23 @@ mod tests {
     fn renders_on_small_terminals_without_panicking() {
         let output = render_to_lines(24, 8, Mode::Normal).join("\n");
         assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn renders_overflow_hint_when_help_is_truncated() {
+        let output = render_to_lines(24, 8, Mode::Normal).join("\n");
+        assert!(
+            output.contains("More help below"),
+            "Expected overflow hint in: {output}"
+        );
+    }
+
+    #[test]
+    fn omits_overflow_hint_when_help_fits() {
+        let output = render_to_lines(120, 60, Mode::Normal).join("\n");
+        assert!(
+            !output.contains("More help below"),
+            "Did not expect overflow hint in: {output}"
+        );
     }
 }
