@@ -70,9 +70,9 @@ impl AppState {
     pub fn new(
         source_name: String,
         content: String,
-        startup: StartupSettings,
+        startup: &StartupSettings,
     ) -> Result<Self, StartupError> {
-        let highlighter = SyntectHighlighter::from_startup(&startup)?;
+        let highlighter = SyntectHighlighter::from_startup(startup)?;
         let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
 
         Ok(Self::from_document_lines(source_name, doc_lines_result))
@@ -413,7 +413,7 @@ impl App {
 
         Ok(Self {
             theme,
-            state: AppState::new(source_name, content, startup)?,
+            state: AppState::new(source_name, content, &startup)?,
         })
     }
 
@@ -441,15 +441,15 @@ impl App {
                 break;
             }
 
-            terminal.draw(|frame| {
-                self.render(frame);
-            })?;
-
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key_event) = event::read()? {
                     self.state.handle_key(key_event);
                 }
             }
+
+            terminal.draw(|frame| {
+                self.render(frame);
+            })?;
         }
 
         Ok(self
