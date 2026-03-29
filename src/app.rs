@@ -26,6 +26,7 @@ use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
+use crate::tui::viewport::CursorPosition;
 
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
@@ -108,6 +109,70 @@ impl AppState {
             annotation_list_panel: AnnotationListPanel::new(),
             confirm_dialog: None,
         }
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    pub fn should_quit(&self) -> bool {
+        self.should_quit
+    }
+
+    pub fn take_exit_result(&mut self) -> Option<ExitResult> {
+        self.exit_result.take()
+    }
+
+    pub fn cursor(&self) -> CursorPosition {
+        self.document_view.cursor()
+    }
+
+    pub fn annotation_count(&self) -> usize {
+        self.annotations.len()
+    }
+
+    pub fn annotations(&self) -> &AnnotationStore {
+        &self.annotations
+    }
+
+    pub fn has_confirm_dialog(&self) -> bool {
+        self.confirm_dialog.is_some()
+    }
+
+    pub fn is_panel_visible(&self) -> bool {
+        self.annotation_list_panel.is_visible()
+    }
+
+    pub fn command_buffer(&self) -> &str {
+        self.command_line.buffer()
+    }
+
+    pub fn word_wrap(&self) -> bool {
+        self.document_view.word_wrap()
+    }
+
+    pub fn source_name(&self) -> &str {
+        &self.source_name
+    }
+
+    pub fn document_view(&self) -> &DocumentView {
+        &self.document_view
+    }
+
+    pub fn document_view_mut(&mut self) -> &mut DocumentView {
+        &mut self.document_view
+    }
+
+    pub fn annotation_controller(&self) -> &AnnotationController {
+        &self.annotation_controller
+    }
+
+    pub fn confirm_dialog(&self) -> Option<&ConfirmDialog> {
+        self.confirm_dialog.as_ref()
+    }
+
+    pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
+        &self.annotation_list_panel
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
@@ -371,7 +436,7 @@ impl App {
         terminal: &mut DefaultTerminal,
         signal_flag: &AtomicBool,
     ) -> io::Result<ExitResult> {
-        while !self.state.should_quit {
+        while !self.state.should_quit() {
             if signal_flag.load(Ordering::Relaxed) {
                 break;
             }
@@ -387,7 +452,10 @@ impl App {
             }
         }
 
-        Ok(self.state.exit_result.unwrap_or(ExitResult::QuitSilent))
+        Ok(self
+            .state
+            .take_exit_result()
+            .unwrap_or(ExitResult::QuitSilent))
     }
 
     fn render(&mut self, frame: &mut Frame) {
@@ -395,8 +463,7 @@ impl App {
 
         // Decide whether the panel should actually be shown: it must be
         // toggled visible AND the terminal must be wide enough.
-        let show_panel =
-            self.state.annotation_list_panel.is_visible() && area.width >= MIN_WIDTH_FOR_PANEL;
+        let show_panel = self.state.is_panel_visible() && area.width >= MIN_WIDTH_FOR_PANEL;
 
         // Compute the document area width for dimension checks.
         let doc_area_width = if show_panel {
@@ -407,13 +474,13 @@ impl App {
 
         // Sync viewport dimensions before the size check so is_too_small()
         // reflects the actual terminal size (viewport starts at 0×0).
-        self.state.document_view.update_dimensions(
+        self.state.document_view_mut().update_dimensions(
             doc_area_width as usize,
             area.height.saturating_sub(1) as usize,
         );
 
         // Minimum terminal size check.
-        if self.state.document_view.is_too_small() {
+        if self.state.document_view().is_too_small() {
             let msg = Paragraph::new("Terminal too small.\nPlease resize to at least 80×24.")
                 .alignment(Alignment::Center);
             frame.render_widget(msg, area);
@@ -436,7 +503,7 @@ impl App {
         // Collect annotation ranges for visual indicators.
         let annotation_ranges: Vec<_> = self
             .state
-            .annotations
+            .annotations()
             .all()
             .iter()
             .filter_map(|a| a.range)
@@ -445,9 +512,9 @@ impl App {
         // Resolve the selected annotation's text range (if any) for document highlighting.
         let selected_annotation_range = if show_panel {
             self.state
-                .annotation_list_panel
+                .annotation_list_panel()
                 .selected_annotation_id()
-                .and_then(|id| self.state.annotations.get(id))
+                .and_then(|id| self.state.annotations().get(id))
                 .and_then(|a| a.range)
         } else {
             None
@@ -455,48 +522,51 @@ impl App {
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            self.state.annotation_list_panel.render(
+            self.state.annotation_list_panel().render(
                 frame,
                 panel_area,
-                &self.state.annotations,
+                self.state.annotations(),
                 &self.theme,
             );
         }
 
         // -- Main document area --
-        self.state.document_view.render(
+        let is_visual = self.state.mode() == Mode::Visual;
+        self.state.document_view_mut().render(
             frame,
             doc_area,
             &self.theme,
-            self.state.mode == Mode::Visual,
+            is_visual,
             &annotation_ranges,
             selected_annotation_range.as_ref(),
         );
 
         // -- Status bar --
-        let cursor = self.state.document_view.cursor();
+        let cursor = self.state.cursor();
         status_bar::render(
             frame,
             status_area,
             &self.theme,
             &StatusBarProps {
-                mode: self.state.mode,
-                source_name: &self.state.source_name,
-                annotation_count: self.state.annotations.len(),
+                mode: self.state.mode(),
+                source_name: self.state.source_name(),
+                annotation_count: self.state.annotation_count(),
                 cursor_row: cursor.row,
                 cursor_col: cursor.col,
-                word_wrap: self.state.document_view.word_wrap(),
-                command_buffer: self.state.command_line.buffer(),
+                word_wrap: self.state.word_wrap(),
+                command_buffer: self.state.command_buffer(),
             },
         );
 
         // -- Input box overlay --
-        if let Some(ib) = self.state.annotation_controller.input_box() {
+        if let Some(ib) = self.state.annotation_controller().input_box() {
             ib.render(frame, main_area, &self.theme);
         }
 
         // -- Confirm dialog overlay --
-        if let Some(ref dialog) = self.state.confirm_dialog {
+        if self.state.has_confirm_dialog()
+            && let Some(dialog) = self.state.confirm_dialog()
+        {
             dialog.render(frame, main_area);
         }
     }
@@ -511,17 +581,37 @@ mod tests {
     fn new_plain_builds_terminal_independent_default_state() {
         let state = AppState::new_plain("[stdin]".to_string(), "first\nsecond".to_string());
 
-        assert_eq!(state.source_name, "[stdin]");
-        assert_eq!(state.mode, Mode::Normal);
-        assert!(state.annotations.is_empty());
-        assert!(!state.should_quit);
-        assert!(state.exit_result.is_none());
-        assert!(state.confirm_dialog.is_none());
+        assert_eq!(state.source_name(), "[stdin]");
+        assert_eq!(state.mode(), Mode::Normal);
+        assert!(state.annotations().is_empty());
+        assert_eq!(state.annotation_count(), 0);
+        assert!(!state.should_quit());
+        assert!(!state.has_confirm_dialog());
+        assert!(!state.is_panel_visible());
+        assert_eq!(state.command_buffer(), "");
+        assert!(!state.word_wrap());
+        assert!(state.confirm_dialog().is_none());
 
-        let cursor = state.document_view.cursor();
+        let cursor = state.cursor();
         assert_eq!(cursor.row, 0);
         assert_eq!(cursor.col, 0);
 
+        assert_eq!(state.document_view().cursor(), cursor);
+        assert!(state.annotation_controller().input_box().is_none());
+        let _ = state.annotation_list_panel();
+
         let _ = ExitResult::QuitSilent;
+    }
+
+    #[test]
+    fn take_exit_result_returns_once() {
+        let mut state = AppState::new_plain("[stdin]".to_string(), String::new());
+        state.exit_result = Some(ExitResult::QuitSilent);
+
+        assert!(matches!(
+            state.take_exit_result(),
+            Some(ExitResult::QuitSilent)
+        ));
+        assert!(state.take_exit_result().is_none());
     }
 }
