@@ -141,63 +141,81 @@ On exit with `:q`, annotations are printed to stdout as structured markdown. Use
 
 anno uses vim-inspired modal editing:
 
-| Mode                | Purpose                       | Enter         | Exit          |
-| ------------------- | ----------------------------- | ------------- | ------------- |
-| **Normal**          | Navigate the document         | —             | —             |
-| **Visual**          | Select text for annotation    | `v`           | `Esc`         |
-| **Insert**          | Type annotation text          | _(automatic)_ | `Esc`/`Enter` |
-| **Annotation List** | Browse and manage annotations | `Tab`         | `Tab`/`Esc`   |
-| **Command**         | Execute commands              | `:`           | `Esc`         |
+| Mode                | Purpose                          | Enter          | Exit      |
+| ------------------- | -------------------------------- | -------------- | --------- |
+| **Normal**          | Navigate the document            | Startup default | —         |
+| **Visual**          | Select text for annotations      | `v`            | `Esc`     |
+| **Insert**          | Enter annotation text            | Annotation flow | `Ctrl-S` or `Esc` |
+| **Annotation List** | Browse existing annotations      | `Tab`          | `Esc`     |
+| **Command**         | Run quit commands                | `:`            | `Esc`     |
+
+## Help Overlay
+
+Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below.
 
 ## Keybindings
 
+### Global
+
+| Key      | Action                      |
+| -------- | --------------------------- |
+| `?`      | Toggle help                 |
+| `:q`     | Quit                        |
+| `:q!`    | Quit without saving output  |
+| `Ctrl-C` | Force quit                  |
+| `W`      | Toggle word wrap            |
+| `Tab`    | Toggle annotation list      |
+
 ### Normal Mode
 
-| Key                 | Action                     |
-| ------------------- | -------------------------- |
-| `h` `j` `k` `l`     | Move left/down/up/right    |
-| `w` / `b`           | Word forward / backward    |
-| `0` / `$`           | Line start / end           |
-| `gg` / `G`          | Document top / bottom      |
-| `Ctrl-d` / `Ctrl-u` | Half page down / up        |
-| `Ctrl-f` / `Ctrl-b` | Full page down / up        |
-| `v`                 | Enter Visual mode          |
-| `i`                 | Create insertion at cursor |
-| `gc`                | Create global comment      |
-| `]a` / `[a`         | Next / previous annotation |
-| `Tab`               | Open annotation list       |
-| `W`                 | Toggle word wrap           |
-| `?`                 | Toggle help                |
-| `:`                 | Enter Command mode         |
+| Key         | Action                            |
+| ----------- | --------------------------------- |
+| `h/j/k/l`   | Move cursor                       |
+| `w/b/e`     | Move by word                      |
+| `0/$`       | Move to line start/end            |
+| `gg/G`      | Move to document top/bottom       |
+| `Ctrl-d/u`  | Move half page down/up            |
+| `Ctrl-f/b`  | Move full page down/up            |
+| `v`         | Enter visual mode                 |
+| `i`         | Create insertion annotation       |
+| `gc`        | Create global comment annotation  |
+| `]a/[a`     | Jump to next/previous annotation  |
 
 ### Visual Mode
 
-| Key             | Action                   |
-| --------------- | ------------------------ |
-| `h` `j` `k` `l` | Extend selection         |
-| `w` / `b`       | Extend by word           |
-| `0` / `$`       | Extend to line start/end |
-| `d`             | Create deletion          |
-| `c`             | Create comment           |
-| `r`             | Create replacement       |
-| `Esc`           | Cancel selection         |
+| Key       | Action                         |
+| --------- | ------------------------------ |
+| `h/j/k/l` | Extend selection               |
+| `w/b/e`   | Extend selection by word       |
+| `0/$`     | Extend selection to line start/end |
+| `d`       | Create deletion annotation     |
+| `c`       | Create comment annotation      |
+| `r`       | Create replacement annotation  |
+| `Esc`     | Cancel selection               |
 
-### Annotation List Mode
+### Insert Mode
 
-| Key           | Action             |
-| ------------- | ------------------ |
-| `j` / `k`     | Navigate list      |
-| `Enter`       | Jump to annotation |
-| `dd`          | Delete annotation  |
-| `Tab` / `Esc` | Exit list          |
+| Key      | Action         |
+| -------- | -------------- |
+| `Ctrl-S` | Confirm input  |
+| `Esc`    | Cancel input   |
 
-### Commands
+### Annotation List
 
-| Command | Action                        |
+| Key     | Action                        |
 | ------- | ----------------------------- |
-| `:q`    | Quit and print annotations    |
-| `:q!`   | Quit without output           |
-| `:w`    | Preview annotations to stderr |
+| `j/k`   | Move selection                |
+| `Enter` | Jump to selected annotation   |
+| `dd`    | Delete selected annotation    |
+| `Esc`   | Exit annotation list          |
+
+### Command Mode
+
+| Key    | Action          |
+| ------ | --------------- |
+| `:q`   | Quit            |
+| `:q!`  | Force quit      |
+| `Esc`  | Cancel command  |
 
 ## Annotation Types
 
