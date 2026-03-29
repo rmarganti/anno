@@ -13,7 +13,6 @@ pub struct HelpEntry {
 }
 
 /// Returns the structured help content used by the help overlay.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
         HelpSection {
@@ -81,7 +80,6 @@ pub fn help_sections() -> Vec<HelpSection> {
     ]
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn entry(keys: &'static str, action: &'static str) -> HelpEntry {
     HelpEntry { keys, action }
 }

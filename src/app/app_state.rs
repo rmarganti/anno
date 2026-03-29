@@ -112,7 +112,6 @@ impl AppState {
         self.confirm_dialog.is_some()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_help_visible(&self) -> bool {
         self.help_visible
     }
