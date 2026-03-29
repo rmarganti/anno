@@ -102,6 +102,17 @@ impl KeybindHandler {
         }
     }
 
+    /// Translate a key event while the help overlay is visible.
+    pub fn handle_help_overlay(&mut self, mode: Mode, event: KeyEvent) -> Action {
+        match self.handle(mode, event) {
+            Action::ToggleHelp => Action::ToggleHelp,
+            _ => match event.code {
+                KeyCode::Esc | KeyCode::Char('q') => Action::ToggleHelp,
+                _ => Action::None,
+            },
+        }
+    }
+
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
         if matches!(event.code, KeyCode::Char('?'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
@@ -384,6 +395,30 @@ mod tests {
         assert!(h.has_pending());
         assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
         assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn help_overlay_uses_configured_shortcut_to_toggle() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('?')),
+            Action::ToggleHelp
+        );
+    }
+
+    #[test]
+    fn help_overlay_still_accepts_escape_and_q_to_close() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Esc)),
+            Action::ToggleHelp
+        );
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('q')),
+            Action::ToggleHelp
+        );
     }
 
     // ── Normal mode: multi-key sequences ──────────────────────────

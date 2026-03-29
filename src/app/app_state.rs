@@ -162,10 +162,10 @@ impl AppState {
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
         if self.help_visible {
-            if matches!(key_event.code, crossterm::event::KeyCode::Esc)
-                || matches!(key_event.code, crossterm::event::KeyCode::Char('?'))
-                || matches!(key_event.code, crossterm::event::KeyCode::Char('q'))
-            {
+            if matches!(
+                self.keybinds.handle_help_overlay(self.mode, key_event),
+                Action::ToggleHelp
+            ) {
                 self.help_visible = false;
                 self.keybinds.clear_pending();
             }
@@ -795,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn question_mark_toggles_help_off_when_already_visible() {
+    fn configured_help_shortcut_toggles_help_off_when_already_visible() {
         harness("hello")
             .keys("??")
             .assert_help_hidden()
