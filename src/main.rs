@@ -11,8 +11,8 @@ mod tui;
 use std::io::{self, IsTerminal, Write};
 use std::panic;
 use std::process;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};

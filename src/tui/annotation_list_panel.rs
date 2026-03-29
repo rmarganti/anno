@@ -150,7 +150,7 @@ impl AnnotationListPanel {
                 .take(available)
                 .collect();
             // Pad to fill remaining space.
-            let padded = format!("{:<width$}", preview, width = available);
+            let padded = format!("{preview:<available$}");
             let preview_span = Span::styled(padded, base_style);
 
             let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);

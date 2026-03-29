@@ -4,3 +4,8 @@
 .dolt/
 *.db
 .beads-credential-key
+# Beads viewer
+.perles
+
+# AI tools. Not ready to commit
+ralph.sh

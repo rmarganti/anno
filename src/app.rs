@@ -1,29 +1,24 @@
+mod app_state;
+
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyEvent};
+use crossterm::event::{self, Event};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
     widgets::Paragraph,
 };
 
-use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
-use crate::annotation::store::AnnotationStore;
 use crate::highlight::syntect::SyntectHighlighter;
-use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
-use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
-use crate::tui::annotation_list_panel::{AnnotationListPanel, PANEL_WIDTH};
-use crate::tui::app_command::{AppCommand, QuitKind};
-use crate::tui::command_line::{CommandLine, CommandLineEvent};
-use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
-use crate::tui::document_view::DocumentView;
+use crate::tui::annotation_list_panel::PANEL_WIDTH;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
+use app_state::AppState;
 
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
@@ -37,32 +32,12 @@ pub enum ExitResult {
     QuitSilent,
 }
 
-/// Top-level application state.
+/// Top-level application shell.
 pub struct App {
-    /// The source name (filename or "[stdin]").
-    source_name: String,
-    /// Current input mode.
-    mode: Mode,
-    /// Key event dispatcher.
-    keybinds: KeybindHandler,
-    /// Annotation storage.
-    annotations: AnnotationStore,
-    /// Command-line component (handles `:` command input).
-    command_line: CommandLine,
-    /// Whether the app should quit.
-    should_quit: bool,
-    /// The exit result to return.
-    exit_result: Option<ExitResult>,
     /// Centralized theme styles.
     theme: UiTheme,
-    /// Document view component (viewport, cursor, rendering).
-    document_view: DocumentView,
-    /// Annotation creation state machine.
-    annotation_controller: AnnotationController,
-    /// Annotation list sidebar panel.
-    annotation_list_panel: AnnotationListPanel,
-    /// Active confirmation dialog overlay, if any.
-    confirm_dialog: Option<ConfirmDialog>,
+    /// Terminal-independent application state.
+    state: AppState,
 }
 
 impl App {
@@ -77,23 +52,11 @@ impl App {
             Some(&startup.app_theme_overlays),
             startup.document_background,
         );
-        let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
-
-        let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
+        let document_lines = renderer::text_to_lines(&content, &highlighter);
 
         Ok(Self {
-            source_name,
-            mode: Mode::Normal,
-            keybinds: KeybindHandler::new(),
-            annotations: AnnotationStore::new(),
-            command_line: CommandLine::new(),
-            should_quit: false,
-            exit_result: None,
             theme,
-            document_view,
-            annotation_controller: AnnotationController::new(),
-            annotation_list_panel: AnnotationListPanel::new(),
-            confirm_dialog: None,
+            state: AppState::new(source_name, document_lines),
         })
     }
 
@@ -106,7 +69,7 @@ impl App {
         terminal: &mut DefaultTerminal,
         signal_flag: &AtomicBool,
     ) -> io::Result<ExitResult> {
-        while !self.should_quit {
+        while !self.state.should_quit() {
             if signal_flag.load(Ordering::Relaxed) {
                 break;
             }
@@ -117,231 +80,15 @@ impl App {
 
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key_event) = event::read()? {
-                    self.handle_key(key_event);
+                    self.state.handle_key(key_event);
                 }
             }
         }
 
-        Ok(self.exit_result.unwrap_or(ExitResult::QuitSilent))
-    }
-
-    fn handle_key(&mut self, key_event: KeyEvent) {
-        // If a confirm dialog is active, route all input to it.
-        if let Some(dialog) = self.confirm_dialog.take() {
-            match dialog.handle_key(key_event) {
-                ConfirmDialogEvent::Confirm => {
-                    if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
-                        self.annotations.delete(id);
-                    }
-                }
-                ConfirmDialogEvent::Cancel => {}
-                ConfirmDialogEvent::Consumed => {
-                    self.confirm_dialog = Some(dialog);
-                }
-            }
-            return;
-        }
-
-        let action = self.keybinds.handle(self.mode, key_event);
-
-        // In AnnotationList mode, MoveDown/MoveUp control panel selection,
-        // not document cursor movement.
-        if self.mode == Mode::AnnotationList {
-            match action {
-                Action::MoveDown => {
-                    self.annotation_list_panel
-                        .move_selection_down(&self.annotations);
-                    return;
-                }
-                Action::MoveUp => {
-                    self.annotation_list_panel
-                        .move_selection_up(&self.annotations);
-                    return;
-                }
-                Action::JumpToAnnotation => {
-                    if let Some(id) = self.annotation_list_panel.selected_annotation_id()
-                        && let Some(annotation) = self.annotations.get(id)
-                        && let Some(range) = annotation.range
-                    {
-                        self.document_view
-                            .set_cursor(range.start.line, range.start.column);
-                    }
-                    return;
-                }
-                Action::DeleteAnnotation => {
-                    self.confirm_dialog = Some(ConfirmDialog::new("Delete annotation? (y/n)"));
-                    return;
-                }
-                Action::ExitToNormal => {
-                    self.mode = Mode::Normal;
-                    return;
-                }
-                _ => {}
-            }
-        }
-
-        // Let DocumentView handle movement and visual-mode actions first.
-        if self.document_view.handle_action(&action) {
-            // EnterVisualMode is handled by DocumentView (sets anchor),
-            // but we also need to update the mode.
-            if matches!(action, Action::EnterVisualMode) {
-                self.mode = Mode::Visual;
-            }
-            return;
-        }
-
-        match action {
-            // -- Mode transitions --
-            Action::EnterCommandMode => {
-                self.mode = Mode::Command;
-                self.command_line.clear();
-            }
-            Action::EnterAnnotationListMode => {
-                self.annotation_list_panel.toggle();
-                if self.annotation_list_panel.is_visible() && !self.annotations.is_empty() {
-                    self.mode = Mode::AnnotationList;
-                } else {
-                    self.mode = Mode::Normal;
-                }
-            }
-            Action::ExitToNormal => {
-                self.mode = Mode::Normal;
-                self.document_view.clear_visual();
-                self.annotation_controller.cancel();
-            }
-
-            // -- Annotation navigation (Normal mode) --
-            Action::NextAnnotation => {
-                self.jump_to_adjacent_annotation(true);
-            }
-            Action::PrevAnnotation => {
-                self.jump_to_adjacent_annotation(false);
-            }
-
-            // -- Command mode --
-            Action::CommandChar(c) => {
-                let event = self.command_line.handle_char(c);
-                self.handle_command_line_event(event);
-            }
-            Action::CommandBackspace => {
-                let event = self.command_line.handle_backspace();
-                self.handle_command_line_event(event);
-            }
-            Action::CommandConfirm => {
-                let event = self.command_line.handle_confirm();
-                self.handle_command_line_event(event);
-            }
-
-            // -- Annotation creation from Visual mode --
-            Action::CreateDeletion => {
-                let action = self
-                    .annotation_controller
-                    .create_deletion(&mut self.document_view, &mut self.annotations);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateComment => {
-                let action = self
-                    .annotation_controller
-                    .start_input_for_visual_annotation("Comment", &mut self.document_view);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateReplacement => {
-                let action = self
-                    .annotation_controller
-                    .start_input_for_visual_annotation("Replacement", &mut self.document_view);
-                self.apply_annotation_action(action);
-            }
-
-            // -- Annotation creation from Normal mode --
-            Action::CreateInsertion => {
-                let action = self
-                    .annotation_controller
-                    .start_insertion(&self.document_view);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateGlobalComment => {
-                let action = self.annotation_controller.start_global_comment();
-                self.apply_annotation_action(action);
-            }
-
-            // -- Input mode --
-            Action::InputForward(key_event) => {
-                let action = self
-                    .annotation_controller
-                    .handle_input_key(key_event, &mut self.annotations);
-                self.apply_annotation_action(action);
-            }
-
-            // -- Force quit (Ctrl-C) --
-            Action::ForceQuit => {
-                self.should_quit = true;
-            }
-
-            _ => {}
-        }
-    }
-
-    fn apply_annotation_action(&mut self, action: AnnotationAction) {
-        if let AnnotationAction::SwitchMode(mode) = action {
-            self.mode = mode;
-        }
-    }
-
-    fn handle_command_line_event(&mut self, event: CommandLineEvent) {
-        match event {
-            CommandLineEvent::Command(cmd) => self.process_app_command(cmd),
-            CommandLineEvent::ExitToNormal => self.mode = Mode::Normal,
-            CommandLineEvent::Consumed => {}
-        }
-    }
-
-    fn process_app_command(&mut self, cmd: AppCommand) {
-        match cmd {
-            AppCommand::Quit(QuitKind::WithOutput) => {
-                let output = PlannotatorExporter.export(&self.annotations);
-                self.exit_result = Some(ExitResult::QuitWithOutput(output));
-                self.should_quit = true;
-            }
-            AppCommand::Quit(QuitKind::Silent) => {
-                self.exit_result = Some(ExitResult::QuitSilent);
-                self.should_quit = true;
-            }
-        }
-    }
-
-    fn jump_to_adjacent_annotation(&mut self, forward: bool) {
-        let cursor = self.document_view.cursor();
-        let cursor_pos = (cursor.row, cursor.col);
-        let ordered = self.annotations.ordered();
-
-        if ordered.is_empty() {
-            return;
-        }
-
-        let target = if forward {
-            ordered.iter().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) > cursor_pos
-                } else {
-                    false
-                }
-            })
-        } else {
-            ordered.iter().rev().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) < cursor_pos
-                } else {
-                    false
-                }
-            })
-        };
-
-        if let Some(annotation) = target
-            && let Some(range) = annotation.range
-        {
-            self.document_view
-                .set_cursor(range.start.line, range.start.column);
-        }
+        Ok(self
+            .state
+            .take_exit_result()
+            .unwrap_or(ExitResult::QuitSilent))
     }
 
     fn render(&mut self, frame: &mut Frame) {
@@ -349,8 +96,7 @@ impl App {
 
         // Decide whether the panel should actually be shown: it must be
         // toggled visible AND the terminal must be wide enough.
-        let show_panel =
-            self.annotation_list_panel.is_visible() && area.width >= MIN_WIDTH_FOR_PANEL;
+        let show_panel = self.state.is_panel_visible() && area.width >= MIN_WIDTH_FOR_PANEL;
 
         // Compute the document area width for dimension checks.
         let doc_area_width = if show_panel {
@@ -361,13 +107,13 @@ impl App {
 
         // Sync viewport dimensions before the size check so is_too_small()
         // reflects the actual terminal size (viewport starts at 0×0).
-        self.document_view.update_dimensions(
+        self.state.document_view_mut().update_dimensions(
             doc_area_width as usize,
             area.height.saturating_sub(1) as usize,
         );
 
         // Minimum terminal size check.
-        if self.document_view.is_too_small() {
+        if self.state.document_view().is_too_small() {
             let msg = Paragraph::new("Terminal too small.\nPlease resize to at least 80×24.")
                 .alignment(Alignment::Center);
             frame.render_widget(msg, area);
@@ -389,7 +135,8 @@ impl App {
 
         // Collect annotation ranges for visual indicators.
         let annotation_ranges: Vec<_> = self
-            .annotations
+            .state
+            .annotations()
             .all()
             .iter()
             .filter_map(|a| a.range)
@@ -397,54 +144,58 @@ impl App {
 
         // Resolve the selected annotation's text range (if any) for document highlighting.
         let selected_annotation_range = if show_panel {
-            self.annotation_list_panel
-                .selected_annotation_id()
-                .and_then(|id| self.annotations.get(id))
-                .and_then(|a| a.range)
+            self.state.selected_annotation_range()
         } else {
             None
         };
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            self.annotation_list_panel
-                .render(frame, panel_area, &self.annotations, &self.theme);
+            self.state.annotation_list_panel().render(
+                frame,
+                panel_area,
+                self.state.annotations(),
+                &self.theme,
+            );
         }
 
         // -- Main document area --
-        self.document_view.render(
+        let is_visual = self.state.mode() == Mode::Visual;
+        self.state.document_view_mut().render(
             frame,
             doc_area,
             &self.theme,
-            self.mode == Mode::Visual,
+            is_visual,
             &annotation_ranges,
             selected_annotation_range.as_ref(),
         );
 
         // -- Status bar --
-        let cursor = self.document_view.cursor();
+        let cursor = self.state.cursor();
         status_bar::render(
             frame,
             status_area,
             &self.theme,
             &StatusBarProps {
-                mode: self.mode,
-                source_name: &self.source_name,
-                annotation_count: self.annotations.len(),
+                mode: self.state.mode(),
+                source_name: self.state.source_name(),
+                annotation_count: self.state.annotation_count(),
                 cursor_row: cursor.row,
                 cursor_col: cursor.col,
-                word_wrap: self.document_view.word_wrap(),
-                command_buffer: self.command_line.buffer(),
+                word_wrap: self.state.word_wrap(),
+                command_buffer: self.state.command_buffer(),
             },
         );
 
         // -- Input box overlay --
-        if let Some(ib) = self.annotation_controller.input_box() {
+        if let Some(ib) = self.state.annotation_controller().input_box() {
             ib.render(frame, main_area, &self.theme);
         }
 
         // -- Confirm dialog overlay --
-        if let Some(ref dialog) = self.confirm_dialog {
+        if self.state.has_confirm_dialog()
+            && let Some(dialog) = self.state.confirm_dialog()
+        {
             dialog.render(frame, main_area);
         }
     }
