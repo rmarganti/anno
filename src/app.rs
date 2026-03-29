@@ -77,15 +77,15 @@ impl App {
                 break;
             }
 
+            terminal.draw(|frame| {
+                self.render(frame);
+            })?;
+
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key_event) = event::read()? {
                     self.state.handle_key(key_event);
                 }
             }
-
-            terminal.draw(|frame| {
-                self.render(frame);
-            })?;
         }
 
         Ok(self
