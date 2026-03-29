@@ -175,7 +175,7 @@ impl AppState {
         &self.annotation_list_panel
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) {
+    pub fn handle_key(&mut self, key_event: KeyEvent) {
         // If a confirm dialog is active, route all input to it.
         if let Some(dialog) = self.confirm_dialog.take() {
             match dialog.handle_key(key_event) {
