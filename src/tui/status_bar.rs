@@ -40,13 +40,14 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         Span::raw(wrap_indicator),
     ];
 
-    if props.mode == Mode::Command {
-        status_spans.push(Span::raw(format!(":{}", props.command_buffer)));
-    } else if props.mode == Mode::Insert {
-        status_spans.push(Span::raw("Ctrl+S confirm  Esc cancel"));
-    } else {
-        status_spans.push(Span::raw("? help"));
-    }
+    let hint = match props.mode {
+        Mode::Normal => "? help".to_string(),
+        Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
+        Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
+        Mode::AnnotationList => "j/k nav  Enter jump  dd delete  Esc".to_string(),
+        Mode::Command => format!(":{}", props.command_buffer),
+    };
+    status_spans.push(Span::raw(hint));
 
     let status_bar = Paragraph::new(Line::from(status_spans)).style(theme.status_bar);
     frame.render_widget(status_bar, area);
@@ -233,6 +234,26 @@ mod tests {
         let props = base_props(Mode::Normal);
         let output = render_to_string(&props);
         assert!(output.contains("? help"), "Expected '? help' in: {output}");
+    }
+
+    #[test]
+    fn visual_mode_shows_selection_actions() {
+        let props = base_props(Mode::Visual);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("d delete  c comment  r replace  Esc"),
+            "Expected visual hint in: {output}"
+        );
+    }
+
+    #[test]
+    fn annotation_list_mode_shows_navigation_actions() {
+        let props = base_props(Mode::AnnotationList);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("j/k nav  Enter jump  dd delete  Esc"),
+            "Expected annotation list hint in: {output}"
+        );
     }
 
     #[test]
