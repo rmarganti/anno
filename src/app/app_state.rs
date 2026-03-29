@@ -2,6 +2,7 @@ use crossterm::event::KeyEvent;
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
+use crate::annotation::types::TextRange;
 use crate::app::ExitResult;
 #[cfg(any(test, doctest))]
 use crate::highlight::StyledSpan;
@@ -142,6 +143,13 @@ impl AppState {
 
     pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
         &self.annotation_list_panel
+    }
+
+    pub fn selected_annotation_range(&self) -> Option<TextRange> {
+        self.annotation_list_panel
+            .selected_annotation_id()
+            .and_then(|id| self.annotations.get(id))
+            .and_then(|annotation| annotation.range)
     }
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
@@ -772,6 +780,25 @@ mod tests {
 
         assert_ne!(first, second);
         assert_eq!(first, back_to_first);
+    }
+
+    #[test]
+    fn selected_annotation_range_returns_selected_panel_annotation_range() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>j");
+
+        let expected_range = harness.state().annotations().ordered()[1]
+            .range
+            .expect("selected panel annotation should have a range");
+
+        let selected_range = harness
+            .state()
+            .selected_annotation_range()
+            .expect("selected panel annotation should have a range");
+
+        assert_eq!(selected_range, expected_range);
     }
 
     #[test]

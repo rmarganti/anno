@@ -144,11 +144,7 @@ impl App {
 
         // Resolve the selected annotation's text range (if any) for document highlighting.
         let selected_annotation_range = if show_panel {
-            self.state
-                .annotation_list_panel()
-                .selected_annotation_id()
-                .and_then(|id| self.state.annotations().get(id))
-                .and_then(|a| a.range)
+            self.state.selected_annotation_range()
         } else {
             None
         };
