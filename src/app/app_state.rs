@@ -162,9 +162,13 @@ impl AppState {
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
         if self.help_visible {
-            self.help_visible = !matches!(key_event.code, crossterm::event::KeyCode::Esc)
-                && !matches!(key_event.code, crossterm::event::KeyCode::Char('?'))
-                && !matches!(key_event.code, crossterm::event::KeyCode::Char('q'));
+            if matches!(key_event.code, crossterm::event::KeyCode::Esc)
+                || matches!(key_event.code, crossterm::event::KeyCode::Char('?'))
+                || matches!(key_event.code, crossterm::event::KeyCode::Char('q'))
+            {
+                self.help_visible = false;
+                self.keybinds.clear_pending();
+            }
             return;
         }
 
@@ -248,6 +252,7 @@ impl AppState {
             }
             Action::ToggleHelp => {
                 self.help_visible = !self.help_visible;
+                self.keybinds.clear_pending();
             }
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
@@ -833,6 +838,23 @@ mod tests {
             .keys("q")
             .assert_help_hidden()
             .assert_mode(Mode::Visual);
+    }
+
+    #[test]
+    fn help_toggle_clears_pending_key_sequence() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+
+        harness.keys("jg").assert_cursor(1, 0);
+        assert!(harness.state().keybinds.has_pending());
+
+        harness.keys("?").assert_help_visible();
+        assert!(!harness.state().keybinds.has_pending());
+
+        harness.keys("q").assert_help_hidden();
+        assert!(!harness.state().keybinds.has_pending());
+
+        harness.keys("g").assert_cursor(1, 0);
+        assert!(harness.state().keybinds.has_pending());
     }
 
     #[test]

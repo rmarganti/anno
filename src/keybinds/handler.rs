@@ -81,6 +81,10 @@ impl KeybindHandler {
         Self { pending: None }
     }
 
+    pub fn clear_pending(&mut self) {
+        self.pending = None;
+    }
+
     /// Returns `true` if there is a pending partial key sequence.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
@@ -99,6 +103,13 @@ impl KeybindHandler {
     }
 
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
+        if matches!(event.code, KeyCode::Char('?'))
+            && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        {
+            self.clear_pending();
+            return Action::ToggleHelp;
+        }
+
         // Resolve pending multi-key sequences first.
         if let Some(first) = self.pending.take() {
             return self.resolve_normal_sequence(first, event.code);
@@ -365,6 +376,16 @@ mod tests {
         assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
     }
 
+    #[test]
+    fn normal_help_toggle_clears_pending_sequence() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert!(!h.has_pending());
+    }
+
     // ── Normal mode: multi-key sequences ──────────────────────────
 
     #[test]
@@ -417,6 +438,19 @@ mod tests {
         assert!(!h.has_pending());
         // Next key should work normally
         assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
+    }
+
+    #[test]
+    fn clear_pending_discards_partial_sequence() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
+
+        h.clear_pending();
+
+        assert!(!h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
     }
 
     // ── Visual mode ───────────────────────────────────────────────
