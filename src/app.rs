@@ -608,6 +608,14 @@ pub(crate) mod test_harness {
             self
         }
 
+        pub fn state(&self) -> &AppState {
+            &self.state
+        }
+
+        pub fn state_mut(&mut self) -> &mut AppState {
+            &mut self.state
+        }
+
         pub fn assert_mode(&mut self, expected: Mode) -> &mut Self {
             assert_eq!(self.state.mode(), expected);
             self
@@ -711,7 +719,16 @@ pub(crate) mod test_harness {
 mod tests {
     use super::test_harness::AppTestHarness;
     use super::{AppState, ExitResult};
+    use crate::annotation::types::AnnotationType;
     use crate::keybinds::mode::Mode;
+
+    fn harness(content: &str) -> AppTestHarness {
+        AppTestHarness::new(content)
+    }
+
+    fn create_two_deletions(harness: &mut AppTestHarness) {
+        harness.keys("vldjvld").assert_annotation_count(2);
+    }
 
     #[test]
     fn new_plain_builds_terminal_independent_default_state() {
@@ -756,5 +773,295 @@ mod tests {
         AppTestHarness::new("hello")
             .assert_mode(Mode::Normal)
             .assert_cursor(0, 0);
+    }
+
+    #[test]
+    fn normal_can_enter_visual_mode_and_escape_back() {
+        harness("first\nsecond")
+            .keys("v")
+            .assert_mode(Mode::Visual)
+            .keys("<Esc>")
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn normal_can_enter_command_mode_and_escape_back() {
+        harness("first")
+            .keys(":")
+            .assert_mode(Mode::Command)
+            .keys("<Esc>")
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn tab_enters_annotation_list_mode_when_annotations_exist() {
+        let mut harness = harness("first\nsecond");
+        harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
+    }
+
+    #[test]
+    fn escape_leaves_annotation_list_mode() {
+        let mut harness = harness("first\nsecond");
+        harness
+            .keys("vld<Tab><Esc>")
+            .assert_mode(Mode::Normal)
+            .assert_panel_visible();
+    }
+
+    #[test]
+    fn insertion_enters_insert_mode_and_escape_cancels_back_to_normal() {
+        harness("first")
+            .keys("i")
+            .assert_mode(Mode::Insert)
+            .keys("<Esc>")
+            .assert_mode(Mode::Normal)
+            .assert_annotation_count(0);
+    }
+
+    #[test]
+    fn visual_deletion_returns_to_normal_mode() {
+        harness("first\nsecond")
+            .keys("vld")
+            .assert_mode(Mode::Normal)
+            .assert_annotation_count(1);
+    }
+
+    #[test]
+    fn normal_movement_keys_update_cursor_position() {
+        harness("abcd\nefgh")
+            .keys("ljh")
+            .assert_cursor(1, 0)
+            .keys("k")
+            .assert_cursor(0, 0);
+    }
+
+    #[test]
+    fn gg_moves_to_top_of_document() {
+        harness("one\ntwo\nthree").keys("jjgg").assert_cursor(0, 0);
+    }
+
+    #[test]
+    fn shift_g_moves_to_bottom_of_document() {
+        harness("one\ntwo\nthree").keys("G").assert_cursor(2, 0);
+    }
+
+    #[test]
+    fn zero_and_dollar_move_to_line_start_and_end() {
+        harness("abcd\nefgh")
+            .keys("jl0")
+            .assert_cursor(1, 0)
+            .keys("$")
+            .assert_cursor(1, 3);
+    }
+
+    #[test]
+    fn visual_deletion_creates_deletion_annotation() {
+        let mut harness = harness("hello");
+        harness.keys("vld");
+        let annotation = harness.state().annotations().ordered()[0];
+
+        assert_eq!(annotation.annotation_type, AnnotationType::Deletion);
+        assert_eq!(annotation.selected_text, "he");
+        assert_eq!(annotation.text, "");
+    }
+
+    #[test]
+    fn visual_comment_opens_input_and_commits_comment() {
+        let mut harness = harness("hello");
+        harness.keys("vlcnote<C-s>");
+        let annotation = harness.state().annotations().ordered()[0];
+
+        assert_eq!(harness.state().mode(), Mode::Normal);
+        assert_eq!(annotation.annotation_type, AnnotationType::Comment);
+        assert_eq!(annotation.selected_text, "he");
+        assert_eq!(annotation.text, "note");
+    }
+
+    #[test]
+    fn visual_replacement_opens_input_and_commits_replacement() {
+        let mut harness = harness("hello");
+        harness.keys("vlrnew<C-s>");
+        let annotation = harness.state().annotations().ordered()[0];
+
+        assert_eq!(harness.state().mode(), Mode::Normal);
+        assert_eq!(annotation.annotation_type, AnnotationType::Replacement);
+        assert_eq!(annotation.selected_text, "he");
+        assert_eq!(annotation.text, "new");
+    }
+
+    #[test]
+    fn insertion_creates_annotation_at_cursor() {
+        let mut harness = harness("hello\nworld");
+        harness.keys("jliadd<C-s>");
+        let annotation = harness.state().annotations().ordered()[0];
+        let range = annotation.range.expect("insertion should have a range");
+
+        assert_eq!(annotation.annotation_type, AnnotationType::Insertion);
+        assert_eq!(annotation.text, "add");
+        assert_eq!((range.start.line, range.start.column), (1, 1));
+        assert_eq!((range.end.line, range.end.column), (1, 1));
+    }
+
+    #[test]
+    fn global_comment_creates_unanchored_annotation() {
+        let mut harness = harness("hello");
+        harness.keys("gcoverall<C-s>");
+        let annotation = harness.state().annotations().ordered()[0];
+
+        assert_eq!(annotation.annotation_type, AnnotationType::GlobalComment);
+        assert!(annotation.range.is_none());
+        assert_eq!(annotation.text, "overall");
+    }
+
+    #[test]
+    fn escape_during_input_cancels_annotation_creation() {
+        harness("hello")
+            .keys("vlcnote<Esc>")
+            .assert_mode(Mode::Normal)
+            .assert_annotation_count(0);
+    }
+
+    #[test]
+    fn next_annotation_jumps_forward() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("gg]a").assert_cursor(1, 1);
+    }
+
+    #[test]
+    fn prev_annotation_jumps_backward() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("G[a").assert_cursor(1, 1);
+    }
+
+    #[test]
+    fn annotation_navigation_stops_at_boundaries() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("gg[a").assert_cursor(0, 0);
+        harness.keys("G]a").assert_cursor(2, 0);
+    }
+
+    #[test]
+    fn tab_toggles_annotation_panel_visibility() {
+        harness("hello")
+            .keys("vld<Tab>")
+            .assert_panel_visible()
+            .keys("<Tab>")
+            .assert_panel_hidden();
+    }
+
+    #[test]
+    fn annotation_list_navigation_updates_selection() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>k");
+        let first = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        harness.keys("j");
+        let second = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        harness.keys("k");
+        let back_to_first = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        assert_ne!(first, second);
+        assert_eq!(first, back_to_first);
+    }
+
+    #[test]
+    fn enter_in_annotation_list_jumps_to_selected_annotation() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("gg<Tab>j<Enter>").assert_cursor(1, 1);
+    }
+
+    #[test]
+    fn confirm_dialog_can_delete_annotation_from_list() {
+        let mut harness = harness("alpha\nbeta");
+        harness.keys("vld<Tab>kdd").assert_has_confirm_dialog();
+        harness
+            .keys("y")
+            .assert_annotation_count(0)
+            .assert_no_confirm_dialog();
+    }
+
+    #[test]
+    fn confirm_dialog_cancel_keeps_annotation() {
+        harness("alpha\nbeta")
+            .keys("vld<Tab>kddn")
+            .assert_annotation_count(1)
+            .assert_no_confirm_dialog();
+    }
+
+    #[test]
+    fn command_q_sets_quit_with_output() {
+        let mut harness = harness("hello");
+        harness.keys(":q<Enter>").assert_should_quit();
+
+        match harness.state_mut().take_exit_result() {
+            Some(ExitResult::QuitWithOutput(output)) => {
+                assert_eq!(output, "No changes detected.");
+            }
+            _ => panic!("expected quit with output"),
+        }
+    }
+
+    #[test]
+    fn command_q_bang_sets_silent_quit() {
+        let mut harness = harness("hello");
+        harness.keys(":q!<Enter>").assert_should_quit();
+
+        assert!(matches!(
+            harness.state_mut().take_exit_result(),
+            Some(ExitResult::QuitSilent)
+        ));
+    }
+
+    #[test]
+    fn backspace_on_empty_command_exits_command_mode() {
+        harness("hello")
+            .keys(":<BS>")
+            .assert_mode(Mode::Normal)
+            .assert_not_quit();
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_normal_mode() {
+        harness("hello").keys("<C-c>").assert_should_quit();
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_visual_mode() {
+        harness("hello").keys("v<C-c>").assert_should_quit();
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_insert_mode() {
+        harness("hello").keys("i<C-c>").assert_should_quit();
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_command_mode() {
+        harness("hello").keys(":<C-c>").assert_should_quit();
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_annotation_list_mode() {
+        harness("hello").keys("vld<Tab><C-c>").assert_should_quit();
     }
 }

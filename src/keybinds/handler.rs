@@ -200,7 +200,11 @@ impl KeybindHandler {
     }
 
     fn handle_insert(&mut self, event: KeyEvent) -> Action {
-        Action::InputForward(event)
+        if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
+            Action::ForceQuit
+        } else {
+            Action::InputForward(event)
+        }
     }
 
     fn handle_annotation_list(&mut self, event: KeyEvent) -> Action {
