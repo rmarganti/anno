@@ -5,10 +5,8 @@ use crate::annotation::store::AnnotationStore;
 use crate::app::ExitResult;
 #[cfg(any(test, doctest))]
 use crate::highlight::StyledSpan;
-use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
-use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::annotation_list_panel::AnnotationListPanel;
 use crate::tui::app_command::{AppCommand, QuitKind};
@@ -45,15 +43,8 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        source_name: String,
-        content: String,
-        startup: &StartupSettings,
-    ) -> Result<Self, StartupError> {
-        let highlighter = SyntectHighlighter::from_startup(startup)?;
-        let doc_lines_result = renderer::text_to_lines(&content, &highlighter);
-
-        Ok(Self::from_document_lines(source_name, doc_lines_result))
+    pub fn new(source_name: String, doc_lines_result: renderer::DocumentLines) -> Self {
+        Self::from_document_lines(source_name, doc_lines_result)
     }
 
     #[cfg(any(test, doctest))]

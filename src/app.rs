@@ -15,6 +15,7 @@ use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_list_panel::PANEL_WIDTH;
+use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
 use app_state::AppState;
@@ -45,22 +46,18 @@ impl App {
         content: String,
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
-        let theme = Self::theme_from_startup(&startup)?;
-
-        Ok(Self {
-            theme,
-            state: AppState::new(source_name, content, &startup)?,
-        })
-    }
-
-    fn theme_from_startup(startup: &StartupSettings) -> Result<UiTheme, StartupError> {
-        let highlighter = SyntectHighlighter::from_startup(startup)?;
-
-        Ok(UiTheme::from_syntect_theme(
+        let highlighter = SyntectHighlighter::from_startup(&startup)?;
+        let theme = UiTheme::from_syntect_theme(
             highlighter.theme(),
             Some(&startup.app_theme_overlays),
             startup.document_background,
-        ))
+        );
+        let document_lines = renderer::text_to_lines(&content, &highlighter);
+
+        Ok(Self {
+            theme,
+            state: AppState::new(source_name, document_lines),
+        })
     }
 
     /// Run the application main loop. Returns the exit result.
