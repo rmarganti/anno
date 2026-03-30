@@ -14,6 +14,13 @@ use crate::tui::theme::UiTheme;
 /// Fixed width of the annotation list panel in columns.
 pub const PANEL_WIDTH: u16 = 36;
 
+const EMPTY_STATE_LINES: [&str; 4] = [
+    "No annotations yet",
+    "",
+    "Select text and press d, c, or r",
+    "to create an annotation.",
+];
+
 /// The annotation list sidebar panel widget.
 #[derive(Debug)]
 pub struct AnnotationListPanel {
@@ -93,12 +100,22 @@ impl AnnotationListPanel {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
-            let msg = Paragraph::new("No annotations")
-                .alignment(Alignment::Center)
-                .style(theme.panel);
-            // Center vertically.
-            let y = inner.y + inner.height / 2;
-            let centered_area = Rect::new(inner.x, y, inner.width, 1);
+            let msg = Paragraph::new(
+                EMPTY_STATE_LINES
+                    .iter()
+                    .map(|line| Line::from(*line))
+                    .collect::<Vec<_>>(),
+            )
+            .alignment(Alignment::Center)
+            .style(theme.panel);
+
+            let message_height = EMPTY_STATE_LINES.len() as u16;
+            let centered_area = Rect::new(
+                inner.x,
+                inner.y + inner.height.saturating_sub(message_height) / 2,
+                inner.width,
+                inner.height.min(message_height),
+            );
             frame.render_widget(msg, centered_area);
             return;
         }
@@ -224,6 +241,8 @@ fn type_glyph(annotation_type: &AnnotationType) -> &'static str {
 mod tests {
     use super::*;
     use crate::annotation::types::{Annotation, TextPosition, TextRange};
+    use crate::tui::theme::UiTheme;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
         TextRange {
@@ -247,6 +266,35 @@ mod tests {
             store.add(ann);
         }
         (store, ids)
+    }
+
+    fn render_to_lines(width: u16, height: u16, panel: &AnnotationListPanel) -> Vec<String> {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let store = AnnotationStore::new();
+        let theme = UiTheme::default();
+
+        terminal
+            .draw(|frame| {
+                panel.render(frame, Rect::new(0, 0, width, height), &store, &theme);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|y| {
+                (0..width)
+                    .map(|x| {
+                        buffer
+                            .cell((x, y))
+                            .map(|cell| cell.symbol().chars().next().unwrap_or(' '))
+                            .unwrap_or(' ')
+                    })
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
     }
 
     // ───── visibility ─────
@@ -385,6 +433,25 @@ mod tests {
         assert!(panel.selected_annotation_id().is_none());
         panel.move_selection_up(&store);
         assert!(panel.selected_annotation_id().is_none());
+    }
+
+    #[test]
+    fn render_empty_state_shows_informative_message() {
+        let panel = AnnotationListPanel::new();
+        let output = render_to_lines(36, 10, &panel).join("\n");
+
+        assert!(
+            output.contains("No annotations yet"),
+            "Expected empty-state title in: {output}"
+        );
+        assert!(
+            output.contains("Select text and press d, c, or r"),
+            "Expected empty-state guidance in: {output}"
+        );
+        assert!(
+            output.contains("to create an annotation."),
+            "Expected empty-state follow-up in: {output}"
+        );
     }
 
     // ───── type glyphs ─────
