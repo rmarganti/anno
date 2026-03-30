@@ -155,13 +155,9 @@ impl App {
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            self.state.annotation_list_panel().render(
-                frame,
-                panel_area,
-                self.state.annotations(),
-                &self.theme,
-                self.state.mode() == Mode::AnnotationList,
-            );
+            let is_focused = self.state.mode() == Mode::AnnotationList;
+            self.state
+                .render_annotation_list_panel(frame, panel_area, &self.theme, is_focused);
         }
 
         // -- Main document area --

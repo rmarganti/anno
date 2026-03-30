@@ -91,7 +91,7 @@ impl AnnotationListPanel {
 
     /// Render the panel into the given area.
     pub fn render(
-        &self,
+        &mut self,
         frame: &mut Frame,
         area: Rect,
         store: &AnnotationStore,
@@ -110,6 +110,7 @@ impl AnnotationListPanel {
         frame.render_widget(block, area);
 
         let ordered = store.ordered();
+        self.list_state.ensure_visible(&ordered, inner.height);
 
         if ordered.is_empty() {
             let msg = Paragraph::new(
@@ -132,17 +133,25 @@ impl AnnotationListPanel {
             return;
         }
 
+        let visible_height = inner.height as usize;
+        if visible_height == 0 {
+            return;
+        }
+
+        let max_offset = ordered.len().saturating_sub(visible_height);
+        self.list_state.scroll_offset = self.list_state.scroll_offset.min(max_offset);
+
         let current_idx = self.list_state.resolve_index(&ordered);
+        let has_items_above = self.list_state.scroll_offset > 0;
+        let has_items_below = self.list_state.scroll_offset + visible_height < ordered.len();
 
         for (row, annotation) in ordered
             .iter()
             .enumerate()
             .skip(self.list_state.scroll_offset)
+            .take(visible_height)
         {
             let visible_idx = row - self.list_state.scroll_offset;
-            if visible_idx as u16 >= inner.height {
-                break;
-            }
 
             let is_selected = row == current_idx;
             let base_style = if is_selected {
@@ -189,6 +198,8 @@ impl AnnotationListPanel {
             let line_area = Rect::new(inner.x, inner.y + visible_idx as u16, inner.width, 1);
             frame.render_widget(Paragraph::new(line), line_area);
         }
+
+        render_scroll_indicators(frame, inner, theme, has_items_above, has_items_below);
     }
 }
 
@@ -292,6 +303,49 @@ fn vertical_padding(area: Rect, padding: u16) -> Rect {
             area.width,
             area.height - total_padding,
         )
+    }
+}
+
+fn render_scroll_indicators(
+    frame: &mut Frame,
+    inner: Rect,
+    theme: &UiTheme,
+    has_items_above: bool,
+    has_items_below: bool,
+) {
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let indicator_x = inner.x + inner.width - 1;
+
+    if inner.height == 1 {
+        let symbol = match (has_items_above, has_items_below) {
+            (true, true) => "…",
+            (true, false) => "▲",
+            (false, true) => "▼",
+            (false, false) => return,
+        };
+
+        frame.render_widget(
+            Paragraph::new(symbol).style(theme.panel_border),
+            Rect::new(indicator_x, inner.y, 1, 1),
+        );
+        return;
+    }
+
+    if has_items_above {
+        frame.render_widget(
+            Paragraph::new("▲").style(theme.panel_border),
+            Rect::new(indicator_x, inner.y, 1, 1),
+        );
+    }
+
+    if has_items_below {
+        frame.render_widget(
+            Paragraph::new("▼").style(theme.panel_border),
+            Rect::new(indicator_x, inner.y + inner.height - 1, 1, 1),
+        );
     }
 }
 
@@ -407,14 +461,14 @@ mod tests {
         (store, ids)
     }
 
-    fn render_to_lines(width: u16, height: u16, panel: &AnnotationListPanel) -> Vec<String> {
+    fn render_to_lines(width: u16, height: u16, panel: &mut AnnotationListPanel) -> Vec<String> {
         render_store_to_lines(width, height, panel, &AnnotationStore::new(), false)
     }
 
     fn render_store_to_lines(
         width: u16,
         height: u16,
-        panel: &AnnotationListPanel,
+        panel: &mut AnnotationListPanel,
         store: &AnnotationStore,
         is_focused: bool,
     ) -> Vec<String> {
@@ -654,8 +708,8 @@ mod tests {
 
     #[test]
     fn render_empty_state_shows_informative_message() {
-        let panel = AnnotationListPanel::new();
-        let output = render_to_lines(36, 10, &panel).join("\n");
+        let mut panel = AnnotationListPanel::new();
+        let output = render_to_lines(36, 10, &mut panel).join("\n");
 
         assert!(
             output.contains("No annotations yet"),
@@ -766,9 +820,9 @@ mod tests {
             String::from("comment preview"),
         ));
         store.add(Annotation::global_comment(String::from("global preview")));
-        let panel = AnnotationListPanel::new();
+        let mut panel = AnnotationListPanel::new();
 
-        let output = render_store_to_lines(36, 6, &panel, &store, false).join("\n");
+        let output = render_store_to_lines(36, 6, &mut panel, &store, false).join("\n");
 
         assert!(
             output.contains("L3 comment preview"),
@@ -813,5 +867,83 @@ mod tests {
             unfocused.cell((5, 1)).unwrap().bg,
             focused.cell((5, 1)).unwrap().bg
         );
+    }
+
+    #[test]
+    fn render_scrolls_down_to_keep_selection_visible() {
+        let (store, ids) = make_store_with_deletions(20);
+        let mut panel = AnnotationListPanel::new();
+        panel.set_selected_annotation_id(ids[0]);
+
+        for _ in 0..6 {
+            panel.move_selection_down(&store);
+        }
+
+        let output = render_store_to_lines(36, 7, &mut panel, &store, false).join("\n");
+
+        assert_eq!(panel.list_state.scroll_offset, 2);
+        assert!(
+            output.contains("L7 del6"),
+            "Expected selected item in view: {output}"
+        );
+        assert!(
+            output.contains('▲'),
+            "Expected upward scroll indicator in: {output}"
+        );
+        assert!(
+            output.contains('▼'),
+            "Expected downward scroll indicator in: {output}"
+        );
+    }
+
+    #[test]
+    fn render_scrolls_back_up_when_selection_moves_up() {
+        let (store, ids) = make_store_with_deletions(20);
+        let mut panel = AnnotationListPanel::new();
+        panel.set_selected_annotation_id(ids[0]);
+
+        for _ in 0..8 {
+            panel.move_selection_down(&store);
+        }
+        let _ = render_store_to_lines(36, 7, &mut panel, &store, false);
+
+        for _ in 0..5 {
+            panel.move_selection_up(&store);
+        }
+
+        let output = render_store_to_lines(36, 7, &mut panel, &store, false).join("\n");
+
+        assert_eq!(panel.list_state.scroll_offset, 3);
+        assert!(
+            output.contains("L4 del3"),
+            "Expected moved selection in view: {output}"
+        );
+        assert!(
+            output.contains('▲'),
+            "Expected upward scroll indicator in: {output}"
+        );
+        assert!(
+            output.contains('▼'),
+            "Expected downward scroll indicator in: {output}"
+        );
+    }
+
+    #[test]
+    fn render_scrolling_is_no_op_for_zero_or_one_annotation() {
+        let mut empty_panel = AnnotationListPanel::new();
+        let empty_store = AnnotationStore::new();
+        let _ = render_store_to_lines(36, 7, &mut empty_panel, &empty_store, false);
+        assert_eq!(empty_panel.list_state.scroll_offset, 0);
+
+        let (store, ids) = make_store_with_deletions(1);
+        let mut single_panel = AnnotationListPanel::new();
+        single_panel.set_selected_annotation_id(ids[0]);
+        single_panel.list_state.scroll_offset = 4;
+
+        let output = render_store_to_lines(36, 7, &mut single_panel, &store, false).join("\n");
+
+        assert_eq!(single_panel.list_state.scroll_offset, 0);
+        assert!(!output.contains('▲'));
+        assert!(!output.contains('▼'));
     }
 }

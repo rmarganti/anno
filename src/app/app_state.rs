@@ -1,4 +1,5 @@
 use crossterm::event::KeyEvent;
+use ratatui::{Frame, layout::Rect};
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
@@ -15,6 +16,7 @@ use crate::tui::command_line::{CommandLine, CommandLineEvent};
 use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
+use crate::tui::theme::UiTheme;
 use crate::tui::viewport::CursorPosition;
 
 /// Terminal-independent application state.
@@ -168,8 +170,20 @@ impl AppState {
         self.confirm_dialog.as_ref()
     }
 
+    #[cfg(any(test, doctest))]
     pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
         &self.annotation_list_panel
+    }
+
+    pub fn render_annotation_list_panel(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        theme: &UiTheme,
+        is_focused: bool,
+    ) {
+        self.annotation_list_panel
+            .render(frame, area, &self.annotations, theme, is_focused);
     }
 
     pub fn selected_annotation_range(&self) -> Option<TextRange> {
