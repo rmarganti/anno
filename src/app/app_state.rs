@@ -389,29 +389,78 @@ impl AppState {
             return;
         }
 
+        let current_idx = self.current_annotation_index(&ordered, cursor_pos, forward);
+
         let target = if forward {
-            ordered.iter().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) > cursor_pos
-                } else {
-                    false
-                }
-            })
+            if let Some(current_idx) = current_idx {
+                ordered
+                    .iter()
+                    .skip(current_idx + 1)
+                    .find(|annotation| annotation.range.is_some())
+            } else {
+                ordered.iter().find(|annotation| {
+                    annotation
+                        .range
+                        .map(|range| (range.start.line, range.start.column) > cursor_pos)
+                        .unwrap_or(false)
+                })
+            }
+        } else if let Some(current_idx) = current_idx {
+            ordered[..current_idx]
+                .iter()
+                .rev()
+                .find(|annotation| annotation.range.is_some())
         } else {
-            ordered.iter().rev().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) < cursor_pos
-                } else {
-                    false
-                }
+            ordered.iter().rev().find(|annotation| {
+                annotation
+                    .range
+                    .map(|range| (range.start.line, range.start.column) < cursor_pos)
+                    .unwrap_or(false)
             })
         };
 
         if let Some(annotation) = target
             && let Some(range) = annotation.range
         {
+            self.annotation_list_panel
+                .set_selected_annotation_id(annotation.id);
             self.document_view
                 .set_cursor(range.start.line, range.start.column);
+        }
+    }
+
+    fn current_annotation_index(
+        &self,
+        ordered: &[&crate::annotation::types::Annotation],
+        cursor_pos: (usize, usize),
+        forward: bool,
+    ) -> Option<usize> {
+        if let Some(selected_id) = self.annotation_list_panel.selected_annotation_id()
+            && let Some(index) = ordered
+                .iter()
+                .position(|annotation| annotation.id == selected_id)
+            && ordered[index]
+                .range
+                .map(|range| (range.start.line, range.start.column) == cursor_pos)
+                .unwrap_or(false)
+        {
+            return Some(index);
+        }
+
+        let matching_indices: Vec<_> = ordered
+            .iter()
+            .enumerate()
+            .filter_map(|(index, annotation)| {
+                annotation.range.and_then(|range| {
+                    ((range.start.line, range.start.column) == cursor_pos).then_some(index)
+                })
+            })
+            .collect();
+
+        if forward {
+            matching_indices.last().copied()
+        } else {
+            matching_indices.first().copied()
         }
     }
 }
@@ -573,7 +622,7 @@ pub(crate) mod test_harness {
 mod tests {
     use super::test_harness::AppTestHarness;
     use super::{AppState, ExitResult};
-    use crate::annotation::types::AnnotationType;
+    use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
     use crate::keybinds::mode::Mode;
 
     fn harness(content: &str) -> AppTestHarness {
@@ -582,6 +631,101 @@ mod tests {
 
     fn create_two_deletions(harness: &mut AppTestHarness) {
         harness.keys("vldjvld").assert_annotation_count(2);
+    }
+
+    fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
+        TextRange {
+            start: TextPosition {
+                line: sl,
+                column: sc,
+            },
+            end: TextPosition {
+                line: el,
+                column: ec,
+            },
+        }
+    }
+
+    fn add_mixed_annotations(harness: &mut AppTestHarness) {
+        let annotations = [
+            Annotation::deletion(range(0, 1, 0, 4), "lph".into()),
+            Annotation::insertion(TextPosition { line: 1, column: 2 }, "inserted".into()),
+            Annotation::comment(range(1, 2, 1, 5), "ta ".into(), "note".into()),
+            Annotation::deletion(range(2, 0, 2, 2), "ga".into()),
+            Annotation::global_comment("overall".into()),
+        ];
+
+        for annotation in annotations {
+            harness.state_mut().annotations.add(annotation);
+        }
+    }
+
+    fn ordered_anchored_positions(state: &AppState) -> Vec<(usize, usize)> {
+        state
+            .annotations()
+            .ordered()
+            .into_iter()
+            .filter_map(|annotation| {
+                annotation
+                    .range
+                    .map(|range| (range.start.line, range.start.column))
+            })
+            .collect()
+    }
+
+    fn ordered_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
+        harness.keys("<Tab>k");
+
+        let mut positions = Vec::with_capacity(steps + 1);
+        positions.push(
+            harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column))
+                .expect("panel should start on the first anchored annotation"),
+        );
+
+        for _ in 0..steps {
+            harness.keys("j");
+            let position = harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column));
+            if let Some(position) = position {
+                positions.push(position);
+            }
+        }
+
+        positions
+    }
+
+    fn reverse_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
+        harness.keys("<Tab>k");
+        for _ in 0..steps {
+            harness.keys("j");
+        }
+
+        let mut positions = Vec::with_capacity(steps + 1);
+        positions.push(
+            harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column))
+                .expect("panel should land on an anchored annotation before reversing"),
+        );
+
+        for _ in 0..steps {
+            harness.keys("k");
+            positions.push(
+                harness
+                    .state()
+                    .selected_annotation_range()
+                    .map(|range| (range.start.line, range.start.column))
+                    .expect("reverse panel step should stay on anchored annotations"),
+            );
+        }
+
+        positions
     }
 
     #[test]
@@ -799,6 +943,49 @@ mod tests {
 
         harness.keys("gg[a").assert_cursor(0, 0);
         harness.keys("G]a").assert_cursor(2, 0);
+    }
+
+    #[test]
+    fn next_annotation_matches_panel_order_for_mixed_annotations() {
+        let mut panel_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut panel_harness);
+        let expected = ordered_panel_positions(&mut panel_harness, 4);
+
+        let mut navigation_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut navigation_harness);
+
+        let anchored = ordered_anchored_positions(navigation_harness.state());
+        let mut visited = Vec::with_capacity(anchored.len());
+        for _ in 0..anchored.len() {
+            navigation_harness.keys("]a");
+            let cursor = navigation_harness.state().cursor();
+            visited.push((cursor.row, cursor.col));
+        }
+
+        assert_eq!(visited, expected);
+        assert_eq!(visited, anchored);
+    }
+
+    #[test]
+    fn prev_annotation_matches_panel_order_for_mixed_annotations() {
+        let mut panel_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut panel_harness);
+        let anchored = ordered_anchored_positions(panel_harness.state());
+        let expected = reverse_panel_positions(&mut panel_harness, anchored.len() - 1);
+
+        let mut navigation_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut navigation_harness);
+        navigation_harness.keys("G$");
+
+        let mut visited = Vec::with_capacity(anchored.len());
+        for _ in 0..anchored.len() {
+            navigation_harness.keys("[a");
+            let cursor = navigation_harness.state().cursor();
+            visited.push((cursor.row, cursor.col));
+        }
+
+        assert_eq!(visited, expected);
+        assert_eq!(visited, anchored.into_iter().rev().collect::<Vec<_>>());
     }
 
     #[test]

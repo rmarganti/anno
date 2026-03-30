@@ -44,6 +44,11 @@ impl AnnotationListPanel {
         self.selected_id
     }
 
+    /// Select a specific annotation by UUID.
+    pub fn set_selected_annotation_id(&mut self, id: Uuid) {
+        self.selected_id = Some(id);
+    }
+
     /// Move the selection down by one in the ordered list.
     pub fn move_selection_down(&mut self, store: &AnnotationStore) {
         let ordered = store.ordered();
@@ -66,12 +71,6 @@ impl AnnotationListPanel {
         let current_idx = self.resolve_index(&ordered);
         let next_idx = current_idx.saturating_sub(1);
         self.selected_id = Some(ordered[next_idx].id);
-    }
-
-    /// Select a specific annotation by UUID.
-    #[cfg(test)]
-    pub fn select_by_id(&mut self, id: Uuid) {
-        self.selected_id = Some(id);
     }
 
     /// Render the panel into the given area.
@@ -271,7 +270,7 @@ mod tests {
     fn select_by_id() {
         let mut panel = AnnotationListPanel::new();
         let id = Uuid::new_v4();
-        panel.select_by_id(id);
+        panel.set_selected_annotation_id(id);
         assert_eq!(panel.selected_annotation_id(), Some(id));
     }
 
@@ -297,7 +296,7 @@ mod tests {
     fn move_down_clamps_at_end() {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[2]);
+        panel.set_selected_annotation_id(ids[2]);
         panel.move_selection_down(&store);
         assert_eq!(panel.selected_annotation_id(), Some(ids[2]));
     }
@@ -306,7 +305,7 @@ mod tests {
     fn move_up_clamps_at_start() {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[0]);
+        panel.set_selected_annotation_id(ids[0]);
         panel.move_selection_up(&store);
         assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
     }
@@ -315,7 +314,7 @@ mod tests {
     fn move_down_sequential() {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[0]);
+        panel.set_selected_annotation_id(ids[0]);
         panel.move_selection_down(&store);
         assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
         panel.move_selection_down(&store);
@@ -326,7 +325,7 @@ mod tests {
     fn move_up_sequential() {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[2]);
+        panel.set_selected_annotation_id(ids[2]);
         panel.move_selection_up(&store);
         assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
         panel.move_selection_up(&store);
@@ -340,7 +339,7 @@ mod tests {
         let (mut store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
         // Select the last item, then delete it.
-        panel.select_by_id(ids[2]);
+        panel.set_selected_annotation_id(ids[2]);
         store.delete(ids[2]);
 
         // Moving should clamp to the new last element.
@@ -352,7 +351,7 @@ mod tests {
     fn deleted_middle_uuid_clamps_to_last() {
         let (mut store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[1]);
+        panel.set_selected_annotation_id(ids[1]);
         store.delete(ids[1]);
 
         // resolve_index won't find ids[1], clamps to len-1 = 1 (which is ids[2] now).
@@ -364,7 +363,7 @@ mod tests {
     fn all_deleted_empties_selection() {
         let (mut store, ids) = make_store_with_deletions(2);
         let mut panel = AnnotationListPanel::new();
-        panel.select_by_id(ids[0]);
+        panel.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
         store.delete(ids[1]);
 
