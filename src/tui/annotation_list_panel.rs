@@ -8,7 +8,7 @@ use ratatui::{
 use uuid::Uuid;
 
 use crate::annotation::store::AnnotationStore;
-use crate::annotation::types::AnnotationType;
+use crate::annotation::types::{Annotation, AnnotationType};
 use crate::tui::theme::UiTheme;
 
 /// Fixed width of the annotation list panel in columns.
@@ -154,25 +154,12 @@ impl AnnotationListPanel {
             );
             let spacer2 = Span::styled(" ", base_style);
 
-            // Preview text: use annotation.text if non-empty, else selected_text, else type name.
-            let preview_source = if !annotation.text.is_empty() {
-                &annotation.text
-            } else if !annotation.selected_text.is_empty() {
-                &annotation.selected_text
-            } else {
-                glyph
-            };
-
             // Truncate preview to fit remaining width.
             // Used columns: 2 (indicator) + 1 (space) + glyph_width + 1 (space)
             let glyph_width = 1; // All our glyphs are single-width for layout purposes.
             let used = 2 + 1 + glyph_width + 1;
             let available = (inner.width as usize).saturating_sub(used);
-            let preview: String = preview_source
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(available)
-                .collect();
+            let preview = format_item_preview(annotation, available);
             // Pad to fill remaining space.
             let padded = format!("{preview:<available$}");
             let preview_span = Span::styled(padded, base_style);
@@ -218,6 +205,70 @@ fn vertical_padding(area: Rect, padding: u16) -> Rect {
             area.height - total_padding,
         )
     }
+}
+
+fn format_item_preview(annotation: &Annotation, available: usize) -> String {
+    if available == 0 {
+        return String::new();
+    }
+
+    let location = line_reference(annotation);
+    let preview = sanitize_preview_text(preview_source(annotation));
+    let content = if preview.is_empty() {
+        location
+    } else {
+        format!("{location} {preview}")
+    };
+
+    truncate_with_ellipsis(&content, available)
+}
+
+fn preview_source(annotation: &Annotation) -> &str {
+    match annotation.annotation_type {
+        AnnotationType::Deletion => &annotation.selected_text,
+        AnnotationType::Comment
+        | AnnotationType::Replacement
+        | AnnotationType::Insertion
+        | AnnotationType::GlobalComment => &annotation.text,
+    }
+}
+
+fn line_reference(annotation: &Annotation) -> String {
+    match annotation.range {
+        Some(range) => {
+            let start_line = range.start.line + 1;
+            let end_line = range.end.line + 1;
+
+            if start_line == end_line {
+                format!("L{start_line}")
+            } else {
+                format!("L{start_line}-{end_line}")
+            }
+        }
+        None => String::from("global"),
+    }
+}
+
+fn sanitize_preview_text(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).collect()
+}
+
+fn truncate_with_ellipsis(text: &str, width: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= width {
+        return text.to_string();
+    }
+
+    if width == 0 {
+        return String::new();
+    }
+
+    if width == 1 {
+        return String::from("…");
+    }
+
+    let truncated: String = text.chars().take(width - 1).collect();
+    format!("{truncated}…")
 }
 
 impl Default for AnnotationListPanel {
@@ -269,14 +320,22 @@ mod tests {
     }
 
     fn render_to_lines(width: u16, height: u16, panel: &AnnotationListPanel) -> Vec<String> {
+        render_store_to_lines(width, height, panel, &AnnotationStore::new())
+    }
+
+    fn render_store_to_lines(
+        width: u16,
+        height: u16,
+        panel: &AnnotationListPanel,
+        store: &AnnotationStore,
+    ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        let store = AnnotationStore::new();
         let theme = UiTheme::default();
 
         terminal
             .draw(|frame| {
-                panel.render(frame, Rect::new(0, 0, width, height), &store, &theme);
+                panel.render(frame, Rect::new(0, 0, width, height), store, &theme);
             })
             .unwrap();
 
@@ -463,5 +522,103 @@ mod tests {
         assert_eq!(type_glyph(&AnnotationType::Replacement), "⇄");
         assert_eq!(type_glyph(&AnnotationType::Insertion), "+");
         assert_eq!(type_glyph(&AnnotationType::GlobalComment), "◆");
+    }
+
+    #[test]
+    fn preview_source_matches_annotation_type() {
+        let anchored_range = range(1, 0, 1, 4);
+
+        let deletion = Annotation::deletion(anchored_range, String::from("remove me"));
+        let comment = Annotation::comment(
+            anchored_range,
+            String::from("selected"),
+            String::from("comment body"),
+        );
+        let replacement = Annotation::replacement(
+            anchored_range,
+            String::from("selected"),
+            String::from("replacement text"),
+        );
+        let insertion = Annotation::insertion(
+            TextPosition { line: 2, column: 0 },
+            String::from("inserted text"),
+        );
+        let global = Annotation::global_comment(String::from("global body"));
+
+        assert_eq!(preview_source(&deletion), "remove me");
+        assert_eq!(preview_source(&comment), "comment body");
+        assert_eq!(preview_source(&replacement), "replacement text");
+        assert_eq!(preview_source(&insertion), "inserted text");
+        assert_eq!(preview_source(&global), "global body");
+    }
+
+    #[test]
+    fn line_reference_uses_human_readable_line_numbers() {
+        let single_line = Annotation::comment(
+            range(0, 1, 0, 5),
+            String::from("selected"),
+            String::from("note"),
+        );
+        let multi_line = Annotation::replacement(
+            range(1, 0, 3, 2),
+            String::from("selected"),
+            String::from("replace"),
+        );
+
+        assert_eq!(line_reference(&single_line), "L1");
+        assert_eq!(line_reference(&multi_line), "L2-4");
+    }
+
+    #[test]
+    fn global_comment_uses_distinct_non_anchored_label() {
+        let global = Annotation::global_comment(String::from("project-wide note"));
+
+        assert_eq!(line_reference(&global), "global");
+    }
+
+    #[test]
+    fn preview_sanitization_strips_newlines_and_control_characters() {
+        let annotation = Annotation::comment(
+            range(0, 0, 0, 1),
+            String::from("ignored"),
+            String::from("line 1\nline 2\u{0007}"),
+        );
+
+        assert_eq!(format_item_preview(&annotation, 40), "L1 line 1line 2");
+    }
+
+    #[test]
+    fn truncation_adds_ellipsis_when_preview_exceeds_width() {
+        let annotation = Annotation::comment(
+            range(0, 0, 0, 1),
+            String::from("ignored"),
+            String::from("abcdefghij"),
+        );
+
+        assert_eq!(format_item_preview(&annotation, 7), "L1 abc…");
+        assert_eq!(format_item_preview(&annotation, 1), "…");
+    }
+
+    #[test]
+    fn rendered_items_include_location_and_preview_text() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::comment(
+            range(2, 0, 2, 5),
+            String::from("selected"),
+            String::from("comment preview"),
+        ));
+        store.add(Annotation::global_comment(String::from("global preview")));
+        let panel = AnnotationListPanel::new();
+
+        let output = render_store_to_lines(36, 6, &panel, &store).join("\n");
+
+        assert!(
+            output.contains("L3 comment preview"),
+            "Expected anchored preview in: {output}"
+        );
+        assert!(
+            output.contains("global global preview"),
+            "Expected global preview in: {output}"
+        );
     }
 }
