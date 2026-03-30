@@ -45,6 +45,8 @@ pub struct AppState {
     help_visible: bool,
     /// Scroll offset for the help overlay content.
     help_scroll_offset: u16,
+    /// Whether the current terminal width can show the annotation list panel.
+    annotation_panel_available: bool,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
             confirm_dialog: None,
             help_visible: false,
             help_scroll_offset: 0,
+            annotation_panel_available: true,
         }
     }
 
@@ -133,6 +136,10 @@ impl AppState {
         self.annotation_list_panel.is_visible()
     }
 
+    pub fn is_panel_hidden_due_to_width(&self) -> bool {
+        self.annotation_list_panel.is_visible() && !self.annotation_panel_available
+    }
+
     pub fn command_buffer(&self) -> &str {
         self.command_line.buffer()
     }
@@ -170,6 +177,14 @@ impl AppState {
             .selected_annotation_id()
             .and_then(|id| self.annotations.get(id))
             .and_then(|annotation| annotation.range)
+    }
+
+    pub fn set_annotation_panel_available(&mut self, available: bool) {
+        self.annotation_panel_available = available;
+
+        if !available && self.mode == Mode::AnnotationList {
+            self.mode = Mode::Normal;
+        }
     }
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
@@ -262,7 +277,10 @@ impl AppState {
             }
             Action::EnterAnnotationListMode => {
                 self.annotation_list_panel.toggle();
-                if self.annotation_list_panel.is_visible() && !self.annotations.is_empty() {
+                if self.annotation_list_panel.is_visible()
+                    && self.annotation_panel_available
+                    && !self.annotations.is_empty()
+                {
                     self.mode = Mode::AnnotationList;
                 } else {
                     self.mode = Mode::Normal;
@@ -507,6 +525,11 @@ pub(crate) mod test_harness {
 
         pub fn state_mut(&mut self) -> &mut AppState {
             &mut self.state
+        }
+
+        pub fn set_panel_available(&mut self, available: bool) -> &mut Self {
+            self.state.set_annotation_panel_available(available);
+            self
         }
 
         pub fn assert_mode(&mut self, expected: Mode) -> &mut Self {
@@ -796,6 +819,27 @@ mod tests {
     fn tab_enters_annotation_list_mode_when_annotations_exist() {
         let mut harness = harness("first\nsecond");
         harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
+    }
+
+    #[test]
+    fn tab_keeps_panel_hidden_from_annotation_list_mode_when_terminal_is_narrow() {
+        let mut harness = harness("first\nsecond");
+        harness
+            .set_panel_available(false)
+            .keys("vld<Tab>")
+            .assert_mode(Mode::Normal)
+            .assert_panel_visible();
+
+        assert!(harness.state().is_panel_hidden_due_to_width());
+    }
+
+    #[test]
+    fn narrow_terminal_forces_annotation_list_mode_back_to_normal() {
+        let mut harness = harness("first\nsecond");
+        harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
+
+        harness.set_panel_available(false).assert_mode(Mode::Normal);
+        assert!(harness.state().is_panel_hidden_due_to_width());
     }
 
     #[test]
