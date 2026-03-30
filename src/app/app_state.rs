@@ -210,7 +210,18 @@ impl AppState {
             match dialog.handle_key(key_event) {
                 ConfirmDialogEvent::Confirm => {
                     if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
-                        self.annotations.delete(id);
+                        let deleted_index = self
+                            .annotations
+                            .ordered()
+                            .iter()
+                            .position(|annotation| annotation.id == id);
+
+                        if self.annotations.delete(id)
+                            && let Some(deleted_index) = deleted_index
+                        {
+                            self.annotation_list_panel
+                                .reconcile_after_deletion(&self.annotations, deleted_index);
+                        }
                     }
                 }
                 ConfirmDialogEvent::Cancel => {}
@@ -654,6 +665,10 @@ mod tests {
 
     fn create_two_deletions(harness: &mut AppTestHarness) {
         harness.keys("vldjvld").assert_annotation_count(2);
+    }
+
+    fn create_three_deletions(harness: &mut AppTestHarness) {
+        harness.keys("vldjvldjvld").assert_annotation_count(3);
     }
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
@@ -1181,6 +1196,31 @@ mod tests {
             .keys("vld<Tab>kddn")
             .assert_annotation_count(1)
             .assert_no_confirm_dialog();
+    }
+
+    #[test]
+    fn confirm_dialog_delete_keeps_selection_on_same_list_index() {
+        let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+        create_three_deletions(&mut harness);
+
+        let ordered = harness.state().annotations().ordered();
+        let expected_id = ordered[2].id;
+        drop(ordered);
+
+        harness
+            .keys("<Tab>kjdd")
+            .assert_has_confirm_dialog()
+            .keys("y")
+            .assert_annotation_count(2)
+            .assert_no_confirm_dialog();
+
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            Some(expected_id)
+        );
     }
 
     #[test]

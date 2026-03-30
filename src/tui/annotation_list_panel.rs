@@ -80,6 +80,15 @@ impl AnnotationListPanel {
             .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
     }
 
+    /// Recover selection after deleting the currently selected annotation.
+    pub fn reconcile_after_deletion(&mut self, store: &AnnotationStore, deleted_index: usize) {
+        let ordered = store.ordered();
+        self.list_state
+            .reconcile_after_deletion(&ordered, deleted_index);
+        self.list_state
+            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
+    }
+
     /// Render the panel into the given area.
     pub fn render(
         &self,
@@ -223,6 +232,17 @@ impl ListState {
 
         let current_idx = self.resolve_index(ordered);
         let next_idx = current_idx.saturating_sub(1);
+        self.selected_id = Some(ordered[next_idx].id);
+    }
+
+    fn reconcile_after_deletion(&mut self, ordered: &[&Annotation], deleted_index: usize) {
+        if ordered.is_empty() {
+            self.selected_id = None;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        let next_idx = deleted_index.min(ordered.len() - 1);
         self.selected_id = Some(ordered[next_idx].id);
     }
 
@@ -520,42 +540,53 @@ mod tests {
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
-    // ───── UUID-based clamping on deletion ─────
+    // ───── selection recovery on deletion ─────
 
     #[test]
-    fn deleted_uuid_clamps_to_last() {
-        let (mut store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
-        // Select the last item, then delete it.
-        state.set_selected_annotation_id(ids[2]);
-        store.delete(ids[2]);
-
-        // Moving should clamp to the new last element.
-        state.move_selection_down(&store.ordered());
-        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
-    }
-
-    #[test]
-    fn deleted_middle_uuid_clamps_to_last() {
+    fn deleting_middle_item_selects_item_that_slides_into_its_slot() {
         let (mut store, ids) = make_store_with_deletions(3);
         let mut state = ListState::default();
         state.set_selected_annotation_id(ids[1]);
         store.delete(ids[1]);
 
-        // resolve_index won't find ids[1], clamps to len-1 = 1 (which is ids[2] now).
-        state.move_selection_up(&store.ordered());
-        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
+        state.reconcile_after_deletion(&store.ordered(), 1);
+
+        assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
     #[test]
-    fn all_deleted_empties_selection() {
-        let (mut store, ids) = make_store_with_deletions(2);
+    fn deleting_last_item_selects_new_last_item() {
+        let (mut store, ids) = make_store_with_deletions(3);
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[2]);
+        store.delete(ids[2]);
+
+        state.reconcile_after_deletion(&store.ordered(), 2);
+
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn deleting_first_item_keeps_selection_at_index_zero() {
+        let (mut store, ids) = make_store_with_deletions(3);
         let mut state = ListState::default();
         state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
-        store.delete(ids[1]);
 
-        state.move_selection_down(&store.ordered());
+        state.reconcile_after_deletion(&store.ordered(), 0);
+
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn deleting_only_remaining_item_clears_selection() {
+        let (mut store, ids) = make_store_with_deletions(1);
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[0]);
+        store.delete(ids[0]);
+
+        state.reconcile_after_deletion(&store.ordered(), 0);
+
         assert!(state.selected_annotation_id().is_none());
     }
 
