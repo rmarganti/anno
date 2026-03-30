@@ -1143,7 +1143,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>j");
+        harness.keys("<Tab>jj");
 
         let expected_range = harness.state().annotations().ordered()[1]
             .range
@@ -1162,7 +1162,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("gg<Tab>j<Enter>").assert_cursor(1, 1);
+        harness.keys("gg<Tab>jj<Enter>").assert_cursor(1, 1);
     }
 
     #[test]

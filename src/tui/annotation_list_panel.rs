@@ -56,6 +56,10 @@ impl AnnotationListPanel {
             self.selected_id = None;
             return;
         }
+        if self.selected_id.is_none() {
+            self.selected_id = Some(ordered[0].id);
+            return;
+        }
         let current_idx = self.resolve_index(&ordered);
         let next_idx = (current_idx + 1).min(ordered.len() - 1);
         self.selected_id = Some(ordered[next_idx].id);
@@ -66,6 +70,10 @@ impl AnnotationListPanel {
         let ordered = store.ordered();
         if ordered.is_empty() {
             self.selected_id = None;
+            return;
+        }
+        if self.selected_id.is_none() {
+            self.selected_id = Some(ordered[0].id);
             return;
         }
         let current_idx = self.resolve_index(&ordered);
@@ -279,8 +287,7 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
         panel.move_selection_down(&store);
-        // With no prior selection, resolve_index returns 0, then down goes to 1.
-        assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
+        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
@@ -288,7 +295,6 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut panel = AnnotationListPanel::new();
         panel.move_selection_up(&store);
-        // resolve_index returns 0, saturating_sub(1) = 0.
         assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
     }
 
