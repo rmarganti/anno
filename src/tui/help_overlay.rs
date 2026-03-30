@@ -12,7 +12,12 @@ use crate::tui::theme::UiTheme;
 
 const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
+const MIN_TWO_COL_WIDTH: u16 = 110;
+const COL_GAP: u16 = 3;
 const DISMISS_HINT: &str = "Press ? or Esc to close";
+
+const LEFT_COL_TITLES: &[&str] = &["Global", "Normal Mode", "Insert Mode"];
+const RIGHT_COL_TITLES: &[&str] = &["Visual Mode", "Annotation List", "Command Mode"];
 
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
@@ -94,10 +99,7 @@ impl HelpOverlay {
         let center_width = w.saturating_sub(2);
         let hint_line = Line::from(vec![
             Span::styled(arrow_up.to_string(), theme.panel_border),
-            Span::styled(
-                format!("{center_text:^center_width$}"),
-                theme.panel_border,
-            ),
+            Span::styled(format!("{center_text:^center_width$}"), theme.panel_border),
             Span::styled(arrow_down.to_string(), theme.panel_border),
         ]);
         frame.render_widget(
@@ -122,12 +124,27 @@ impl HelpOverlay {
     }
 
     fn content_lines(&self, theme: &UiTheme, width: usize) -> Vec<Line<'static>> {
-        let key_width = width.min(18);
+        if width >= MIN_TWO_COL_WIDTH as usize {
+            self.two_column_lines(theme, width)
+        } else {
+            let sections = self.ordered_sections();
+            Self::section_lines(&sections, self.mode, theme, width)
+        }
+    }
 
-        self.ordered_sections()
-            .into_iter()
+    fn section_lines(
+        sections: &[&HelpSection],
+        mode: Mode,
+        theme: &UiTheme,
+        width: usize,
+    ) -> Vec<Line<'static>> {
+        let key_width = width.min(18);
+        let active_title = mode_title(mode);
+
+        sections
+            .iter()
             .flat_map(|section| {
-                let is_active = Some(section.title) == mode_title(self.mode);
+                let is_active = Some(section.title) == active_title;
                 let title_style = if is_active {
                     theme.input_box_title.add_modifier(Modifier::REVERSED)
                 } else {
@@ -143,6 +160,56 @@ impl HelpOverlay {
                         help_entry_line(entry.keys, entry.action, key_width, width)
                     }),
                 )
+            })
+            .collect()
+    }
+
+    fn column_sections<'a>(&'a self, titles: &[&str]) -> Vec<&'a HelpSection> {
+        let active_title = mode_title(self.mode);
+        let mut col: Vec<&HelpSection> = self
+            .sections
+            .iter()
+            .filter(|s| titles.contains(&s.title))
+            .collect();
+        col.sort_by_key(|s| {
+            if Some(s.title) == active_title {
+                0
+            } else if s.title == "Global" {
+                1
+            } else {
+                2
+            }
+        });
+        col
+    }
+
+    fn two_column_lines(&self, theme: &UiTheme, width: usize) -> Vec<Line<'static>> {
+        let col_width = (width.saturating_sub(COL_GAP as usize)) / 2;
+        let left_sections = self.column_sections(LEFT_COL_TITLES);
+        let right_sections = self.column_sections(RIGHT_COL_TITLES);
+
+        let left_lines = Self::section_lines(&left_sections, self.mode, theme, col_width);
+        let right_lines = Self::section_lines(&right_sections, self.mode, theme, col_width);
+
+        let max_len = left_lines.len().max(right_lines.len());
+        let gap: String = " ".repeat(COL_GAP as usize);
+
+        (0..max_len)
+            .map(|i| {
+                let left = left_lines.get(i);
+                let right = right_lines.get(i);
+                let left_spans = match left {
+                    Some(line) => pad_spans(line.spans.clone(), col_width),
+                    None => vec![Span::raw(" ".repeat(col_width))],
+                };
+                let right_spans = match right {
+                    Some(line) => pad_spans(line.spans.clone(), col_width),
+                    None => vec![Span::raw(" ".repeat(col_width))],
+                };
+                let mut spans = left_spans;
+                spans.push(Span::raw(gap.clone()));
+                spans.extend(right_spans);
+                Line::from(spans)
             })
             .collect()
     }
@@ -172,6 +239,16 @@ fn help_entry_line(
 
 fn truncate_to_width(text: &str, width: usize) -> String {
     text.chars().take(width).collect()
+}
+
+fn pad_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    let current: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    if current >= width {
+        return spans;
+    }
+    let mut result = spans;
+    result.push(Span::raw(" ".repeat(width - current)));
+    result
 }
 
 #[cfg(test)]
@@ -305,6 +382,45 @@ mod tests {
         assert!(
             output.contains('▼'),
             "Expected ▼ when more content below in: {output}"
+        );
+    }
+
+    #[test]
+    fn two_column_layout_at_wide_width() {
+        // Inner width must reach MIN_TWO_COL_WIDTH (110).
+        // box_width = (width * 4) / 5, inner = box_width - 2 (borders).
+        // So width = 140 gives box_width = 112, inner = 110.
+        let output = render_to_lines(140, 30, Mode::Normal);
+        let has_side_by_side = output
+            .iter()
+            .any(|line| line.contains("Normal Mode") && line.contains("Visual Mode"));
+        assert!(
+            has_side_by_side,
+            "Expected left and right column sections on same row in wide layout: {output:?}",
+        );
+    }
+
+    #[test]
+    fn single_column_layout_at_narrow_width() {
+        let output = render_to_lines(80, 40, Mode::Normal).join("\n");
+        let has_side_by_side = output
+            .lines()
+            .any(|line| line.contains("Normal Mode") && line.contains("Visual Mode"));
+        assert!(
+            !has_side_by_side,
+            "Expected single-column layout at narrow width: {output}"
+        );
+    }
+
+    #[test]
+    fn active_mode_first_in_column() {
+        // In Visual mode, "Visual Mode" should appear before "Annotation List" in right column
+        let output = render_to_lines(140, 30, Mode::Visual);
+        let visual_row = output.iter().position(|l| l.contains("Visual Mode"));
+        let annot_row = output.iter().position(|l| l.contains("Annotation List"));
+        assert!(
+            visual_row < annot_row,
+            "Expected Visual Mode before Annotation List in right column: {output:?}",
         );
     }
 }
