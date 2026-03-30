@@ -13,7 +13,6 @@ use crate::tui::theme::UiTheme;
 const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
 const DISMISS_HINT: &str = "Press ? or Esc to close";
-const OVERFLOW_HINT: &str = "More help below";
 
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
@@ -28,7 +27,7 @@ impl HelpOverlay {
     }
 
     /// Render the help overlay centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: &mut u16) {
         let box_width = ((area.width as usize * 4) / 5)
             .max(MIN_WIDTH as usize)
             .min(area.width as usize) as u16;
@@ -58,44 +57,53 @@ impl HelpOverlay {
             return;
         }
 
-        let hint_y = inner.y + inner.height.saturating_sub(1);
-        let hint = truncate_to_width(DISMISS_HINT, inner.width as usize);
-        frame.render_widget(
-            Paragraph::new(hint)
-                .alignment(Alignment::Center)
-                .style(theme.panel_border),
-            Rect::new(inner.x, hint_y, inner.width, 1),
-        );
-
         let content_height = inner.height.saturating_sub(1);
         if content_height == 0 {
             return;
         }
 
         let content_lines = self.content_lines(theme, inner.width as usize);
-        let mut visible_line_count = content_height as usize;
-        let is_overflowing = content_lines.len() > visible_line_count;
-        if is_overflowing {
-            visible_line_count = visible_line_count.saturating_sub(1);
-        }
+        let visible_height = content_height as usize;
 
-        for (index, line) in content_lines.iter().take(visible_line_count).enumerate() {
+        // Clamp scroll offset so it never exceeds scrollable range.
+        let max_offset = content_lines.len().saturating_sub(visible_height);
+        *scroll_offset = (*scroll_offset as usize).min(max_offset) as u16;
+
+        let offset = *scroll_offset as usize;
+        let has_lines_above = offset > 0;
+        let has_lines_below = offset + visible_height < content_lines.len();
+
+        for (index, line) in content_lines
+            .iter()
+            .skip(offset)
+            .take(visible_height)
+            .enumerate()
+        {
             frame.render_widget(
                 Paragraph::new(line.clone()).style(theme.input_box),
                 Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
             );
         }
 
-        if is_overflowing {
-            let overflow_y = inner.y + content_height.saturating_sub(1);
-            let overflow_hint = truncate_to_width(OVERFLOW_HINT, inner.width as usize);
-            frame.render_widget(
-                Paragraph::new(overflow_hint)
-                    .alignment(Alignment::Center)
-                    .style(theme.panel_border.add_modifier(Modifier::ITALIC)),
-                Rect::new(inner.x, overflow_y, inner.width, 1),
-            );
-        }
+        // Build the dismiss hint line with optional scroll indicators.
+        let hint_y = inner.y + inner.height.saturating_sub(1);
+        let w = inner.width as usize;
+        let arrow_up = if has_lines_above { "▲" } else { " " };
+        let arrow_down = if has_lines_below { "▼" } else { " " };
+        let center_text = truncate_to_width(DISMISS_HINT, w.saturating_sub(2));
+        let center_width = w.saturating_sub(2);
+        let hint_line = Line::from(vec![
+            Span::styled(arrow_up.to_string(), theme.panel_border),
+            Span::styled(
+                format!("{center_text:^center_width$}"),
+                theme.panel_border,
+            ),
+            Span::styled(arrow_down.to_string(), theme.panel_border),
+        ]);
+        frame.render_widget(
+            Paragraph::new(hint_line),
+            Rect::new(inner.x, hint_y, inner.width, 1),
+        );
     }
 
     fn ordered_sections(&self) -> Vec<&HelpSection> {
@@ -172,14 +180,24 @@ mod tests {
     use crate::keybinds::help_content::help_sections;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn render_to_lines(width: u16, height: u16, mode: Mode) -> Vec<String> {
+    fn render_to_lines_with_offset(
+        width: u16,
+        height: u16,
+        mode: Mode,
+        scroll_offset: &mut u16,
+    ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         let overlay = HelpOverlay::new(mode, help_sections());
 
         terminal
             .draw(|frame| {
-                overlay.render(frame, Rect::new(0, 0, width, height), &UiTheme::default());
+                overlay.render(
+                    frame,
+                    Rect::new(0, 0, width, height),
+                    &UiTheme::default(),
+                    scroll_offset,
+                );
             })
             .unwrap();
 
@@ -198,6 +216,10 @@ mod tests {
                     .to_string()
             })
             .collect()
+    }
+
+    fn render_to_lines(width: u16, height: u16, mode: Mode) -> Vec<String> {
+        render_to_lines_with_offset(width, height, mode, &mut 0)
     }
 
     #[test]
@@ -233,20 +255,56 @@ mod tests {
     }
 
     #[test]
-    fn renders_overflow_hint_when_help_is_truncated() {
+    fn renders_scroll_down_indicator_when_truncated() {
         let output = render_to_lines(24, 8, Mode::Normal).join("\n");
         assert!(
-            output.contains("More help below"),
-            "Expected overflow hint in: {output}"
+            output.contains('▼'),
+            "Expected ▼ scroll indicator in: {output}"
         );
     }
 
     #[test]
-    fn omits_overflow_hint_when_help_fits() {
+    fn omits_scroll_indicators_when_help_fits() {
         let output = render_to_lines(120, 60, Mode::Normal).join("\n");
         assert!(
-            !output.contains("More help below"),
-            "Did not expect overflow hint in: {output}"
+            !output.contains('▼'),
+            "Did not expect ▼ indicator in: {output}"
+        );
+        assert!(
+            !output.contains('▲'),
+            "Did not expect ▲ indicator in: {output}"
+        );
+    }
+
+    #[test]
+    fn scroll_offset_changes_visible_content() {
+        let at_top = render_to_lines(80, 24, Mode::Normal).join("\n");
+        let scrolled = render_to_lines_with_offset(80, 24, Mode::Normal, &mut 3).join("\n");
+        assert_ne!(at_top, scrolled, "Expected different content when scrolled");
+    }
+
+    #[test]
+    fn excessive_scroll_offset_is_clamped() {
+        let mut offset = 9999u16;
+        let output = render_to_lines_with_offset(80, 24, Mode::Normal, &mut offset).join("\n");
+        assert!(offset < 9999, "Expected scroll offset to be clamped");
+        assert!(
+            !output.is_empty(),
+            "Expected content to render after clamping"
+        );
+    }
+
+    #[test]
+    fn scroll_indicators_appear_when_scrolled() {
+        let mut offset = 3u16;
+        let output = render_to_lines_with_offset(24, 8, Mode::Normal, &mut offset).join("\n");
+        assert!(
+            output.contains('▲'),
+            "Expected ▲ when scrolled down in: {output}"
+        );
+        assert!(
+            output.contains('▼'),
+            "Expected ▼ when more content below in: {output}"
         );
     }
 }

@@ -207,6 +207,7 @@ impl App {
                 frame,
                 main_area,
                 &self.theme,
+                self.state.help_scroll_offset_mut(),
             );
         }
     }
