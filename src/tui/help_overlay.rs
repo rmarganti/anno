@@ -141,27 +141,26 @@ impl HelpOverlay {
         let key_width = width.min(18);
         let active_title = mode_title(mode);
 
-        sections
-            .iter()
-            .flat_map(|section| {
-                let is_active = Some(section.title) == active_title;
-                let title_style = if is_active {
-                    theme.input_box_title.add_modifier(Modifier::REVERSED)
-                } else {
-                    theme.input_box_title
-                };
-
-                std::iter::once(Line::from(Span::styled(
-                    truncate_to_width(section.title, width),
-                    title_style,
-                )))
-                .chain(
-                    section.entries.iter().map(move |entry| {
-                        help_entry_line(entry.keys, entry.action, key_width, width)
-                    }),
-                )
-            })
-            .collect()
+        let mut lines = Vec::new();
+        for (i, section) in sections.iter().enumerate() {
+            if i > 0 {
+                lines.push(Line::default());
+            }
+            let is_active = Some(section.title) == active_title;
+            let title_style = if is_active {
+                theme.input_box_title.add_modifier(Modifier::REVERSED)
+            } else {
+                theme.input_box_title
+            };
+            lines.push(Line::from(Span::styled(
+                truncate_to_width(section.title, width),
+                title_style,
+            )));
+            for entry in &section.entries {
+                lines.push(help_entry_line(entry.keys, entry.action, key_width, width));
+            }
+        }
+        lines
     }
 
     fn column_sections<'a>(&'a self, titles: &[&str]) -> Vec<&'a HelpSection> {
