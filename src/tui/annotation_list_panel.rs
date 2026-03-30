@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 use uuid::Uuid;
 
@@ -21,18 +21,26 @@ const EMPTY_STATE_LINES: [&str; 4] = [
     "to create an annotation.",
 ];
 
+const DEFAULT_VISIBLE_HEIGHT: u16 = 8;
+
 /// The annotation list sidebar panel widget.
 #[derive(Debug)]
 pub struct AnnotationListPanel {
     visible: bool,
+    list_state: ListState,
+}
+
+#[derive(Debug, Default)]
+struct ListState {
     selected_id: Option<Uuid>,
+    scroll_offset: usize,
 }
 
 impl AnnotationListPanel {
     pub fn new() -> Self {
         Self {
             visible: false,
-            selected_id: None,
+            list_state: ListState::default(),
         }
     }
 
@@ -48,44 +56,28 @@ impl AnnotationListPanel {
 
     /// Return the UUID of the currently selected annotation, if any.
     pub fn selected_annotation_id(&self) -> Option<Uuid> {
-        self.selected_id
+        self.list_state.selected_annotation_id()
     }
 
     /// Select a specific annotation by UUID.
     pub fn set_selected_annotation_id(&mut self, id: Uuid) {
-        self.selected_id = Some(id);
+        self.list_state.set_selected_annotation_id(id);
     }
 
     /// Move the selection down by one in the ordered list.
     pub fn move_selection_down(&mut self, store: &AnnotationStore) {
         let ordered = store.ordered();
-        if ordered.is_empty() {
-            self.selected_id = None;
-            return;
-        }
-        if self.selected_id.is_none() {
-            self.selected_id = Some(ordered[0].id);
-            return;
-        }
-        let current_idx = self.resolve_index(&ordered);
-        let next_idx = (current_idx + 1).min(ordered.len() - 1);
-        self.selected_id = Some(ordered[next_idx].id);
+        self.list_state.move_selection_down(&ordered);
+        self.list_state
+            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
     }
 
     /// Move the selection up by one in the ordered list.
     pub fn move_selection_up(&mut self, store: &AnnotationStore) {
         let ordered = store.ordered();
-        if ordered.is_empty() {
-            self.selected_id = None;
-            return;
-        }
-        if self.selected_id.is_none() {
-            self.selected_id = Some(ordered[0].id);
-            return;
-        }
-        let current_idx = self.resolve_index(&ordered);
-        let next_idx = current_idx.saturating_sub(1);
-        self.selected_id = Some(ordered[next_idx].id);
+        self.list_state.move_selection_up(&ordered);
+        self.list_state
+            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
     }
 
     /// Render the panel into the given area.
@@ -120,14 +112,19 @@ impl AnnotationListPanel {
             return;
         }
 
-        let current_idx = self.resolve_index(&ordered);
+        let current_idx = self.list_state.resolve_index(&ordered);
 
-        for (i, annotation) in ordered.iter().enumerate() {
-            if i as u16 >= inner.height {
+        for (row, annotation) in ordered
+            .iter()
+            .enumerate()
+            .skip(self.list_state.scroll_offset)
+        {
+            let visible_idx = row - self.list_state.scroll_offset;
+            if visible_idx as u16 >= inner.height {
                 break;
             }
 
-            let is_selected = i == current_idx;
+            let is_selected = row == current_idx;
             let base_style = if is_selected {
                 theme.panel_selected
             } else {
@@ -165,30 +162,86 @@ impl AnnotationListPanel {
             let preview_span = Span::styled(padded, base_style);
 
             let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);
-            let line_area = Rect::new(inner.x, inner.y + i as u16, inner.width, 1);
+            let line_area = Rect::new(inner.x, inner.y + visible_idx as u16, inner.width, 1);
             frame.render_widget(Paragraph::new(line), line_area);
         }
+    }
+}
+
+impl ListState {
+    fn selected_annotation_id(&self) -> Option<Uuid> {
+        self.selected_id
+    }
+
+    fn set_selected_annotation_id(&mut self, id: Uuid) {
+        self.selected_id = Some(id);
+    }
+
+    fn move_selection_down(&mut self, ordered: &[&Annotation]) {
+        if ordered.is_empty() {
+            self.selected_id = None;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        if self.selected_id.is_none() {
+            self.selected_id = Some(ordered[0].id);
+            return;
+        }
+
+        let current_idx = self.resolve_index(ordered);
+        let next_idx = (current_idx + 1).min(ordered.len() - 1);
+        self.selected_id = Some(ordered[next_idx].id);
+    }
+
+    fn move_selection_up(&mut self, ordered: &[&Annotation]) {
+        if ordered.is_empty() {
+            self.selected_id = None;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        if self.selected_id.is_none() {
+            self.selected_id = Some(ordered[0].id);
+            return;
+        }
+
+        let current_idx = self.resolve_index(ordered);
+        let next_idx = current_idx.saturating_sub(1);
+        self.selected_id = Some(ordered[next_idx].id);
     }
 
     /// Resolve `selected_id` to an index in the ordered list.
     /// If the selected UUID is gone (deleted), clamp to the nearest valid index.
     /// If nothing is selected, defaults to 0.
-    fn resolve_index(&self, ordered: &[&crate::annotation::types::Annotation]) -> usize {
+    fn resolve_index(&self, ordered: &[&Annotation]) -> usize {
         if ordered.is_empty() {
             return 0;
         }
 
         match self.selected_id {
-            Some(id) => {
-                // Try to find the UUID in the ordered list.
-                if let Some(idx) = ordered.iter().position(|a| a.id == id) {
-                    idx
-                } else {
-                    // UUID not found — clamp to last valid index.
-                    ordered.len() - 1
-                }
-            }
+            Some(id) => ordered
+                .iter()
+                .position(|annotation| annotation.id == id)
+                .unwrap_or(ordered.len() - 1),
             None => 0,
+        }
+    }
+
+    fn ensure_visible(&mut self, ordered: &[&Annotation], visible_height: u16) {
+        if ordered.is_empty() || visible_height == 0 {
+            self.scroll_offset = 0;
+            return;
+        }
+
+        let selected_idx = self.resolve_index(ordered);
+        let visible_height = visible_height as usize;
+        let window_end = self.scroll_offset.saturating_add(visible_height);
+
+        if selected_idx < self.scroll_offset {
+            self.scroll_offset = selected_idx;
+        } else if selected_idx >= window_end {
+            self.scroll_offset = selected_idx + 1 - visible_height;
         }
     }
 }
@@ -293,7 +346,7 @@ mod tests {
     use super::*;
     use crate::annotation::types::{Annotation, TextPosition, TextRange};
     use crate::tui::theme::UiTheme;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{backend::TestBackend, Terminal};
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
         TextRange {
@@ -377,72 +430,72 @@ mod tests {
 
     #[test]
     fn no_selection_initially() {
-        let panel = AnnotationListPanel::new();
-        assert!(panel.selected_annotation_id().is_none());
+        let state = ListState::default();
+        assert!(state.selected_annotation_id().is_none());
     }
 
     #[test]
     fn select_by_id() {
-        let mut panel = AnnotationListPanel::new();
+        let mut state = ListState::default();
         let id = Uuid::new_v4();
-        panel.set_selected_annotation_id(id);
-        assert_eq!(panel.selected_annotation_id(), Some(id));
+        state.set_selected_annotation_id(id);
+        assert_eq!(state.selected_annotation_id(), Some(id));
     }
 
     #[test]
     fn move_down_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.move_selection_down(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
+        let mut state = ListState::default();
+        state.move_selection_down(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn move_up_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.move_selection_up(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
+        let mut state = ListState::default();
+        state.move_selection_up(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn move_down_clamps_at_end() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[2]);
-        panel.move_selection_down(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[2]));
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[2]);
+        state.move_selection_down(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
     #[test]
     fn move_up_clamps_at_start() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
-        panel.move_selection_up(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[0]);
+        state.move_selection_up(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn move_down_sequential() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
-        panel.move_selection_down(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
-        panel.move_selection_down(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[2]));
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[0]);
+        state.move_selection_down(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
+        state.move_selection_down(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
     #[test]
     fn move_up_sequential() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[2]);
-        panel.move_selection_up(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
-        panel.move_selection_up(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[2]);
+        state.move_selection_up(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
+        state.move_selection_up(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     // ───── UUID-based clamping on deletion ─────
@@ -450,48 +503,100 @@ mod tests {
     #[test]
     fn deleted_uuid_clamps_to_last() {
         let (mut store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
+        let mut state = ListState::default();
         // Select the last item, then delete it.
-        panel.set_selected_annotation_id(ids[2]);
+        state.set_selected_annotation_id(ids[2]);
         store.delete(ids[2]);
 
         // Moving should clamp to the new last element.
-        panel.move_selection_down(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[1]));
+        state.move_selection_down(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
 
     #[test]
     fn deleted_middle_uuid_clamps_to_last() {
         let (mut store, ids) = make_store_with_deletions(3);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[1]);
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[1]);
         store.delete(ids[1]);
 
         // resolve_index won't find ids[1], clamps to len-1 = 1 (which is ids[2] now).
-        panel.move_selection_up(&store);
-        assert_eq!(panel.selected_annotation_id(), Some(ids[0]));
+        state.move_selection_up(&store.ordered());
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn all_deleted_empties_selection() {
         let (mut store, ids) = make_store_with_deletions(2);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
         store.delete(ids[1]);
 
-        panel.move_selection_down(&store);
-        assert!(panel.selected_annotation_id().is_none());
+        state.move_selection_down(&store.ordered());
+        assert!(state.selected_annotation_id().is_none());
     }
 
     #[test]
     fn empty_store_move_does_nothing() {
         let store = AnnotationStore::new();
-        let mut panel = AnnotationListPanel::new();
-        panel.move_selection_down(&store);
-        assert!(panel.selected_annotation_id().is_none());
-        panel.move_selection_up(&store);
-        assert!(panel.selected_annotation_id().is_none());
+        let mut state = ListState::default();
+        state.move_selection_down(&store.ordered());
+        assert!(state.selected_annotation_id().is_none());
+        state.move_selection_up(&store.ordered());
+        assert!(state.selected_annotation_id().is_none());
+    }
+
+    #[test]
+    fn ensure_visible_keeps_top_selection_in_view() {
+        let (store, ids) = make_store_with_deletions(5);
+        let mut state = ListState {
+            selected_id: Some(ids[0]),
+            scroll_offset: 2,
+        };
+
+        state.ensure_visible(&store.ordered(), 3);
+
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn ensure_visible_keeps_bottom_selection_in_view() {
+        let (store, ids) = make_store_with_deletions(5);
+        let mut state = ListState {
+            selected_id: Some(ids[4]),
+            scroll_offset: 0,
+        };
+
+        state.ensure_visible(&store.ordered(), 3);
+
+        assert_eq!(state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn ensure_visible_leaves_middle_selection_visible() {
+        let (store, ids) = make_store_with_deletions(5);
+        let mut state = ListState {
+            selected_id: Some(ids[2]),
+            scroll_offset: 1,
+        };
+
+        state.ensure_visible(&store.ordered(), 3);
+
+        assert_eq!(state.scroll_offset, 1);
+    }
+
+    #[test]
+    fn ensure_visible_resets_scroll_for_empty_list() {
+        let store = AnnotationStore::new();
+        let mut state = ListState {
+            selected_id: Some(Uuid::new_v4()),
+            scroll_offset: 4,
+        };
+
+        state.ensure_visible(&store.ordered(), 3);
+
+        assert_eq!(state.scroll_offset, 0);
     }
 
     #[test]
