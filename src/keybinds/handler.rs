@@ -81,6 +81,10 @@ impl KeybindHandler {
         Self { pending: None }
     }
 
+    pub fn clear_pending(&mut self) {
+        self.pending = None;
+    }
+
     /// Returns `true` if there is a pending partial key sequence.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
@@ -98,7 +102,27 @@ impl KeybindHandler {
         }
     }
 
+    /// Translate a key event while the help overlay is visible.
+    pub fn handle_help_overlay(&mut self, mode: Mode, event: KeyEvent) -> Action {
+        match self.handle(mode, event) {
+            Action::ToggleHelp => Action::ToggleHelp,
+            _ => match event.code {
+                KeyCode::Esc | KeyCode::Char('q') => Action::ToggleHelp,
+                KeyCode::Char('j') | KeyCode::Down => Action::MoveDown,
+                KeyCode::Char('k') | KeyCode::Up => Action::MoveUp,
+                _ => Action::None,
+            },
+        }
+    }
+
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
+        if matches!(event.code, KeyCode::Char('?'))
+            && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        {
+            self.clear_pending();
+            return Action::ToggleHelp;
+        }
+
         // Resolve pending multi-key sequences first.
         if let Some(first) = self.pending.take() {
             return self.resolve_normal_sequence(first, event.code);
@@ -365,6 +389,40 @@ mod tests {
         assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
     }
 
+    #[test]
+    fn normal_help_toggle_clears_pending_sequence() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn help_overlay_uses_configured_shortcut_to_toggle() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('?')),
+            Action::ToggleHelp
+        );
+    }
+
+    #[test]
+    fn help_overlay_still_accepts_escape_and_q_to_close() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Esc)),
+            Action::ToggleHelp
+        );
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('q')),
+            Action::ToggleHelp
+        );
+    }
+
     // ── Normal mode: multi-key sequences ──────────────────────────
 
     #[test]
@@ -417,6 +475,19 @@ mod tests {
         assert!(!h.has_pending());
         // Next key should work normally
         assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
+    }
+
+    #[test]
+    fn clear_pending_discards_partial_sequence() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
+
+        h.clear_pending();
+
+        assert!(!h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
     }
 
     // ── Visual mode ───────────────────────────────────────────────
@@ -620,5 +691,43 @@ mod tests {
         assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
         assert_eq!(h.handle(Mode::Visual, char_key('z')), Action::None);
         assert_eq!(h.handle(Mode::AnnotationList, char_key('z')), Action::None);
+    }
+
+    // ── Help overlay ──────────────────────────────────────────────
+
+    #[test]
+    fn help_overlay_j_returns_move_down() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('j')),
+            Action::MoveDown
+        );
+    }
+
+    #[test]
+    fn help_overlay_down_arrow_returns_move_down() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Down)),
+            Action::MoveDown
+        );
+    }
+
+    #[test]
+    fn help_overlay_k_returns_move_up() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('k')),
+            Action::MoveUp
+        );
+    }
+
+    #[test]
+    fn help_overlay_up_arrow_returns_move_up() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Up)),
+            Action::MoveUp
+        );
     }
 }

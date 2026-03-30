@@ -12,9 +12,11 @@ use ratatui::{
 };
 
 use crate::highlight::syntect::SyntectHighlighter;
+use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_list_panel::PANEL_WIDTH;
+use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
@@ -197,6 +199,16 @@ impl App {
             && let Some(dialog) = self.state.confirm_dialog()
         {
             dialog.render(frame, main_area);
+        }
+
+        // -- Help overlay --
+        if self.state.is_help_visible() {
+            HelpOverlay::new(help_sections()).render(
+                frame,
+                main_area,
+                &self.theme,
+                self.state.help_scroll_offset_mut(),
+            );
         }
     }
 }
