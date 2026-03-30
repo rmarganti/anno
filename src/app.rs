@@ -203,7 +203,7 @@ impl App {
 
         // -- Help overlay --
         if self.state.is_help_visible() {
-            HelpOverlay::new(self.state.mode(), help_sections()).render(
+            HelpOverlay::new(help_sections()).render(
                 frame,
                 main_area,
                 &self.theme,

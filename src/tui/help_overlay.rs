@@ -1,13 +1,11 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Flex, Layout, Rect},
-    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
 use crate::keybinds::help_content::HelpSection;
-use crate::keybinds::mode::Mode;
 use crate::tui::theme::UiTheme;
 
 const MIN_WIDTH: u16 = 36;
@@ -16,19 +14,27 @@ const MIN_TWO_COL_WIDTH: u16 = 110;
 const COL_GAP: u16 = 3;
 const DISMISS_HINT: &str = "Press ? or Esc to close";
 
+const SECTION_ORDER: &[&str] = &[
+    "Global",
+    "Normal Mode",
+    "Insert Mode",
+    "Visual Mode",
+    "Annotation List",
+    "Command Mode",
+];
+
 const LEFT_COL_TITLES: &[&str] = &["Global", "Normal Mode", "Insert Mode"];
 const RIGHT_COL_TITLES: &[&str] = &["Visual Mode", "Annotation List", "Command Mode"];
 
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
 pub struct HelpOverlay {
-    mode: Mode,
     sections: Vec<HelpSection>,
 }
 
 impl HelpOverlay {
-    pub fn new(mode: Mode, sections: Vec<HelpSection>) -> Self {
-        Self { mode, sections }
+    pub fn new(sections: Vec<HelpSection>) -> Self {
+        Self { sections }
     }
 
     /// Render the help overlay centered in the given area.
@@ -108,53 +114,37 @@ impl HelpOverlay {
         );
     }
 
-    fn ordered_sections(&self) -> Vec<&HelpSection> {
-        let active_title = mode_title(self.mode);
-        let mut ordered: Vec<&HelpSection> = self.sections.iter().collect();
-        ordered.sort_by_key(|section| {
-            if Some(section.title) == active_title {
-                0
-            } else if section.title == "Global" {
-                1
-            } else {
-                2
-            }
-        });
-        ordered
+    fn sections_in_order(&self, titles: &[&str]) -> Vec<&HelpSection> {
+        titles
+            .iter()
+            .filter_map(|title| self.sections.iter().find(|s| s.title == *title))
+            .collect()
     }
 
     fn content_lines(&self, theme: &UiTheme, width: usize) -> Vec<Line<'static>> {
         if width >= MIN_TWO_COL_WIDTH as usize {
             self.two_column_lines(theme, width)
         } else {
-            let sections = self.ordered_sections();
-            Self::section_lines(&sections, self.mode, theme, width)
+            let sections = self.sections_in_order(SECTION_ORDER);
+            Self::section_lines(&sections, theme, width)
         }
     }
 
     fn section_lines(
         sections: &[&HelpSection],
-        mode: Mode,
         theme: &UiTheme,
         width: usize,
     ) -> Vec<Line<'static>> {
         let key_width = width.min(18);
-        let active_title = mode_title(mode);
 
         let mut lines = Vec::new();
         for (i, section) in sections.iter().enumerate() {
             if i > 0 {
                 lines.push(Line::default());
             }
-            let is_active = Some(section.title) == active_title;
-            let title_style = if is_active {
-                theme.input_box_title.add_modifier(Modifier::REVERSED)
-            } else {
-                theme.input_box_title
-            };
             lines.push(Line::from(Span::styled(
                 truncate_to_width(section.title, width),
-                title_style,
+                theme.input_box_title,
             )));
             for entry in &section.entries {
                 lines.push(help_entry_line(entry.keys, entry.action, key_width, width));
@@ -163,32 +153,13 @@ impl HelpOverlay {
         lines
     }
 
-    fn column_sections<'a>(&'a self, titles: &[&str]) -> Vec<&'a HelpSection> {
-        let active_title = mode_title(self.mode);
-        let mut col: Vec<&HelpSection> = self
-            .sections
-            .iter()
-            .filter(|s| titles.contains(&s.title))
-            .collect();
-        col.sort_by_key(|s| {
-            if Some(s.title) == active_title {
-                0
-            } else if s.title == "Global" {
-                1
-            } else {
-                2
-            }
-        });
-        col
-    }
-
     fn two_column_lines(&self, theme: &UiTheme, width: usize) -> Vec<Line<'static>> {
         let col_width = (width.saturating_sub(COL_GAP as usize)) / 2;
-        let left_sections = self.column_sections(LEFT_COL_TITLES);
-        let right_sections = self.column_sections(RIGHT_COL_TITLES);
+        let left_sections = self.sections_in_order(LEFT_COL_TITLES);
+        let right_sections = self.sections_in_order(RIGHT_COL_TITLES);
 
-        let left_lines = Self::section_lines(&left_sections, self.mode, theme, col_width);
-        let right_lines = Self::section_lines(&right_sections, self.mode, theme, col_width);
+        let left_lines = Self::section_lines(&left_sections, theme, col_width);
+        let right_lines = Self::section_lines(&right_sections, theme, col_width);
 
         let max_len = left_lines.len().max(right_lines.len());
         let gap: String = " ".repeat(COL_GAP as usize);
@@ -211,16 +182,6 @@ impl HelpOverlay {
                 Line::from(spans)
             })
             .collect()
-    }
-}
-
-fn mode_title(mode: Mode) -> Option<&'static str> {
-    match mode {
-        Mode::Normal => Some("Normal Mode"),
-        Mode::Visual => Some("Visual Mode"),
-        Mode::Insert => Some("Insert Mode"),
-        Mode::AnnotationList => Some("Annotation List"),
-        Mode::Command => Some("Command Mode"),
     }
 }
 
@@ -259,12 +220,11 @@ mod tests {
     fn render_to_lines_with_offset(
         width: u16,
         height: u16,
-        mode: Mode,
         scroll_offset: &mut u16,
     ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        let overlay = HelpOverlay::new(mode, help_sections());
+        let overlay = HelpOverlay::new(help_sections());
 
         terminal
             .draw(|frame| {
@@ -294,16 +254,16 @@ mod tests {
             .collect()
     }
 
-    fn render_to_lines(width: u16, height: u16, mode: Mode) -> Vec<String> {
-        render_to_lines_with_offset(width, height, mode, &mut 0)
+    fn render_to_lines(width: u16, height: u16) -> Vec<String> {
+        render_to_lines_with_offset(width, height, &mut 0)
     }
 
     #[test]
     fn renders_section_titles() {
-        let output = render_to_lines(80, 24, Mode::Normal).join("\n");
+        let output = render_to_lines(80, 24).join("\n");
         assert!(
             output.contains("Normal Mode"),
-            "Expected active section title in: {output}"
+            "Expected section title in: {output}"
         );
         assert!(
             output.contains("Global"),
@@ -313,26 +273,26 @@ mod tests {
 
     #[test]
     fn renders_key_descriptions() {
-        let output = render_to_lines(80, 24, Mode::Normal).join("\n");
+        let output = render_to_lines(80, 24).join("\n");
         assert!(
             output.contains("Toggle help"),
             "Expected key description in: {output}"
         );
         assert!(
-            output.contains("Create insertion annotation"),
+            output.contains("Move cursor"),
             "Expected mode help in: {output}"
         );
     }
 
     #[test]
     fn renders_on_small_terminals_without_panicking() {
-        let output = render_to_lines(24, 8, Mode::Normal).join("\n");
+        let output = render_to_lines(24, 8).join("\n");
         assert!(!output.is_empty());
     }
 
     #[test]
     fn renders_scroll_down_indicator_when_truncated() {
-        let output = render_to_lines(24, 8, Mode::Normal).join("\n");
+        let output = render_to_lines(24, 8).join("\n");
         assert!(
             output.contains('▼'),
             "Expected ▼ scroll indicator in: {output}"
@@ -341,7 +301,7 @@ mod tests {
 
     #[test]
     fn omits_scroll_indicators_when_help_fits() {
-        let output = render_to_lines(120, 60, Mode::Normal).join("\n");
+        let output = render_to_lines(120, 60).join("\n");
         assert!(
             !output.contains('▼'),
             "Did not expect ▼ indicator in: {output}"
@@ -354,15 +314,15 @@ mod tests {
 
     #[test]
     fn scroll_offset_changes_visible_content() {
-        let at_top = render_to_lines(80, 24, Mode::Normal).join("\n");
-        let scrolled = render_to_lines_with_offset(80, 24, Mode::Normal, &mut 3).join("\n");
+        let at_top = render_to_lines(80, 24).join("\n");
+        let scrolled = render_to_lines_with_offset(80, 24, &mut 3).join("\n");
         assert_ne!(at_top, scrolled, "Expected different content when scrolled");
     }
 
     #[test]
     fn excessive_scroll_offset_is_clamped() {
         let mut offset = 9999u16;
-        let output = render_to_lines_with_offset(80, 24, Mode::Normal, &mut offset).join("\n");
+        let output = render_to_lines_with_offset(80, 24, &mut offset).join("\n");
         assert!(offset < 9999, "Expected scroll offset to be clamped");
         assert!(
             !output.is_empty(),
@@ -373,7 +333,7 @@ mod tests {
     #[test]
     fn scroll_indicators_appear_when_scrolled() {
         let mut offset = 3u16;
-        let output = render_to_lines_with_offset(24, 8, Mode::Normal, &mut offset).join("\n");
+        let output = render_to_lines_with_offset(24, 8, &mut offset).join("\n");
         assert!(
             output.contains('▲'),
             "Expected ▲ when scrolled down in: {output}"
@@ -389,10 +349,10 @@ mod tests {
         // Inner width must reach MIN_TWO_COL_WIDTH (110).
         // box_width = (width * 4) / 5, inner = box_width - 2 (borders).
         // So width = 140 gives box_width = 112, inner = 110.
-        let output = render_to_lines(140, 30, Mode::Normal);
+        let output = render_to_lines(140, 30);
         let has_side_by_side = output
             .iter()
-            .any(|line| line.contains("Normal Mode") && line.contains("Visual Mode"));
+            .any(|line| line.contains("Global") && line.contains("Visual Mode"));
         assert!(
             has_side_by_side,
             "Expected left and right column sections on same row in wide layout: {output:?}",
@@ -401,7 +361,7 @@ mod tests {
 
     #[test]
     fn single_column_layout_at_narrow_width() {
-        let output = render_to_lines(80, 40, Mode::Normal).join("\n");
+        let output = render_to_lines(80, 40).join("\n");
         let has_side_by_side = output
             .lines()
             .any(|line| line.contains("Normal Mode") && line.contains("Visual Mode"));
@@ -412,14 +372,14 @@ mod tests {
     }
 
     #[test]
-    fn active_mode_first_in_column() {
-        // In Visual mode, "Visual Mode" should appear before "Annotation List" in right column
-        let output = render_to_lines(140, 30, Mode::Visual);
-        let visual_row = output.iter().position(|l| l.contains("Visual Mode"));
-        let annot_row = output.iter().position(|l| l.contains("Annotation List"));
+    fn sections_follow_hardcoded_order() {
+        let output = render_to_lines(80, 50);
+        let global_row = output.iter().position(|l| l.contains("Global"));
+        let normal_row = output.iter().position(|l| l.contains("Normal Mode"));
+        let insert_row = output.iter().position(|l| l.contains("Insert Mode"));
         assert!(
-            visual_row < annot_row,
-            "Expected Visual Mode before Annotation List in right column: {output:?}",
+            global_row < normal_row && normal_row < insert_row,
+            "Expected Global < Normal Mode < Insert Mode: {output:?}",
         );
     }
 }
