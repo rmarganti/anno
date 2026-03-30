@@ -108,6 +108,8 @@ impl KeybindHandler {
             Action::ToggleHelp => Action::ToggleHelp,
             _ => match event.code {
                 KeyCode::Esc | KeyCode::Char('q') => Action::ToggleHelp,
+                KeyCode::Char('j') | KeyCode::Down => Action::MoveDown,
+                KeyCode::Char('k') | KeyCode::Up => Action::MoveUp,
                 _ => Action::None,
             },
         }
@@ -689,5 +691,43 @@ mod tests {
         assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
         assert_eq!(h.handle(Mode::Visual, char_key('z')), Action::None);
         assert_eq!(h.handle(Mode::AnnotationList, char_key('z')), Action::None);
+    }
+
+    // ── Help overlay ──────────────────────────────────────────────
+
+    #[test]
+    fn help_overlay_j_returns_move_down() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('j')),
+            Action::MoveDown
+        );
+    }
+
+    #[test]
+    fn help_overlay_down_arrow_returns_move_down() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Down)),
+            Action::MoveDown
+        );
+    }
+
+    #[test]
+    fn help_overlay_k_returns_move_up() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('k')),
+            Action::MoveUp
+        );
+    }
+
+    #[test]
+    fn help_overlay_up_arrow_returns_move_up() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, key(KeyCode::Up)),
+            Action::MoveUp
+        );
     }
 }

@@ -43,6 +43,8 @@ pub struct AppState {
     confirm_dialog: Option<ConfirmDialog>,
     /// Whether the help overlay is visible.
     help_visible: bool,
+    /// Scroll offset for the help overlay content.
+    help_scroll_offset: u16,
 }
 
 impl AppState {
@@ -81,6 +83,7 @@ impl AppState {
             annotation_list_panel: AnnotationListPanel::new(),
             confirm_dialog: None,
             help_visible: false,
+            help_scroll_offset: 0,
         }
     }
 
@@ -114,6 +117,16 @@ impl AppState {
 
     pub fn is_help_visible(&self) -> bool {
         self.help_visible
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn help_scroll_offset(&self) -> u16 {
+        self.help_scroll_offset
+    }
+
+    #[allow(dead_code)]
+    pub fn help_scroll_offset_mut(&mut self) -> &mut u16 {
+        &mut self.help_scroll_offset
     }
 
     pub fn is_panel_visible(&self) -> bool {
@@ -161,12 +174,18 @@ impl AppState {
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
         if self.help_visible {
-            if matches!(
-                self.keybinds.handle_help_overlay(self.mode, key_event),
-                Action::ToggleHelp
-            ) {
-                self.help_visible = false;
-                self.keybinds.clear_pending();
+            match self.keybinds.handle_help_overlay(self.mode, key_event) {
+                Action::ToggleHelp => {
+                    self.help_visible = false;
+                    self.keybinds.clear_pending();
+                }
+                Action::MoveDown => {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                }
+                Action::MoveUp => {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                }
+                _ => {}
             }
             return;
         }
@@ -251,6 +270,9 @@ impl AppState {
             }
             Action::ToggleHelp => {
                 self.help_visible = !self.help_visible;
+                if self.help_visible {
+                    self.help_scroll_offset = 0;
+                }
                 self.keybinds.clear_pending();
             }
             Action::ExitToNormal => {
@@ -819,12 +841,14 @@ mod tests {
 
     #[test]
     fn other_keys_are_consumed_while_help_is_visible() {
-        harness("hello")
+        let mut harness = harness("hello");
+        harness
             .keys("?j")
             .assert_help_visible()
             .assert_cursor(0, 0)
             .assert_mode(Mode::Normal)
             .assert_not_quit();
+        assert_eq!(harness.state().help_scroll_offset(), 1);
     }
 
     #[test]
@@ -983,5 +1007,54 @@ mod tests {
     #[test]
     fn ctrl_c_quits_from_annotation_list_mode() {
         harness("hello").keys("vld<Tab><C-c>").assert_should_quit();
+    }
+
+    #[test]
+    fn j_k_adjust_help_scroll_offset() {
+        let mut harness = harness("hello");
+        harness.keys("?jjj");
+        assert_eq!(harness.state().help_scroll_offset(), 3);
+
+        harness.keys("k");
+        assert_eq!(harness.state().help_scroll_offset(), 2);
+    }
+
+    #[test]
+    fn help_scroll_offset_saturates_at_zero() {
+        let mut harness = harness("hello");
+        harness.keys("?kk");
+        assert_eq!(harness.state().help_scroll_offset(), 0);
+    }
+
+    #[test]
+    fn help_scroll_offset_resets_on_reopen() {
+        let mut harness = harness("hello");
+        harness.keys("?jjj");
+        assert_eq!(harness.state().help_scroll_offset(), 3);
+
+        harness.keys("?");
+        harness.assert_help_hidden();
+
+        harness.keys("?");
+        harness.assert_help_visible();
+        assert_eq!(harness.state().help_scroll_offset(), 0);
+    }
+
+    #[test]
+    fn dismiss_keys_work_regardless_of_scroll_position() {
+        harness("hello")
+            .keys("?jjj<Esc>")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
+
+        harness("hello")
+            .keys("?jjjq")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
+
+        harness("hello")
+            .keys("?jjj?")
+            .assert_help_hidden()
+            .assert_mode(Mode::Normal);
     }
 }
