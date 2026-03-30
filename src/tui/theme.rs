@@ -33,7 +33,9 @@ pub struct UiTheme {
     pub input_box_title: Style,
     pub panel: Style,
     pub panel_selected: Style,
+    pub panel_selected_unfocused: Style,
     pub panel_border: Style,
+    pub panel_border_focused: Style,
     deletion_color: Color,
     comment_color: Color,
     replacement_color: Color,
@@ -59,7 +61,9 @@ struct DerivedThemePalette {
     input_border_fg: ThemeColor,
     panel: ThemeSurface,
     panel_selected: ThemeSurface,
+    panel_selected_unfocused: ThemeSurface,
     panel_border_fg: ThemeColor,
+    panel_border_focused_fg: ThemeColor,
     deletion_fg: ThemeColor,
     comment_fg: ThemeColor,
     replacement_fg: ThemeColor,
@@ -221,7 +225,10 @@ impl UiTheme {
             input_box_title: style_with_fg(palette.input_border_fg).add_modifier(Modifier::BOLD),
             panel: style_with_surface(palette.panel),
             panel_selected: style_with_surface(palette.panel_selected),
+            panel_selected_unfocused: style_with_surface(palette.panel_selected_unfocused),
             panel_border: style_with_fg(palette.panel_border_fg),
+            panel_border_focused: style_with_fg(palette.panel_border_focused_fg)
+                .add_modifier(Modifier::BOLD),
             deletion_color: palette.deletion_fg.to_ratatui(),
             comment_color: palette.comment_fg.to_ratatui(),
             replacement_color: palette.replacement_fg.to_ratatui(),
@@ -334,7 +341,23 @@ impl DerivedThemePalette {
             &[status_mode.fg, foreground, background],
             MIN_TEXT_CONTRAST,
         );
-        let panel_border_fg = pick_readable_text(&[accent, foreground], panel.bg, MIN_UI_CONTRAST);
+        let panel_selected_unfocused = surface_with_readable_text(
+            accent.mix(background, 0.62),
+            panel.bg,
+            accent,
+            &[panel.fg, foreground, background],
+            MIN_TEXT_CONTRAST,
+        );
+        let panel_border_fg = pick_readable_text(
+            &[panel.fg.mix(panel.bg, 0.35), foreground, accent],
+            panel.bg,
+            MIN_UI_CONTRAST,
+        );
+        let panel_border_focused_fg = pick_readable_text(
+            &[accent, panel_selected.fg, foreground],
+            panel.bg,
+            MIN_UI_CONTRAST,
+        );
 
         Self {
             document,
@@ -347,7 +370,9 @@ impl DerivedThemePalette {
             input_border_fg,
             panel,
             panel_selected,
+            panel_selected_unfocused,
             panel_border_fg,
+            panel_border_focused_fg,
             deletion_fg: derive_annotation_color(DELETION_BASE, background, foreground),
             comment_fg: derive_annotation_color(COMMENT_BASE, background, foreground),
             replacement_fg: derive_annotation_color(REPLACEMENT_BASE, background, foreground),
@@ -596,6 +621,10 @@ mod tests {
             let panel_fg = palette.panel.fg;
             let panel_selected_bg = palette.panel_selected.bg;
             let panel_selected_fg = palette.panel_selected.fg;
+            let panel_selected_unfocused_bg = palette.panel_selected_unfocused.bg;
+            let panel_selected_unfocused_fg = palette.panel_selected_unfocused.fg;
+            let panel_border_fg = palette.panel_border_fg;
+            let panel_border_focused_fg = palette.panel_border_focused_fg;
 
             assert!(
                 cursor_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
@@ -660,6 +689,27 @@ mod tests {
             assert!(
                 panel_selected_fg.contrast_ratio(panel_selected_bg) >= MIN_TEXT_CONTRAST,
                 "{} selected panel row text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                panel_selected_unfocused_bg.contrast_ratio(panel_bg) >= MIN_SURFACE_CONTRAST,
+                "{} unfocused selected panel row should still stand off from the panel background",
+                asset.canonical_name
+            );
+            assert!(
+                panel_selected_unfocused_fg.contrast_ratio(panel_selected_unfocused_bg)
+                    >= MIN_TEXT_CONTRAST,
+                "{} unfocused selected panel row text should remain readable",
+                asset.canonical_name
+            );
+            assert!(
+                panel_border_fg.contrast_ratio(panel_bg) >= MIN_UI_CONTRAST,
+                "{} unfocused panel border should remain visible",
+                asset.canonical_name
+            );
+            assert!(
+                panel_border_focused_fg.contrast_ratio(panel_bg) >= MIN_UI_CONTRAST,
+                "{} focused panel border should remain visible",
                 asset.canonical_name
             );
         }

@@ -160,6 +160,7 @@ impl App {
                 panel_area,
                 self.state.annotations(),
                 &self.theme,
+                self.state.mode() == Mode::AnnotationList,
             );
         }
 

@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use uuid::Uuid;
 
@@ -81,11 +81,22 @@ impl AnnotationListPanel {
     }
 
     /// Render the panel into the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, store: &AnnotationStore, theme: &UiTheme) {
+    pub fn render(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        store: &AnnotationStore,
+        theme: &UiTheme,
+        is_focused: bool,
+    ) {
         let block = Block::default()
             .borders(Borders::LEFT)
             .style(theme.panel)
-            .border_style(theme.panel_border);
+            .border_style(if is_focused {
+                theme.panel_border_focused
+            } else {
+                theme.panel_border
+            });
         let inner = vertical_padding(block.inner(area), 1);
         frame.render_widget(block, area);
 
@@ -126,7 +137,11 @@ impl AnnotationListPanel {
 
             let is_selected = row == current_idx;
             let base_style = if is_selected {
-                theme.panel_selected
+                if is_focused {
+                    theme.panel_selected
+                } else {
+                    theme.panel_selected_unfocused
+                }
             } else {
                 theme.panel
             };
@@ -346,7 +361,7 @@ mod tests {
     use super::*;
     use crate::annotation::types::{Annotation, TextPosition, TextRange};
     use crate::tui::theme::UiTheme;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
         TextRange {
@@ -373,7 +388,7 @@ mod tests {
     }
 
     fn render_to_lines(width: u16, height: u16, panel: &AnnotationListPanel) -> Vec<String> {
-        render_store_to_lines(width, height, panel, &AnnotationStore::new())
+        render_store_to_lines(width, height, panel, &AnnotationStore::new(), false)
     }
 
     fn render_store_to_lines(
@@ -381,6 +396,7 @@ mod tests {
         height: u16,
         panel: &AnnotationListPanel,
         store: &AnnotationStore,
+        is_focused: bool,
     ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -388,7 +404,13 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                panel.render(frame, Rect::new(0, 0, width, height), store, &theme);
+                panel.render(
+                    frame,
+                    Rect::new(0, 0, width, height),
+                    store,
+                    &theme,
+                    is_focused,
+                );
             })
             .unwrap();
 
@@ -715,7 +737,7 @@ mod tests {
         store.add(Annotation::global_comment(String::from("global preview")));
         let panel = AnnotationListPanel::new();
 
-        let output = render_store_to_lines(36, 6, &panel, &store).join("\n");
+        let output = render_store_to_lines(36, 6, &panel, &store, false).join("\n");
 
         assert!(
             output.contains("L3 comment preview"),
@@ -724,6 +746,41 @@ mod tests {
         assert!(
             output.contains("global global preview"),
             "Expected global preview in: {output}"
+        );
+    }
+
+    #[test]
+    fn focused_render_uses_distinct_border_and_selection_styles() {
+        let (store, ids) = make_store_with_deletions(2);
+        let mut panel = AnnotationListPanel::new();
+        panel.set_selected_annotation_id(ids[0]);
+        let theme = UiTheme::default();
+
+        let unfocused_backend = TestBackend::new(36, 6);
+        let mut unfocused_terminal = Terminal::new(unfocused_backend).unwrap();
+        unfocused_terminal
+            .draw(|frame| {
+                panel.render(frame, Rect::new(0, 0, 36, 6), &store, &theme, false);
+            })
+            .unwrap();
+        let unfocused = unfocused_terminal.backend().buffer().clone();
+
+        let focused_backend = TestBackend::new(36, 6);
+        let mut focused_terminal = Terminal::new(focused_backend).unwrap();
+        focused_terminal
+            .draw(|frame| {
+                panel.render(frame, Rect::new(0, 0, 36, 6), &store, &theme, true);
+            })
+            .unwrap();
+        let focused = focused_terminal.backend().buffer().clone();
+
+        assert_ne!(
+            unfocused.cell((0, 0)).unwrap().fg,
+            focused.cell((0, 0)).unwrap().fg
+        );
+        assert_ne!(
+            unfocused.cell((5, 1)).unwrap().bg,
+            focused.cell((5, 1)).unwrap().bg
         );
     }
 }
