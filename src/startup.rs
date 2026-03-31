@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind,
+    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind, resolve_theme_asset,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::{DocumentBackground, ThemeOverlayOverrides};
