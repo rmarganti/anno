@@ -86,10 +86,10 @@ impl App {
                 self.render(frame);
             })?;
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key_event) = event::read()? {
-                    self.state.handle_key(key_event);
-                }
+            if event::poll(Duration::from_millis(100))?
+                && let Event::Key(key_event) = event::read()?
+            {
+                self.state.handle_key(key_event);
             }
         }
 

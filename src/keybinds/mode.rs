@@ -1,7 +1,7 @@
 /// The current input mode of the application.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
-    /// Default navigation mode with vim-like movement.
+    #[default]
     Normal,
     /// Text selection mode, entered with `v`.
     Visual,
@@ -11,10 +11,4 @@ pub enum Mode {
     AnnotationList,
     /// Command-line input mode, entered with `:`.
     Command,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
