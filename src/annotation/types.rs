@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 /// The kind of annotation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnotationType {
     /// Mark selected text for removal.
     Deletion,
@@ -13,6 +13,23 @@ pub enum AnnotationType {
     Insertion,
     /// A general comment not tied to specific text.
     GlobalComment,
+}
+
+impl AnnotationType {
+    /// Return the gutter rendering priority for this annotation type.
+    ///
+    /// Lower numbers indicate higher priority when multiple annotations share
+    /// the same range.
+    #[allow(dead_code)]
+    pub fn priority(&self) -> u8 {
+        match self {
+            Self::Deletion => 0,
+            Self::Replacement => 1,
+            Self::Insertion => 2,
+            Self::Comment => 3,
+            Self::GlobalComment => 4,
+        }
+    }
 }
 
 /// A line/column position within the document.
@@ -27,6 +44,13 @@ pub struct TextPosition {
 pub struct TextRange {
     pub start: TextPosition,
     pub end: TextPosition,
+}
+
+/// A typed annotation anchor used for document gutter rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnnotationIndicator {
+    pub range: TextRange,
+    pub annotation_type: AnnotationType,
 }
 
 /// A single annotation attached to the document.
@@ -111,5 +135,34 @@ impl Annotation {
     /// Create a `GlobalComment` annotation (not anchored to any position).
     pub fn global_comment(comment: String) -> Self {
         Self::new(None, String::new(), AnnotationType::GlobalComment, comment)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnnotationIndicator, AnnotationType, TextPosition, TextRange};
+
+    #[test]
+    fn annotation_type_priority_orders_gutter_precedence() {
+        assert_eq!(AnnotationType::Deletion.priority(), 0);
+        assert_eq!(AnnotationType::Replacement.priority(), 1);
+        assert_eq!(AnnotationType::Insertion.priority(), 2);
+        assert_eq!(AnnotationType::Comment.priority(), 3);
+        assert_eq!(AnnotationType::GlobalComment.priority(), 4);
+    }
+
+    #[test]
+    fn annotation_indicator_pairs_range_with_type() {
+        let range = TextRange {
+            start: TextPosition { line: 3, column: 4 },
+            end: TextPosition { line: 3, column: 9 },
+        };
+        let indicator = AnnotationIndicator {
+            range,
+            annotation_type: AnnotationType::Replacement,
+        };
+
+        assert_eq!(indicator.range, range);
+        assert_eq!(indicator.annotation_type, AnnotationType::Replacement);
     }
 }

@@ -1,11 +1,11 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Paragraph},
 };
 
-use crate::annotation::types::TextRange;
+use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::Action;
 use crate::tui::renderer;
@@ -14,6 +14,7 @@ use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
+const GUTTER_WIDTH: usize = 1;
 
 /// Manages the document content display: viewport, cursor movement, word wrap,
 /// visual selection, and rendering of the main document area.
@@ -145,14 +146,14 @@ impl DocumentView {
         area: ratatui::layout::Rect,
         theme: &UiTheme,
         is_visual: bool,
-        annotation_ranges: &[TextRange],
+        annotation_indicators: &[AnnotationIndicator],
         selected_annotation_range: Option<&TextRange>,
     ) {
         frame.render_widget(Block::default().style(theme.document), area);
 
         // Update viewport dimensions (account for status row handled by caller).
         let doc_height = area.height as usize;
-        let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
+        let doc_width = Self::viewport_width(area.width as usize);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(doc_width, doc_height);
 
@@ -164,6 +165,9 @@ impl DocumentView {
         let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
             .flex(Flex::Center)
             .areas::<1>(area)[0];
+        let [gutter_area, text_area] =
+            Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
+                .areas(main_area);
 
         let render_slices = self.viewport.visible_render_slices(&self.display_layout);
 
@@ -176,6 +180,11 @@ impl DocumentView {
             None
         };
 
+        let annotation_ranges: Vec<TextRange> = annotation_indicators
+            .iter()
+            .map(|indicator| indicator.range)
+            .collect();
+
         let visible_lines: Vec<Line<'static>> =
             renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
                 slices: &render_slices,
@@ -185,19 +194,27 @@ impl DocumentView {
                 cursor_col: self.viewport.cursor.col,
                 theme,
                 selection,
-                annotation_ranges,
+                annotation_ranges: &annotation_ranges,
                 selected_annotation_range,
             });
+
+        let gutter_lines = Self::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
+
+        let gutter = Paragraph::new(gutter_lines)
+            .style(theme.document)
+            .block(Block::default().style(theme.document));
+        frame.render_widget(gutter, gutter_area);
 
         let doc = Paragraph::new(visible_lines)
             .style(theme.document)
             .block(Block::default().style(theme.document));
-        frame.render_widget(doc, main_area);
+        frame.render_widget(doc, text_area);
     }
 
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
+        let width = Self::viewport_width(width);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(width, height);
         if width != old_width {
@@ -217,14 +234,69 @@ impl DocumentView {
             self.viewport.word_wrap,
         );
     }
+
+    fn viewport_width(width: usize) -> usize {
+        width
+            .saturating_sub(GUTTER_WIDTH)
+            .min(MAX_DOC_WIDTH as usize)
+    }
+
+    fn prepare_gutter_lines(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        annotation_indicators: &[AnnotationIndicator],
+        theme: &UiTheme,
+    ) -> Vec<Line<'static>> {
+        Self::compute_gutter_annotation_types(render_slices, annotation_indicators)
+            .into_iter()
+            .map(|annotation_type| {
+                let symbol = annotation_type
+                    .map(|annotation_type| {
+                        Span::styled(
+                            "▌",
+                            theme
+                                .document
+                                .fg(theme.annotation_type_color(&annotation_type)),
+                        )
+                    })
+                    .unwrap_or_else(|| Span::styled(" ", theme.document));
+                Line::from(symbol)
+            })
+            .collect()
+    }
+
+    fn compute_gutter_annotation_types(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> Vec<Option<AnnotationType>> {
+        render_slices
+            .iter()
+            .map(|slice| Self::gutter_annotation_type(slice.doc_row, annotation_indicators))
+            .collect()
+    }
+
+    fn gutter_annotation_type(
+        doc_row: usize,
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> Option<AnnotationType> {
+        annotation_indicators
+            .iter()
+            .filter(|indicator| {
+                indicator.annotation_type != AnnotationType::GlobalComment
+                    && doc_row >= indicator.range.start.line
+                    && doc_row <= indicator.range.end.line
+            })
+            .min_by_key(|indicator| indicator.annotation_type.priority())
+            .map(|indicator| indicator.annotation_type)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::Action;
-    use crate::tui::viewport::CursorPosition;
+    use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -250,6 +322,65 @@ mod tests {
 
     fn pos(row: usize, col: usize) -> CursorPosition {
         CursorPosition { row, col }
+    }
+
+    fn indicator(
+        annotation_type: AnnotationType,
+        start_line: usize,
+        end_line: usize,
+    ) -> AnnotationIndicator {
+        AnnotationIndicator {
+            range: TextRange {
+                start: TextPosition {
+                    line: start_line,
+                    column: 0,
+                },
+                end: TextPosition {
+                    line: end_line,
+                    column: 0,
+                },
+            },
+            annotation_type,
+        }
+    }
+
+    fn render_buffer(
+        view: &mut DocumentView,
+        width: u16,
+        height: u16,
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = UiTheme::default();
+
+        terminal
+            .draw(|frame| {
+                view.render(
+                    frame,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width,
+                        height,
+                    },
+                    &theme,
+                    false,
+                    annotation_indicators,
+                    None,
+                );
+            })
+            .unwrap();
+
+        terminal.backend().buffer().clone()
+    }
+
+    fn slice(doc_row: usize) -> RenderSlice {
+        RenderSlice {
+            doc_row,
+            start_col: 0,
+            end_col: 1,
+        }
     }
 
     // ── Initial state ─────────────────────────────────────────────────
@@ -339,33 +470,162 @@ mod tests {
 
     #[test]
     fn render_fills_background_across_full_area_width() {
-        let backend = TestBackend::new(160, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
         let mut view = make_view(&["hello"]);
         let theme = UiTheme::default();
 
-        terminal
-            .draw(|frame| {
-                view.render(
-                    frame,
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        width: 160,
-                        height: 12,
-                    },
-                    &theme,
-                    false,
-                    &[],
-                    None,
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer().clone();
+        let buffer = render_buffer(&mut view, 160, 12, &[]);
         let right_edge_cell = buffer.cell((159, 0)).unwrap();
         assert_eq!(right_edge_cell.style().bg, theme.document.bg,);
         assert_ne!(right_edge_cell.style().bg, Some(Color::Reset));
+    }
+
+    #[test]
+    fn render_draws_colored_gutter_indicator_for_annotated_rows() {
+        let mut view = make_view(&["first", "second", "third"]);
+        let theme = UiTheme::default();
+        let buffer = render_buffer(
+            &mut view,
+            80,
+            5,
+            &[indicator(AnnotationType::Comment, 1, 1)],
+        );
+
+        let gutter_x = 0;
+        assert_eq!(buffer.cell((gutter_x, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((gutter_x, 1)).unwrap().symbol(), "▌");
+        assert_eq!(
+            buffer.cell((gutter_x, 1)).unwrap().style().fg,
+            Some(theme.annotation_type_color(&AnnotationType::Comment))
+        );
+        assert_eq!(buffer.cell((gutter_x, 2)).unwrap().symbol(), " ");
+    }
+
+    #[test]
+    fn render_uses_highest_priority_annotation_type_in_gutter() {
+        let mut view = make_view(&["first", "second"]);
+        let theme = UiTheme::default();
+        let buffer = render_buffer(
+            &mut view,
+            80,
+            5,
+            &[
+                indicator(AnnotationType::Comment, 1, 1),
+                indicator(AnnotationType::Deletion, 1, 1),
+            ],
+        );
+
+        let gutter_cell = buffer.cell((0, 1)).unwrap();
+        assert_eq!(gutter_cell.symbol(), "▌");
+        assert_eq!(
+            gutter_cell.style().fg,
+            Some(theme.annotation_type_color(&AnnotationType::Deletion))
+        );
+    }
+
+    #[test]
+    fn render_draws_gutter_indicator_for_all_wrapped_rows_of_annotated_line() {
+        let mut view = make_view(&["abcdefghijklmnopqrstuvwxyz"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(
+            &mut view,
+            10,
+            5,
+            &[indicator(AnnotationType::Insertion, 0, 0)],
+        );
+
+        assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), "▌");
+        assert_eq!(buffer.cell((0, 1)).unwrap().symbol(), "▌");
+        assert_eq!(buffer.cell((0, 2)).unwrap().symbol(), "▌");
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_every_line_in_single_range() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(1), slice(2)],
+            &[indicator(AnnotationType::Comment, 0, 2)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Comment),
+                Some(AnnotationType::Comment),
+                Some(AnnotationType::Comment)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_uses_highest_priority_type_per_row() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(1)],
+            &[
+                indicator(AnnotationType::Comment, 1, 1),
+                indicator(AnnotationType::Insertion, 1, 1),
+                indicator(AnnotationType::Replacement, 1, 1),
+                indicator(AnnotationType::Deletion, 1, 1),
+            ],
+        );
+
+        assert_eq!(gutter_types, vec![Some(AnnotationType::Deletion)]);
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_leaves_unannotated_rows_empty() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(1), slice(2)],
+            &[indicator(AnnotationType::Comment, 1, 1)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![None, Some(AnnotationType::Comment), None]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_every_line_in_multiline_range() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(2), slice(3), slice(4)],
+            &[indicator(AnnotationType::Replacement, 2, 4)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Replacement),
+                Some(AnnotationType::Replacement),
+                Some(AnnotationType::Replacement)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_all_wrapped_rows_for_same_doc_line() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(0), slice(0)],
+            &[indicator(AnnotationType::Insertion, 0, 0)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Insertion),
+                Some(AnnotationType::Insertion),
+                Some(AnnotationType::Insertion)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_ignores_global_comments() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(1)],
+            &[indicator(AnnotationType::GlobalComment, 1, 1)],
+        );
+
+        assert_eq!(gutter_types, vec![None]);
     }
 
     #[test]
@@ -463,5 +723,16 @@ mod tests {
     fn not_too_small_with_adequate_dimensions() {
         let view = make_view(&["hello"]);
         assert!(!view.is_too_small());
+    }
+
+    #[test]
+    fn update_dimensions_reserves_one_column_for_gutter() {
+        let mut view = make_view(&["hello"]);
+
+        view.update_dimensions(41, 5);
+        assert!(!view.is_too_small());
+
+        view.update_dimensions(40, 5);
+        assert!(view.is_too_small());
     }
 }
