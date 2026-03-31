@@ -38,6 +38,8 @@ pub enum ExitResult {
 pub struct App {
     /// Centralized theme styles.
     theme: UiTheme,
+    /// Optional display-only title for the status bar.
+    title: Option<String>,
     /// Terminal-independent application state.
     state: AppState,
 }
@@ -48,6 +50,8 @@ impl App {
         content: String,
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
+        let title = startup.title.clone();
+        let export_format = startup.export_format;
         let highlighter = SyntectHighlighter::from_startup(&startup)?;
         let theme = UiTheme::from_syntect_theme(
             highlighter.theme(),
@@ -58,7 +62,8 @@ impl App {
 
         Ok(Self {
             theme,
-            state: AppState::new(source_name, document_lines),
+            title,
+            state: AppState::new(source_name, document_lines, export_format),
         })
     }
 
@@ -179,6 +184,7 @@ impl App {
             &self.theme,
             &StatusBarProps {
                 mode: self.state.mode(),
+                title: self.title.as_deref(),
                 source_name: self.state.source_name(),
                 annotation_count: self.state.annotation_count(),
                 cursor_row: cursor.row,

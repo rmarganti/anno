@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 use ratatui::{Frame, layout::Rect};
 
-use crate::annotation::export::{AgentExporter, AnnotationExporter};
+use crate::annotation::export::{AgentExporter, AnnotationExporter, JsonExporter};
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::TextRange;
 use crate::app::ExitResult;
@@ -9,6 +9,7 @@ use crate::app::ExitResult;
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, KeybindHandler};
 use crate::keybinds::mode::Mode;
+use crate::startup::ExportFormat;
 use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
 use crate::tui::annotation_list_panel::AnnotationListPanel;
 use crate::tui::app_command::{AppCommand, QuitKind};
@@ -23,6 +24,8 @@ use crate::tui::viewport::CursorPosition;
 pub struct AppState {
     /// The source name (filename or "[stdin]").
     source_name: String,
+    /// Output format used when exporting annotations on quit.
+    export_format: ExportFormat,
     /// Current input mode.
     mode: Mode,
     /// Key event dispatcher.
@@ -52,12 +55,25 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(source_name: String, doc_lines_result: renderer::DocumentLines) -> Self {
-        Self::from_document_lines(source_name, doc_lines_result)
+    pub fn new(
+        source_name: String,
+        doc_lines_result: renderer::DocumentLines,
+        export_format: ExportFormat,
+    ) -> Self {
+        Self::from_document_lines(source_name, doc_lines_result, export_format)
     }
 
     #[cfg(any(test, doctest))]
     pub fn new_plain(source_name: String, content: String) -> Self {
+        Self::new_plain_with_format(source_name, content, ExportFormat::Agent)
+    }
+
+    #[cfg(any(test, doctest))]
+    pub fn new_plain_with_format(
+        source_name: String,
+        content: String,
+        export_format: ExportFormat,
+    ) -> Self {
         let plain = if content.is_empty() {
             vec![String::new()]
         } else {
@@ -68,14 +84,23 @@ impl AppState {
             .map(|line| vec![StyledSpan::plain(line.clone())])
             .collect();
 
-        Self::from_document_lines(source_name, renderer::DocumentLines { plain, styled })
+        Self::from_document_lines(
+            source_name,
+            renderer::DocumentLines { plain, styled },
+            export_format,
+        )
     }
 
-    fn from_document_lines(source_name: String, doc_lines_result: renderer::DocumentLines) -> Self {
+    fn from_document_lines(
+        source_name: String,
+        doc_lines_result: renderer::DocumentLines,
+        export_format: ExportFormat,
+    ) -> Self {
         let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
 
         Self {
             source_name,
+            export_format,
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
@@ -412,7 +437,12 @@ impl AppState {
     fn process_app_command(&mut self, cmd: AppCommand) {
         match cmd {
             AppCommand::Quit(QuitKind::WithOutput) => {
-                let output = AgentExporter.export(&self.annotations, &self.source_name);
+                let output = match self.export_format {
+                    ExportFormat::Agent => {
+                        AgentExporter.export(&self.annotations, &self.source_name)
+                    }
+                    ExportFormat::Json => JsonExporter.export(&self.annotations, &self.source_name),
+                };
                 self.exit_result = Some(ExitResult::QuitWithOutput(output));
                 self.should_quit = true;
             }
@@ -668,10 +698,13 @@ pub(crate) mod test_harness {
 
 #[cfg(test)]
 mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
     use super::test_harness::AppTestHarness;
     use super::{AppState, ExitResult};
     use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
     use crate::keybinds::mode::Mode;
+    use crate::startup::ExportFormat;
 
     fn harness(content: &str) -> AppTestHarness {
         AppTestHarness::new(content)
@@ -1259,6 +1292,29 @@ mod tests {
             harness.state_mut().take_exit_result(),
             Some(ExitResult::QuitSilent)
         ));
+    }
+
+    #[test]
+    fn command_q_uses_json_export_when_configured() {
+        let mut state = AppState::new_plain_with_format(
+            "demo.md".to_string(),
+            "hello".to_string(),
+            ExportFormat::Json,
+        );
+
+        state.handle_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE));
+        state.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        match state.take_exit_result() {
+            Some(ExitResult::QuitWithOutput(output)) => {
+                assert_eq!(
+                    output,
+                    "{\"source\":\"demo.md\",\"total\":0,\"annotations\":[]}"
+                );
+            }
+            _ => panic!("expected quit with output"),
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind, resolve_theme_asset,
+    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::{DocumentBackground, ThemeOverlayOverrides};
@@ -20,6 +20,10 @@ mod theme_resolution;
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
 pub struct Cli {
+    /// Output format used when exporting annotations on :q
+    #[arg(long = "export-format", value_enum, default_value_t = ExportFormat::Agent)]
+    pub export_format: ExportFormat,
+
     /// Built-in theme name or path to a .tmTheme file
     #[arg(long)]
     pub theme: Option<String>,
@@ -32,8 +36,23 @@ pub struct Cli {
     #[arg(long)]
     pub syntax: Option<String>,
 
+    /// Display title shown in the status bar
+    #[arg(long)]
+    pub title: Option<String>,
+
+    /// Write annotation output to a file instead of stdout
+    #[arg(long = "output-file")]
+    pub output_file: Option<String>,
+
     /// Text file to annotate
     pub file: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Agent,
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
@@ -100,6 +119,8 @@ pub struct ThemeProvenance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupSettings {
+    pub export_format: ExportFormat,
+    pub title: Option<String>,
     pub document_background: DocumentBackground,
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
@@ -173,6 +194,8 @@ struct SettingsFile {
     theme_mode: Option<ThemeMode>,
     #[serde(default)]
     syntax: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
     #[serde(default, alias = "appTheme", alias = "app-theme")]
     app_theme: ThemeOverlayOverrides,
 }
@@ -203,6 +226,8 @@ impl StartupSettings {
         )?;
 
         Ok(Self {
+            export_format: cli.export_format,
+            title: cli.title.clone().or(config.title),
             document_background: config.background,
             theme_mode,
             theme: theme.resolved,
@@ -502,6 +527,8 @@ mod tests {
                 let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 
                 assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
+                assert_eq!(startup.export_format, ExportFormat::Agent);
+                assert_eq!(startup.title.as_deref(), None);
                 assert_eq!(startup.theme_mode.source, SettingSource::Cli);
                 assert_eq!(startup.theme.source, SettingSource::Cli);
                 assert_eq!(startup.document_background, DocumentBackground::Theme);
@@ -781,19 +808,78 @@ mod tests {
     fn cli_parser_accepts_new_flags() {
         let cli = cli_from(&[
             "anno",
+            "--export-format",
+            "json",
             "--theme",
             "mocha",
             "--theme-mode",
             "dark",
             "--syntax",
             "rust",
+            "--title",
+            "My Review",
             "demo.md",
         ]);
 
+        assert_eq!(cli.export_format, ExportFormat::Json);
         assert_eq!(cli.theme.as_deref(), Some("mocha"));
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
+        assert_eq!(cli.title.as_deref(), Some("My Review"));
+        assert_eq!(cli.output_file, None);
         assert_eq!(cli.file.as_deref(), Some("demo.md"));
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_cli_title_over_config() {
+        with_temp_home(Some(r#"{ "title": "Config Title" }"#), || {
+            let cli = cli_from(&["anno", "--title", "CLI Title", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.title.as_deref(), Some("CLI Title"));
+        });
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_config_title_when_cli_missing() {
+        with_temp_home(Some(r#"{ "title": "Config Title" }"#), || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.title.as_deref(), Some("Config Title"));
+        });
+    }
+
+    #[test]
+    fn cli_parser_accepts_output_file_flag() {
+        let cli = cli_from(&["anno", "--output-file", "/tmp/out.json", "demo.md"]);
+
+        assert_eq!(cli.output_file.as_deref(), Some("/tmp/out.json"));
+        assert_eq!(cli.file.as_deref(), Some("demo.md"));
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_agent_format_by_default() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.export_format, ExportFormat::Agent);
+        });
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_cli_export_format() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "--export-format", "json", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.export_format, ExportFormat::Json);
+        });
     }
 
     #[test]
