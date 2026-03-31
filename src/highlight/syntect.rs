@@ -26,6 +26,7 @@ impl SyntectHighlighter {
         let fallback_theme = default_fallback_resolved_theme();
         Self::from_startup(&StartupSettings {
             export_format: ExportFormat::Agent,
+            title: None,
             document_background: DocumentBackground::Theme,
             theme_mode: crate::startup::ResolvedValue {
                 value: crate::startup::ThemeMode::Auto,
@@ -191,6 +192,7 @@ mod tests {
         let fallback_theme = default_fallback_resolved_theme();
         StartupSettings {
             export_format: ExportFormat::Agent,
+            title: None,
             document_background: DocumentBackground::Theme,
             theme_mode: ResolvedValue {
                 value: ThemeMode::Dark,

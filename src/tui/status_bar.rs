@@ -11,6 +11,7 @@ use crate::tui::theme::UiTheme;
 /// Data needed to render the status bar.
 pub struct StatusBarProps<'a> {
     pub mode: Mode,
+    pub title: Option<&'a str>,
     pub source_name: &'a str,
     pub annotation_count: usize,
     pub cursor_row: usize,
@@ -32,10 +33,11 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
 
     let cursor_pos = format!("{}:{}", props.cursor_row + 1, props.cursor_col + 1);
     let wrap_indicator = if props.word_wrap { "wrap " } else { "" };
+    let display_name = props.title.unwrap_or(props.source_name);
 
     let mut status_spans = vec![
         Span::styled(mode_label, theme.status_mode),
-        Span::raw(format!(" {}  ", props.source_name)),
+        Span::raw(format!(" {display_name}  ")),
         Span::raw(format!("{} annotation(s)  ", props.annotation_count)),
         Span::raw(format!("{cursor_pos}  ")),
         Span::raw(wrap_indicator),
@@ -95,6 +97,7 @@ mod tests {
     fn base_props(mode: Mode) -> StatusBarProps<'static> {
         StatusBarProps {
             mode,
+            title: None,
             source_name: "test.md",
             annotation_count: 0,
             cursor_row: 0,
@@ -296,6 +299,23 @@ mod tests {
         assert!(
             output.contains("test.md"),
             "Expected source name in: {output}"
+        );
+    }
+
+    #[test]
+    fn title_overrides_source_name() {
+        let props = StatusBarProps {
+            title: Some("Reviewing: Implementation Plan"),
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("Reviewing: Implementation Plan"),
+            "Expected title in: {output}"
+        );
+        assert!(
+            !output.contains("test.md"),
+            "Did not expect source name in: {output}"
         );
     }
 }

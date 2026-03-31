@@ -36,6 +36,10 @@ pub struct Cli {
     #[arg(long)]
     pub syntax: Option<String>,
 
+    /// Display title shown in the status bar
+    #[arg(long)]
+    pub title: Option<String>,
+
     /// Text file to annotate
     pub file: Option<String>,
 }
@@ -112,6 +116,7 @@ pub struct ThemeProvenance {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupSettings {
     pub export_format: ExportFormat,
+    pub title: Option<String>,
     pub document_background: DocumentBackground,
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
@@ -185,6 +190,8 @@ struct SettingsFile {
     theme_mode: Option<ThemeMode>,
     #[serde(default)]
     syntax: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
     #[serde(default, alias = "appTheme", alias = "app-theme")]
     app_theme: ThemeOverlayOverrides,
 }
@@ -216,6 +223,7 @@ impl StartupSettings {
 
         Ok(Self {
             export_format: cli.format,
+            title: cli.title.clone().or(config.title),
             document_background: config.background,
             theme_mode,
             theme: theme.resolved,
@@ -516,6 +524,7 @@ mod tests {
 
                 assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
                 assert_eq!(startup.export_format, ExportFormat::Agent);
+                assert_eq!(startup.title.as_deref(), None);
                 assert_eq!(startup.theme_mode.source, SettingSource::Cli);
                 assert_eq!(startup.theme.source, SettingSource::Cli);
                 assert_eq!(startup.document_background, DocumentBackground::Theme);
@@ -803,6 +812,8 @@ mod tests {
             "dark",
             "--syntax",
             "rust",
+            "--title",
+            "My Review",
             "demo.md",
         ]);
 
@@ -810,7 +821,30 @@ mod tests {
         assert_eq!(cli.theme.as_deref(), Some("mocha"));
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
+        assert_eq!(cli.title.as_deref(), Some("My Review"));
         assert_eq!(cli.file.as_deref(), Some("demo.md"));
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_cli_title_over_config() {
+        with_temp_home(Some(r#"{ "title": "Config Title" }"#), || {
+            let cli = cli_from(&["anno", "--title", "CLI Title", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.title.as_deref(), Some("CLI Title"));
+        });
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_config_title_when_cli_missing() {
+        with_temp_home(Some(r#"{ "title": "Config Title" }"#), || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.title.as_deref(), Some("Config Title"));
+        });
     }
 
     #[test]
