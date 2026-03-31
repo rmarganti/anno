@@ -246,10 +246,10 @@ impl DocumentView {
         annotation_indicators: &[AnnotationIndicator],
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
-        render_slices
-            .iter()
-            .map(|slice| {
-                let symbol = Self::gutter_annotation_type(slice.doc_row, annotation_indicators)
+        Self::compute_gutter_annotation_types(render_slices, annotation_indicators)
+            .into_iter()
+            .map(|annotation_type| {
+                let symbol = annotation_type
                     .map(|annotation_type| {
                         Span::styled(
                             "▌",
@@ -264,6 +264,16 @@ impl DocumentView {
             .collect()
     }
 
+    fn compute_gutter_annotation_types(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> Vec<Option<AnnotationType>> {
+        render_slices
+            .iter()
+            .map(|slice| Self::gutter_annotation_type(slice.doc_row, annotation_indicators))
+            .collect()
+    }
+
     fn gutter_annotation_type(
         doc_row: usize,
         annotation_indicators: &[AnnotationIndicator],
@@ -271,7 +281,9 @@ impl DocumentView {
         annotation_indicators
             .iter()
             .filter(|indicator| {
-                doc_row >= indicator.range.start.line && doc_row <= indicator.range.end.line
+                indicator.annotation_type != AnnotationType::GlobalComment
+                    && doc_row >= indicator.range.start.line
+                    && doc_row <= indicator.range.end.line
             })
             .min_by_key(|indicator| indicator.annotation_type.priority())
             .map(|indicator| indicator.annotation_type)
@@ -284,7 +296,7 @@ mod tests {
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::Action;
-    use crate::tui::viewport::CursorPosition;
+    use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -361,6 +373,14 @@ mod tests {
             .unwrap();
 
         terminal.backend().buffer().clone()
+    }
+
+    fn slice(doc_row: usize) -> RenderSlice {
+        RenderSlice {
+            doc_row,
+            start_col: 0,
+            end_col: 1,
+        }
     }
 
     // ── Initial state ─────────────────────────────────────────────────
@@ -517,6 +537,95 @@ mod tests {
         assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), "▌");
         assert_eq!(buffer.cell((0, 1)).unwrap().symbol(), "▌");
         assert_eq!(buffer.cell((0, 2)).unwrap().symbol(), "▌");
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_every_line_in_single_range() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(1), slice(2)],
+            &[indicator(AnnotationType::Comment, 0, 2)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Comment),
+                Some(AnnotationType::Comment),
+                Some(AnnotationType::Comment)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_uses_highest_priority_type_per_row() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(1)],
+            &[
+                indicator(AnnotationType::Comment, 1, 1),
+                indicator(AnnotationType::Insertion, 1, 1),
+                indicator(AnnotationType::Replacement, 1, 1),
+                indicator(AnnotationType::Deletion, 1, 1),
+            ],
+        );
+
+        assert_eq!(gutter_types, vec![Some(AnnotationType::Deletion)]);
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_leaves_unannotated_rows_empty() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(1), slice(2)],
+            &[indicator(AnnotationType::Comment, 1, 1)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![None, Some(AnnotationType::Comment), None]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_every_line_in_multiline_range() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(2), slice(3), slice(4)],
+            &[indicator(AnnotationType::Replacement, 2, 4)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Replacement),
+                Some(AnnotationType::Replacement),
+                Some(AnnotationType::Replacement)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_marks_all_wrapped_rows_for_same_doc_line() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(0), slice(0), slice(0)],
+            &[indicator(AnnotationType::Insertion, 0, 0)],
+        );
+
+        assert_eq!(
+            gutter_types,
+            vec![
+                Some(AnnotationType::Insertion),
+                Some(AnnotationType::Insertion),
+                Some(AnnotationType::Insertion)
+            ]
+        );
+    }
+
+    #[test]
+    fn compute_gutter_annotation_types_ignores_global_comments() {
+        let gutter_types = DocumentView::compute_gutter_annotation_types(
+            &[slice(1)],
+            &[indicator(AnnotationType::GlobalComment, 1, 1)],
+        );
+
+        assert_eq!(gutter_types, vec![None]);
     }
 
     #[test]
