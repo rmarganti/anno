@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind, resolve_theme_asset,
+    resolve_theme_asset, ResolvedThemeAsset, ThemeAssetError, ThemeAssetKind as ThemeProvenanceKind,
 };
 use crate::input::SourceMetadata;
 use crate::tui::theme::{DocumentBackground, ThemeOverlayOverrides};
@@ -21,8 +21,8 @@ mod theme_resolution;
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
 pub struct Cli {
     /// Output format used when exporting annotations on :q
-    #[arg(long, value_enum, default_value_t = ExportFormat::Agent)]
-    pub format: ExportFormat,
+    #[arg(long = "export-format", value_enum, default_value_t = ExportFormat::Agent)]
+    pub export_format: ExportFormat,
 
     /// Built-in theme name or path to a .tmTheme file
     #[arg(long)]
@@ -226,7 +226,7 @@ impl StartupSettings {
         )?;
 
         Ok(Self {
-            export_format: cli.format,
+            export_format: cli.export_format,
             title: cli.title.clone().or(config.title),
             document_background: config.background,
             theme_mode,
@@ -808,7 +808,7 @@ mod tests {
     fn cli_parser_accepts_new_flags() {
         let cli = cli_from(&[
             "anno",
-            "--format",
+            "--export-format",
             "json",
             "--theme",
             "mocha",
@@ -821,7 +821,7 @@ mod tests {
             "demo.md",
         ]);
 
-        assert_eq!(cli.format, ExportFormat::Json);
+        assert_eq!(cli.export_format, ExportFormat::Json);
         assert_eq!(cli.theme.as_deref(), Some("mocha"));
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
@@ -874,7 +874,7 @@ mod tests {
     #[test]
     fn startup_settings_resolve_uses_cli_export_format() {
         with_temp_home(None, || {
-            let cli = cli_from(&["anno", "--format", "json", "demo.md"]);
+            let cli = cli_from(&["anno", "--export-format", "json", "demo.md"]);
 
             let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 

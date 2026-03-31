@@ -1,10 +1,10 @@
 use crate::highlight::theme_assets::{
-    ResolvedThemeAsset, ThemeAssetError, default_fallback_resolved_theme,
+    default_fallback_resolved_theme, ResolvedThemeAsset, ThemeAssetError,
 };
 
 use super::{
-    ResolvedValue, SettingSource, StartupError, ThemeMode, ThemeProvenance,
-    ThemeProvenanceFallback, ThemeSelection, resolve_requested_string,
+    resolve_requested_string, ResolvedValue, SettingSource, StartupError, ThemeMode,
+    ThemeProvenance, ThemeProvenanceFallback, ThemeSelection,
 };
 
 pub(super) fn resolve_theme<F>(
