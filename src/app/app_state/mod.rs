@@ -25,59 +25,109 @@ impl AppState {
         }
 
         let action = self.keybinds.handle(self.mode, key_event);
+        self.dispatch_action(action);
+    }
 
-        // In AnnotationList mode, MoveDown/MoveUp control panel selection,
-        // not document cursor movement.
-        if self.mode == Mode::AnnotationList {
-            match action {
-                Action::MoveDown => {
-                    self.annotation_list_panel
-                        .move_selection_down(&self.annotations);
-                    return;
-                }
-                Action::MoveUp => {
-                    self.annotation_list_panel
-                        .move_selection_up(&self.annotations);
-                    return;
-                }
-                Action::JumpToAnnotation => {
-                    if let Some(id) = self.annotation_list_panel.selected_annotation_id()
-                        && let Some(annotation) = self.annotations.get(id)
-                        && let Some(range) = annotation.range
-                    {
-                        self.document_view
-                            .set_cursor(range.start.line, range.start.column);
-                    }
-                    return;
-                }
-                Action::DeleteAnnotation => {
-                    self.open_delete_confirmation();
-                    return;
-                }
-                Action::OpenAnnotationInspect => {
-                    self.open_annotation_inspect();
-                    return;
-                }
-                Action::ExitToNormal => {
-                    self.mode = Mode::Normal;
-                    return;
-                }
-                _ => {}
-            }
-        }
-
-        // Let DocumentView handle movement and visual-mode actions first.
-        if self.document_view.handle_action(&action) {
-            // EnterVisualMode is handled by DocumentView (sets anchor),
-            // but we also need to update the mode.
-            if matches!(action, Action::EnterVisualMode) {
-                self.mode = Mode::Visual;
-            }
+    fn dispatch_action(&mut self, action: Action) {
+        if self.handle_annotation_list_action(&action) {
             return;
         }
 
+        let _ = self.handle_main_action(action);
+    }
+
+    fn handle_annotation_list_action(&mut self, action: &Action) -> bool {
+        if self.mode != Mode::AnnotationList {
+            return false;
+        }
+
         match action {
-            // -- Mode transitions --
+            Action::MoveDown => {
+                self.annotation_list_panel
+                    .move_selection_down(&self.annotations);
+                true
+            }
+            Action::MoveUp => {
+                self.annotation_list_panel
+                    .move_selection_up(&self.annotations);
+                true
+            }
+            Action::JumpToAnnotation => {
+                if let Some(id) = self.annotation_list_panel.selected_annotation_id()
+                    && let Some(annotation) = self.annotations.get(id)
+                    && let Some(range) = annotation.range
+                {
+                    self.document_view
+                        .set_cursor(range.start.line, range.start.column);
+                }
+                true
+            }
+            Action::DeleteAnnotation => {
+                self.open_delete_confirmation();
+                true
+            }
+            Action::OpenAnnotationInspect => {
+                self.open_annotation_inspect();
+                true
+            }
+            Action::ExitToNormal => {
+                self.mode = Mode::Normal;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_main_action(&mut self, action: Action) -> bool {
+        if self.handle_document_view_action(&action) {
+            return true;
+        }
+
+        self.handle_non_document_action(action)
+    }
+
+    fn handle_document_view_action(&mut self, action: &Action) -> bool {
+        if !self.document_view.handle_action(action) {
+            return false;
+        }
+
+        if matches!(action, Action::EnterVisualMode) {
+            self.mode = Mode::Visual;
+        }
+
+        true
+    }
+
+    fn handle_non_document_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::EnterCommandMode
+            | Action::EnterAnnotationListMode
+            | Action::HideAnnotationList
+            | Action::ToggleHelp
+            | Action::ExitToNormal => self.handle_mode_transition_action(action),
+            Action::NextAnnotation | Action::PrevAnnotation => {
+                self.handle_annotation_navigation_action(action)
+            }
+            Action::CommandChar(_) | Action::CommandBackspace | Action::CommandConfirm => {
+                self.handle_command_mode_action(action)
+            }
+            Action::CreateDeletion | Action::CreateComment | Action::CreateReplacement => {
+                self.handle_visual_annotation_action(action)
+            }
+            Action::CreateInsertion | Action::CreateGlobalComment => {
+                self.handle_normal_annotation_action(action)
+            }
+            Action::InputForward(_) => self.handle_input_mode_action(action),
+            Action::ForceQuit => {
+                self.should_quit = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_mode_transition_action(&mut self, action: Action) -> bool {
+        match action {
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
                 self.command_line.clear();
@@ -115,76 +165,75 @@ impl AppState {
                 self.document_view.clear_visual();
                 self.annotation_controller.cancel();
             }
-
-            // -- Annotation navigation (Normal mode) --
-            Action::NextAnnotation => {
-                self.jump_to_adjacent_annotation(true);
-            }
-            Action::PrevAnnotation => {
-                self.jump_to_adjacent_annotation(false);
-            }
-
-            // -- Command mode --
-            Action::CommandChar(c) => {
-                let event = self.command_line.handle_char(c);
-                self.handle_command_line_event(event);
-            }
-            Action::CommandBackspace => {
-                let event = self.command_line.handle_backspace();
-                self.handle_command_line_event(event);
-            }
-            Action::CommandConfirm => {
-                let event = self.command_line.handle_confirm();
-                self.handle_command_line_event(event);
-            }
-
-            // -- Annotation creation from Visual mode --
-            Action::CreateDeletion => {
-                let action = self
-                    .annotation_controller
-                    .create_deletion(&mut self.document_view, &mut self.annotations);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateComment => {
-                let action = self
-                    .annotation_controller
-                    .start_input_for_visual_annotation("Comment", &mut self.document_view);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateReplacement => {
-                let action = self
-                    .annotation_controller
-                    .start_input_for_visual_annotation("Replacement", &mut self.document_view);
-                self.apply_annotation_action(action);
-            }
-
-            // -- Annotation creation from Normal mode --
-            Action::CreateInsertion => {
-                let action = self
-                    .annotation_controller
-                    .start_insertion(&self.document_view);
-                self.apply_annotation_action(action);
-            }
-            Action::CreateGlobalComment => {
-                let action = self.annotation_controller.start_global_comment();
-                self.apply_annotation_action(action);
-            }
-
-            // -- Input mode --
-            Action::InputForward(key_event) => {
-                let action = self
-                    .annotation_controller
-                    .handle_input_key(key_event, &mut self.annotations);
-                self.apply_annotation_action(action);
-            }
-
-            // -- Force quit (Ctrl-C) --
-            Action::ForceQuit => {
-                self.should_quit = true;
-            }
-
-            _ => {}
+            _ => return false,
         }
+
+        true
+    }
+
+    fn handle_annotation_navigation_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::NextAnnotation => self.jump_to_adjacent_annotation(true),
+            Action::PrevAnnotation => self.jump_to_adjacent_annotation(false),
+            _ => return false,
+        }
+
+        true
+    }
+
+    fn handle_command_mode_action(&mut self, action: Action) -> bool {
+        let event = match action {
+            Action::CommandChar(c) => self.command_line.handle_char(c),
+            Action::CommandBackspace => self.command_line.handle_backspace(),
+            Action::CommandConfirm => self.command_line.handle_confirm(),
+            _ => return false,
+        };
+
+        self.handle_command_line_event(event);
+        true
+    }
+
+    fn handle_visual_annotation_action(&mut self, action: Action) -> bool {
+        let annotation_action = match action {
+            Action::CreateDeletion => self
+                .annotation_controller
+                .create_deletion(&mut self.document_view, &mut self.annotations),
+            Action::CreateComment => self
+                .annotation_controller
+                .start_input_for_visual_annotation("Comment", &mut self.document_view),
+            Action::CreateReplacement => self
+                .annotation_controller
+                .start_input_for_visual_annotation("Replacement", &mut self.document_view),
+            _ => return false,
+        };
+
+        self.apply_annotation_action(annotation_action);
+        true
+    }
+
+    fn handle_normal_annotation_action(&mut self, action: Action) -> bool {
+        let annotation_action = match action {
+            Action::CreateInsertion => self
+                .annotation_controller
+                .start_insertion(&self.document_view),
+            Action::CreateGlobalComment => self.annotation_controller.start_global_comment(),
+            _ => return false,
+        };
+
+        self.apply_annotation_action(annotation_action);
+        true
+    }
+
+    fn handle_input_mode_action(&mut self, action: Action) -> bool {
+        let Action::InputForward(key_event) = action else {
+            return false;
+        };
+
+        let annotation_action = self
+            .annotation_controller
+            .handle_input_key(key_event, &mut self.annotations);
+        self.apply_annotation_action(annotation_action);
+        true
     }
 
     fn apply_annotation_action(&mut self, action: AnnotationAction) {
