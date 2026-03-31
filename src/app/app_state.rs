@@ -243,6 +243,11 @@ impl AppState {
             .and_then(|id| self.annotations.get(id))
     }
 
+    fn initialize_annotation_list_selection(&mut self) {
+        self.annotation_list_panel
+            .ensure_selection_initialized(&self.annotations);
+    }
+
     pub fn set_annotation_panel_available(&mut self, available: bool) {
         self.annotation_panel_available = available;
 
@@ -407,12 +412,14 @@ impl AppState {
                         self.mode = if self.mode == Mode::AnnotationList {
                             Mode::Normal
                         } else {
+                            self.initialize_annotation_list_selection();
                             Mode::AnnotationList
                         };
                     }
                 } else {
                     self.annotation_list_panel.toggle();
                     if self.annotation_panel_available {
+                        self.initialize_annotation_list_selection();
                         self.mode = Mode::AnnotationList;
                     } else {
                         self.mode = Mode::Normal;
@@ -1389,7 +1396,7 @@ mod tests {
     fn opening_annotation_inspect_clears_pending_delete_sequence() {
         let mut harness = harness("alpha\nbeta");
 
-        harness.keys("vld<Tab>kd");
+        harness.keys("vld<Tab>d");
         assert!(harness.state().keybinds.has_pending());
 
         harness
@@ -1410,7 +1417,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>k");
+        harness.keys("<Tab>");
         let first = harness
             .state()
             .annotation_list_panel()
@@ -1437,7 +1444,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>jj");
+        harness.keys("<Tab>j");
 
         let expected_range = harness.state().annotations().ordered()[1]
             .range
@@ -1456,7 +1463,41 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("gg<Tab>jj<Enter>").assert_cursor(1, 1);
+        harness.keys("gg<Tab>j<Enter>").assert_cursor(1, 1);
+    }
+
+    #[test]
+    fn tab_initializes_selection_to_first_annotation() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>");
+
+        let expected_id = harness.state().annotations().ordered()[0].id;
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            Some(expected_id)
+        );
+    }
+
+    #[test]
+    fn first_j_after_tab_selects_second_annotation() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>j");
+
+        let expected_id = harness.state().annotations().ordered()[1].id;
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            Some(expected_id)
+        );
     }
 
     #[test]
@@ -1464,7 +1505,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>k ");
+        harness.keys("<Tab> ");
         let first = harness
             .state()
             .annotation_list_panel()
@@ -1491,7 +1532,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>kj ");
+        harness.keys("<Tab>j ");
         let expected = harness
             .state()
             .selected_annotation_range()
@@ -1526,7 +1567,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta");
 
         harness
-            .keys("vld<Tab>k dd")
+            .keys("vld<Tab> dd")
             .assert_annotation_count(1)
             .assert_no_confirm_dialog()
             .assert_annotation_inspect_visible();
@@ -1537,7 +1578,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta");
 
         harness
-            .keys("vld<Tab>k ")
+            .keys("vld<Tab> ")
             .assert_mode(Mode::AnnotationList)
             .assert_annotation_inspect_visible();
 
@@ -1563,7 +1604,7 @@ mod tests {
     #[test]
     fn confirm_dialog_can_delete_annotation_from_list() {
         let mut harness = harness("alpha\nbeta");
-        harness.keys("vld<Tab>kdd").assert_has_confirm_dialog();
+        harness.keys("vld<Tab>dd").assert_has_confirm_dialog();
         harness
             .keys("y")
             .assert_annotation_count(0)
@@ -1573,9 +1614,34 @@ mod tests {
     #[test]
     fn confirm_dialog_cancel_keeps_annotation() {
         harness("alpha\nbeta")
-            .keys("vld<Tab>kddn")
+            .keys("vld<Tab>ddn")
             .assert_annotation_count(1)
             .assert_no_confirm_dialog();
+    }
+
+    #[test]
+    fn enter_after_first_focus_jumps_to_first_annotation() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        let expected = harness.state().annotations().ordered()[0]
+            .range
+            .expect("first annotation should be anchored")
+            .start;
+
+        harness
+            .keys("gg<Tab><Enter>")
+            .assert_cursor(expected.line, expected.column);
+    }
+
+    #[test]
+    fn space_after_first_focus_opens_annotation_inspect() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .keys("vld<Tab> ")
+            .assert_mode(Mode::AnnotationList)
+            .assert_annotation_inspect_visible();
     }
 
     #[test]
