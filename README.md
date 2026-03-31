@@ -1,6 +1,6 @@
 # anno
 
-A terminal-based TUI for annotating text files. Navigate documents with vim-style keybindings, select text, and create structured annotations (comments, deletions, replacements, insertions) that are exported as markdown.
+A terminal-based TUI for annotating text files. Navigate documents with vim-style keybindings, select text, and create structured annotations (comments, deletions, replacements, insertions) that are exported as agent-friendly XML-like markup or JSON.
 
 ## Installation
 
@@ -19,8 +19,14 @@ cargo build --release
 # Annotate a file
 anno document.md
 
+# Export JSON to a file
+anno --export-format json --output-file feedback.json document.md
+
 # Pick a built-in theme and syntax override
 anno --theme mocha --theme-mode dark --syntax rust notes.txt
+
+# Set a display title for the status bar
+anno --title "API review" document.md
 
 # Pipe from stdin
 cat document.md | anno
@@ -29,17 +35,20 @@ cat document.md | anno
 anno document.md > feedback.md
 ```
 
-Anno also reads optional startup settings from `~/.config/anno/settings.json`. CLI flags override config values. When no explicit syntax is set, anno auto-detects from filenames and shebang-style first lines, then falls back to plain text.
+Anno also reads optional startup settings from `~/.config/anno/settings.json`. CLI flags override config values for `theme`, `theme-mode`, `syntax`, and `title`. When no explicit syntax is set, anno auto-detects from filenames and shebang-style first lines, then falls back to plain text.
 
 ## Themes And Startup Settings
 
-Use `--theme`, `--theme-mode`, and `--syntax` on the command line, or set the same values in `~/.config/anno/settings.json`.
+Use `--theme`, `--theme-mode`, `--syntax`, and `--title` on the command line, or set the corresponding startup values in `~/.config/anno/settings.json`.
 
 ### CLI flags
 
+- `--export-format <agent|json>` chooses the output format produced by `:q`. The default is `agent`.
 - `--theme <NAME_OR_PATH>` picks either a built-in theme name or an explicit path to a `.tmTheme` file.
 - `--theme-mode <auto|light|dark>` controls automatic built-in theme selection when no explicit theme is set.
 - `--syntax <NAME_OR_EXTENSION>` overrides syntax highlighting detection.
+- `--title <TEXT>` sets a display-only title in the status bar.
+- `--output-file <PATH>` writes the exported annotations to a file instead of stdout after `:q`.
 - Bare values like `mocha` or `neverforest` stay in built-in theme resolution; values with `.tmTheme`, `/`, `\\`, or `~/` are treated as file paths.
 
 Examples:
@@ -63,6 +72,7 @@ anno --theme "~/.config/bat/themes/Catppuccin Mocha.tmTheme" notes.md
   "background": "default",
   "theme_mode": "dark",
   "syntax": "rust",
+  "title": "API review",
   "app_theme": {
     "cursor": {
       "bg": "#112233"
@@ -83,6 +93,7 @@ Supported top-level keys:
 - `background`: `theme` or `default`. `default` uses the terminal's default background color for the main document surface.
 - `theme_mode`: `auto`, `light`, or `dark`.
 - `syntax`: syntax name, token, or extension.
+- `title`: optional display-only title shown in the status bar.
 - `app_theme`: optional document-overlay overrides for `cursor`, `selection`, and `annotation`.
 
 The settings parser also accepts `themeMode` / `theme-mode` and `appTheme` / `app-theme` as aliases for the snake_case keys above.
@@ -135,7 +146,7 @@ Example:
 anno --theme "$(bat --config-dir)/themes/Catppuccin Mocha.tmTheme" notes.rs
 ```
 
-On exit with `:q`, annotations are printed to stdout as structured markdown. Use `:q!` to quit without output.
+On exit with `:q`, annotations are exported in the configured format. The default is `agent`, which prints XML-like markup to stdout unless `--output-file` is set. Use `:q!` to quit without output.
 
 ## Modes
 
@@ -151,7 +162,7 @@ anno uses vim-inspired modal editing:
 
 ## Help Overlay
 
-Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below.
+Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `?`, `Esc`, and `q` all close it.
 
 ## Keybindings
 
@@ -209,6 +220,8 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | `dd`    | Delete selected annotation    |
 | `Esc`   | Exit annotation list          |
 
+Deleting an annotation opens a confirmation dialog. Press `y` or `Enter` to confirm, or `n` or `Esc` to cancel.
+
 ### Command Mode
 
 | Key    | Action          |
@@ -227,9 +240,14 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | **Insertion**      | In Normal mode, press `i`, type text to insert          |
 | **Global Comment** | In Normal mode, press `gc`, type comment                |
 
-## Output Format
+## Output Formats
 
-Annotations are exported as structured XML-like output when quitting with `:q`, designed for consumption by LLM coding agents. Example output:
+Anno supports two export formats when quitting with `:q`:
+
+- `agent` (default): structured XML-like output designed for LLM coding agents.
+- `json`: structured JSON for programmatic tooling.
+
+### `agent` example
 
 ```xml
 <annotations file="path/to/file.md" total="5">
@@ -264,5 +282,26 @@ Global comment not tied to any specific location.
 ```
 
 When the source is piped from stdin, the opening tag uses `source="stdin"` instead of `file="..."`.
+
+### `json` example
+
+```json
+{
+  "source": "path/to/file.md",
+  "total": 2,
+  "annotations": [
+    {
+      "type": "comment",
+      "line": 8,
+      "selected_text": "old sentence",
+      "text": "This needs more detail."
+    },
+    {
+      "type": "global_comment",
+      "text": "Overall structure looks good."
+    }
+  ]
+}
+```
 
 Annotations are ordered by their position in the document, with global comments appearing last.
