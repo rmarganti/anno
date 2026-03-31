@@ -45,6 +45,11 @@ pub enum Action {
     OpenAnnotationInspect,
     DeleteAnnotation,
     JumpToAnnotation,
+    ScrollOverlayUp,
+    ScrollOverlayDown,
+    ScrollOverlayPageUp,
+    ScrollOverlayPageDown,
+    HideAnnotationList,
 
     // -- Command mode --
     CommandChar(char),
@@ -119,8 +124,15 @@ impl KeybindHandler {
     /// Translate a key event while the annotation inspect overlay is visible.
     pub fn handle_annotation_inspect(&mut self, event: KeyEvent) -> Action {
         match (event.code, event.modifiers) {
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::MoveDown,
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
+            (KeyCode::Char('j'), KeyModifiers::NONE) => Action::MoveDown,
+            (KeyCode::Char('k'), KeyModifiers::NONE) => Action::MoveUp,
+            (KeyCode::Down, KeyModifiers::NONE) => Action::ScrollOverlayDown,
+            (KeyCode::Up, KeyModifiers::NONE) => Action::ScrollOverlayUp,
+            (KeyCode::PageDown, KeyModifiers::NONE)
+            | (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::ScrollOverlayPageDown,
+            (KeyCode::PageUp, KeyModifiers::NONE) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                Action::ScrollOverlayPageUp
+            }
             (KeyCode::Enter, _) => Action::JumpToAnnotation,
             (KeyCode::Esc, _) => Action::ExitToNormal,
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
@@ -179,6 +191,7 @@ impl KeybindHandler {
                 Action::EnterCommandMode
             }
             (KeyCode::Tab, KeyModifiers::NONE) => Action::EnterAnnotationListMode,
+            (KeyCode::Esc, KeyModifiers::NONE) => Action::HideAnnotationList,
 
             // Help
             (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::ToggleHelp,
@@ -260,7 +273,7 @@ impl KeybindHandler {
             (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
             (KeyCode::Enter, _) => Action::JumpToAnnotation,
             (KeyCode::Tab, _) => Action::EnterAnnotationListMode,
-            (KeyCode::Esc, _) => Action::ExitToNormal,
+            (KeyCode::Esc, _) => Action::HideAnnotationList,
 
             // Ctrl-C — force quit
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
@@ -634,6 +647,22 @@ mod tests {
         assert_eq!(h.handle_annotation_inspect(char_key('j')), Action::MoveDown);
         assert_eq!(h.handle_annotation_inspect(char_key('k')), Action::MoveUp);
         assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Down)),
+            Action::ScrollOverlayDown
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Up)),
+            Action::ScrollOverlayUp
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::PageDown)),
+            Action::ScrollOverlayPageDown
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::PageUp)),
+            Action::ScrollOverlayPageUp
+        );
+        assert_eq!(
             h.handle_annotation_inspect(key(KeyCode::Enter)),
             Action::JumpToAnnotation
         );
@@ -659,7 +688,16 @@ mod tests {
         let mut h = KeybindHandler::new();
         assert_eq!(
             h.handle(Mode::AnnotationList, key(KeyCode::Esc)),
-            Action::ExitToNormal
+            Action::HideAnnotationList
+        );
+    }
+
+    #[test]
+    fn normal_esc_hides_annotation_list() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle(Mode::Normal, key(KeyCode::Esc)),
+            Action::HideAnnotationList
         );
     }
 

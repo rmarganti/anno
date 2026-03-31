@@ -39,7 +39,7 @@ struct ListState {
 impl AnnotationListPanel {
     pub fn new() -> Self {
         Self {
-            visible: false,
+            visible: true,
             list_state: ListState::default(),
         }
     }
@@ -508,18 +508,18 @@ mod tests {
     // ───── visibility ─────
 
     #[test]
-    fn starts_hidden() {
+    fn starts_visible() {
         let panel = AnnotationListPanel::new();
-        assert!(!panel.is_visible());
+        assert!(panel.is_visible());
     }
 
     #[test]
     fn toggle_visibility() {
         let mut panel = AnnotationListPanel::new();
         panel.toggle();
-        assert!(panel.is_visible());
-        panel.toggle();
         assert!(!panel.is_visible());
+        panel.toggle();
+        assert!(panel.is_visible());
     }
 
     // ───── selection tracking ─────

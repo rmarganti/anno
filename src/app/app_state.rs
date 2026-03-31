@@ -20,6 +20,8 @@ use crate::tui::renderer;
 use crate::tui::theme::UiTheme;
 use crate::tui::viewport::CursorPosition;
 
+const ANNOTATION_INSPECT_PAGE_SCROLL_LINES: u16 = 8;
+
 /// Terminal-independent application state.
 pub struct AppState {
     /// The source name (filename or "[stdin]").
@@ -157,6 +159,11 @@ impl AppState {
 
     pub fn is_annotation_inspect_visible(&self) -> bool {
         self.annotation_inspect_visible
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn annotation_inspect_scroll_offset(&self) -> u16 {
+        self.annotation_inspect_scroll_offset
     }
 
     pub fn annotation_inspect_scroll_offset_mut(&mut self) -> &mut u16 {
@@ -305,6 +312,14 @@ impl AppState {
                         .move_selection_up(&self.annotations);
                     self.annotation_inspect_scroll_offset = 0;
                 }
+                Action::ScrollOverlayDown => self.scroll_annotation_inspect_down(1),
+                Action::ScrollOverlayUp => self.scroll_annotation_inspect_up(1),
+                Action::ScrollOverlayPageDown => {
+                    self.scroll_annotation_inspect_down(ANNOTATION_INSPECT_PAGE_SCROLL_LINES);
+                }
+                Action::ScrollOverlayPageUp => {
+                    self.scroll_annotation_inspect_up(ANNOTATION_INSPECT_PAGE_SCROLL_LINES);
+                }
                 Action::JumpToAnnotation => {
                     if let Some(annotation) = self.selected_annotation()
                         && let Some(range) = annotation.range
@@ -387,13 +402,27 @@ impl AppState {
                 self.command_line.clear();
             }
             Action::EnterAnnotationListMode => {
-                self.annotation_list_panel.toggle();
-                if self.annotation_list_panel.is_visible()
-                    && self.annotation_panel_available
-                    && !self.annotations.is_empty()
-                {
-                    self.mode = Mode::AnnotationList;
+                if self.annotation_list_panel.is_visible() {
+                    if self.annotation_panel_available {
+                        self.mode = if self.mode == Mode::AnnotationList {
+                            Mode::Normal
+                        } else {
+                            Mode::AnnotationList
+                        };
+                    }
                 } else {
+                    self.annotation_list_panel.toggle();
+                    if self.annotation_panel_available {
+                        self.mode = Mode::AnnotationList;
+                    } else {
+                        self.mode = Mode::Normal;
+                    }
+                }
+            }
+            Action::HideAnnotationList => {
+                if self.annotation_list_panel.is_visible() {
+                    self.annotation_list_panel.toggle();
+                    self.close_annotation_inspect();
                     self.mode = Mode::Normal;
                 }
             }
@@ -602,6 +631,16 @@ impl AppState {
         self.annotation_inspect_visible = false;
         self.annotation_inspect_scroll_offset = 0;
         self.keybinds.clear_pending();
+    }
+
+    fn scroll_annotation_inspect_down(&mut self, lines: u16) {
+        self.annotation_inspect_scroll_offset =
+            self.annotation_inspect_scroll_offset.saturating_add(lines);
+    }
+
+    fn scroll_annotation_inspect_up(&mut self, lines: u16) {
+        self.annotation_inspect_scroll_offset =
+            self.annotation_inspect_scroll_offset.saturating_sub(lines);
     }
 }
 
@@ -902,7 +941,7 @@ mod tests {
         assert!(!state.has_confirm_dialog());
         assert!(!state.is_annotation_inspect_visible());
         assert!(!state.is_help_visible());
-        assert!(!state.is_panel_visible());
+        assert!(state.is_panel_visible());
         assert_eq!(state.command_buffer(), "");
         assert!(!state.word_wrap());
         assert!(state.confirm_dialog().is_none());
@@ -956,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_enters_annotation_list_mode_when_annotations_exist() {
+    fn tab_focuses_annotation_list_mode() {
         let mut harness = harness("first\nsecond");
         harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
     }
@@ -983,12 +1022,12 @@ mod tests {
     }
 
     #[test]
-    fn escape_leaves_annotation_list_mode() {
+    fn escape_hides_annotation_list_panel() {
         let mut harness = harness("first\nsecond");
         harness
             .keys("vld<Tab><Esc>")
             .assert_mode(Mode::Normal)
-            .assert_panel_visible();
+            .assert_panel_hidden();
     }
 
     #[test]
@@ -1196,12 +1235,84 @@ mod tests {
     }
 
     #[test]
-    fn tab_toggles_annotation_panel_visibility() {
+    fn tab_toggles_annotation_panel_focus_without_hiding_visible_panel() {
         harness("hello")
             .keys("vld<Tab>")
             .assert_panel_visible()
+            .assert_mode(Mode::AnnotationList)
             .keys("<Tab>")
-            .assert_panel_hidden();
+            .assert_panel_visible()
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn escape_hides_visible_unfocused_panel_from_normal_mode() {
+        harness("hello")
+            .assert_panel_visible()
+            .assert_mode(Mode::Normal)
+            .keys("<Esc>")
+            .assert_panel_hidden()
+            .assert_mode(Mode::Normal);
+    }
+
+    #[test]
+    fn tab_reopens_hidden_panel_and_focuses_it() {
+        harness("hello")
+            .keys("<Esc>")
+            .assert_panel_hidden()
+            .keys("<Tab>")
+            .assert_panel_visible()
+            .assert_mode(Mode::AnnotationList);
+    }
+
+    #[test]
+    fn annotation_inspect_arrow_keys_scroll_without_changing_selection() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        harness.state_mut().annotations.add(Annotation::comment(
+            range(0, 0, 0, 5),
+            "alpha".into(),
+            (0..24)
+                .map(|idx| format!("detail line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+
+        harness.keys("<Tab>k ");
+        let selected_id = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        harness
+            .key(KeyCode::Down)
+            .assert_annotation_inspect_visible();
+        assert_eq!(harness.state().annotation_inspect_scroll_offset(), 1);
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            selected_id
+        );
+
+        harness.key(KeyCode::PageDown);
+        assert_eq!(
+            harness.state().annotation_inspect_scroll_offset(),
+            1 + super::ANNOTATION_INSPECT_PAGE_SCROLL_LINES
+        );
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            selected_id
+        );
+
+        harness.key(KeyCode::Up);
+        assert_eq!(
+            harness.state().annotation_inspect_scroll_offset(),
+            super::ANNOTATION_INSPECT_PAGE_SCROLL_LINES
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use crate::{
 
 const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
-const FOOTER_HINT: &str = "j/k Select  Enter Jump  Esc Close";
+const FOOTER_HINT: &str = "j/k Select  Up/Down Scroll  Enter Jump  Esc Close";
 
 /// Modal overlay for read-only inspection of a single annotation.
 #[derive(Debug, Clone)]
