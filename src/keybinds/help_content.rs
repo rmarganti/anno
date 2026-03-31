@@ -64,6 +64,7 @@ pub fn help_sections() -> Vec<HelpSection> {
             title: "Annotation List",
             entries: vec![
                 entry("j/k", "Move selection"),
+                entry("Space", "Inspect selected annotation"),
                 entry("Enter", "Jump to selected annotation"),
                 entry("dd", "Delete selected annotation"),
                 entry("Esc", "Exit annotation list"),
@@ -210,6 +211,11 @@ mod tests {
         assert!(contains_entry(&sections[3], "Esc", "Cancel input"));
 
         assert!(contains_entry(&sections[4], "j/k", "Move selection"));
+        assert!(contains_entry(
+            &sections[4],
+            "Space",
+            "Inspect selected annotation"
+        ));
         assert!(contains_entry(
             &sections[4],
             "Enter",

@@ -193,6 +193,7 @@ impl App {
             &self.theme,
             &StatusBarProps {
                 mode: self.state.mode(),
+                annotation_inspect_visible: self.state.is_annotation_inspect_visible(),
                 title: self.title.as_deref(),
                 source_name: self.state.source_name(),
                 annotation_count: self.state.annotation_count(),

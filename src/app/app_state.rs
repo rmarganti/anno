@@ -1437,6 +1437,19 @@ mod tests {
     }
 
     #[test]
+    fn narrow_terminal_does_not_offer_annotation_inspect_entry() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .set_panel_available(false)
+            .keys("vld<Tab> ")
+            .assert_mode(Mode::Normal)
+            .assert_annotation_inspect_hidden();
+
+        assert!(harness.state().is_panel_hidden_due_to_width());
+    }
+
+    #[test]
     fn confirm_dialog_can_delete_annotation_from_list() {
         let mut harness = harness("alpha\nbeta");
         harness.keys("vld<Tab>kdd").assert_has_confirm_dialog();

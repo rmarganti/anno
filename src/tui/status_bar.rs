@@ -11,6 +11,7 @@ use crate::tui::theme::UiTheme;
 /// Data needed to render the status bar.
 pub struct StatusBarProps<'a> {
     pub mode: Mode,
+    pub annotation_inspect_visible: bool,
     pub title: Option<&'a str>,
     pub source_name: &'a str,
     pub annotation_count: usize,
@@ -50,7 +51,10 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
             Mode::Normal => "? help".to_string(),
             Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
-            Mode::AnnotationList => "j/k nav  Enter jump  dd delete  Esc".to_string(),
+            Mode::AnnotationList if props.annotation_inspect_visible => {
+                "j/k select  Enter jump  Esc close".to_string()
+            }
+            Mode::AnnotationList => "j/k  Space inspect  Enter  dd  Esc".to_string(),
             Mode::Command => format!(":{}", props.command_buffer),
         }
     };
@@ -97,6 +101,7 @@ mod tests {
     fn base_props(mode: Mode) -> StatusBarProps<'static> {
         StatusBarProps {
             mode,
+            annotation_inspect_visible: false,
             title: None,
             source_name: "test.md",
             annotation_count: 0,
@@ -260,8 +265,25 @@ mod tests {
         let props = base_props(Mode::AnnotationList);
         let output = render_to_string(&props);
         assert!(
-            output.contains("j/k nav  Enter jump  dd delete  Esc"),
+            output.contains("j/k  Space inspect  Enter  dd  Esc"),
             "Expected annotation list hint in: {output}"
+        );
+    }
+
+    #[test]
+    fn annotation_inspect_open_shows_dismissal_actions() {
+        let props = StatusBarProps {
+            annotation_inspect_visible: true,
+            ..base_props(Mode::AnnotationList)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("j/k select  Enter jump  Esc close"),
+            "Expected inspect hint in: {output}"
+        );
+        assert!(
+            !output.contains("dd"),
+            "Did not expect delete hint while inspect is open: {output}"
         );
     }
 
