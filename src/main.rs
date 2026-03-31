@@ -24,6 +24,7 @@ use startup::{Cli, StartupSettings};
 
 fn main() {
     let cli = Cli::parse();
+    let output_file = cli.output_file.clone();
 
     let source: Box<dyn InputSource> = if let Some(path) = cli.file.as_ref() {
         Box::new(FileSource::new(path.clone()))
@@ -87,7 +88,14 @@ fn main() {
 
     match result {
         Ok(ExitResult::QuitWithOutput(output)) => {
-            let _ = io::stdout().write_all(output.as_bytes());
+            if let Some(path) = output_file.as_ref() {
+                if let Err(e) = std::fs::write(path, output.as_bytes()) {
+                    eprintln!("Error writing to {path}: {e}");
+                    process::exit(1);
+                }
+            } else {
+                let _ = io::stdout().write_all(output.as_bytes());
+            }
         }
         Ok(ExitResult::QuitSilent) => {}
         Err(e) => {

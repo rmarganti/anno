@@ -40,6 +40,10 @@ pub struct Cli {
     #[arg(long)]
     pub title: Option<String>,
 
+    /// Write annotation output to a file instead of stdout
+    #[arg(long = "output-file")]
+    pub output_file: Option<String>,
+
     /// Text file to annotate
     pub file: Option<String>,
 }
@@ -822,6 +826,7 @@ mod tests {
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
         assert_eq!(cli.title.as_deref(), Some("My Review"));
+        assert_eq!(cli.output_file, None);
         assert_eq!(cli.file.as_deref(), Some("demo.md"));
     }
 
@@ -845,6 +850,14 @@ mod tests {
 
             assert_eq!(startup.title.as_deref(), Some("Config Title"));
         });
+    }
+
+    #[test]
+    fn cli_parser_accepts_output_file_flag() {
+        let cli = cli_from(&["anno", "--output-file", "/tmp/out.json", "demo.md"]);
+
+        assert_eq!(cli.output_file.as_deref(), Some("/tmp/out.json"));
+        assert_eq!(cli.file.as_deref(), Some("demo.md"));
     }
 
     #[test]
