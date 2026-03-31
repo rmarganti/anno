@@ -1,11 +1,11 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Paragraph},
 };
 
-use crate::annotation::types::{AnnotationIndicator, TextRange};
+use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::Action;
 use crate::tui::renderer;
@@ -165,6 +165,9 @@ impl DocumentView {
         let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
             .flex(Flex::Center)
             .areas::<1>(area)[0];
+        let [gutter_area, text_area] =
+            Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
+                .areas(main_area);
 
         let render_slices = self.viewport.visible_render_slices(&self.display_layout);
 
@@ -195,10 +198,17 @@ impl DocumentView {
                 selected_annotation_range,
             });
 
+        let gutter_lines = Self::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
+
+        let gutter = Paragraph::new(gutter_lines)
+            .style(theme.document)
+            .block(Block::default().style(theme.document));
+        frame.render_widget(gutter, gutter_area);
+
         let doc = Paragraph::new(visible_lines)
             .style(theme.document)
             .block(Block::default().style(theme.document));
-        frame.render_widget(doc, main_area);
+        frame.render_widget(doc, text_area);
     }
 
     /// Update the viewport dimensions (e.g. from terminal size) so that
@@ -230,11 +240,48 @@ impl DocumentView {
             .saturating_sub(GUTTER_WIDTH)
             .min(MAX_DOC_WIDTH as usize)
     }
+
+    fn prepare_gutter_lines(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        annotation_indicators: &[AnnotationIndicator],
+        theme: &UiTheme,
+    ) -> Vec<Line<'static>> {
+        render_slices
+            .iter()
+            .map(|slice| {
+                let symbol = Self::gutter_annotation_type(slice.doc_row, annotation_indicators)
+                    .map(|annotation_type| {
+                        Span::styled(
+                            "▌",
+                            theme
+                                .document
+                                .fg(theme.annotation_type_color(&annotation_type)),
+                        )
+                    })
+                    .unwrap_or_else(|| Span::styled(" ", theme.document));
+                Line::from(symbol)
+            })
+            .collect()
+    }
+
+    fn gutter_annotation_type(
+        doc_row: usize,
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> Option<AnnotationType> {
+        annotation_indicators
+            .iter()
+            .filter(|indicator| {
+                doc_row >= indicator.range.start.line && doc_row <= indicator.range.end.line
+            })
+            .min_by_key(|indicator| indicator.annotation_type.priority())
+            .map(|indicator| indicator.annotation_type)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::Action;
     use crate::tui::viewport::CursorPosition;
@@ -263,6 +310,57 @@ mod tests {
 
     fn pos(row: usize, col: usize) -> CursorPosition {
         CursorPosition { row, col }
+    }
+
+    fn indicator(
+        annotation_type: AnnotationType,
+        start_line: usize,
+        end_line: usize,
+    ) -> AnnotationIndicator {
+        AnnotationIndicator {
+            range: TextRange {
+                start: TextPosition {
+                    line: start_line,
+                    column: 0,
+                },
+                end: TextPosition {
+                    line: end_line,
+                    column: 0,
+                },
+            },
+            annotation_type,
+        }
+    }
+
+    fn render_buffer(
+        view: &mut DocumentView,
+        width: u16,
+        height: u16,
+        annotation_indicators: &[AnnotationIndicator],
+    ) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = UiTheme::default();
+
+        terminal
+            .draw(|frame| {
+                view.render(
+                    frame,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width,
+                        height,
+                    },
+                    &theme,
+                    false,
+                    annotation_indicators,
+                    None,
+                );
+            })
+            .unwrap();
+
+        terminal.backend().buffer().clone()
     }
 
     // ── Initial state ─────────────────────────────────────────────────
@@ -352,33 +450,73 @@ mod tests {
 
     #[test]
     fn render_fills_background_across_full_area_width() {
-        let backend = TestBackend::new(160, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
         let mut view = make_view(&["hello"]);
         let theme = UiTheme::default();
 
-        terminal
-            .draw(|frame| {
-                view.render(
-                    frame,
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        width: 160,
-                        height: 12,
-                    },
-                    &theme,
-                    false,
-                    &[],
-                    None,
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer().clone();
+        let buffer = render_buffer(&mut view, 160, 12, &[]);
         let right_edge_cell = buffer.cell((159, 0)).unwrap();
         assert_eq!(right_edge_cell.style().bg, theme.document.bg,);
         assert_ne!(right_edge_cell.style().bg, Some(Color::Reset));
+    }
+
+    #[test]
+    fn render_draws_colored_gutter_indicator_for_annotated_rows() {
+        let mut view = make_view(&["first", "second", "third"]);
+        let theme = UiTheme::default();
+        let buffer = render_buffer(
+            &mut view,
+            80,
+            5,
+            &[indicator(AnnotationType::Comment, 1, 1)],
+        );
+
+        let gutter_x = 0;
+        assert_eq!(buffer.cell((gutter_x, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((gutter_x, 1)).unwrap().symbol(), "▌");
+        assert_eq!(
+            buffer.cell((gutter_x, 1)).unwrap().style().fg,
+            Some(theme.annotation_type_color(&AnnotationType::Comment))
+        );
+        assert_eq!(buffer.cell((gutter_x, 2)).unwrap().symbol(), " ");
+    }
+
+    #[test]
+    fn render_uses_highest_priority_annotation_type_in_gutter() {
+        let mut view = make_view(&["first", "second"]);
+        let theme = UiTheme::default();
+        let buffer = render_buffer(
+            &mut view,
+            80,
+            5,
+            &[
+                indicator(AnnotationType::Comment, 1, 1),
+                indicator(AnnotationType::Deletion, 1, 1),
+            ],
+        );
+
+        let gutter_cell = buffer.cell((0, 1)).unwrap();
+        assert_eq!(gutter_cell.symbol(), "▌");
+        assert_eq!(
+            gutter_cell.style().fg,
+            Some(theme.annotation_type_color(&AnnotationType::Deletion))
+        );
+    }
+
+    #[test]
+    fn render_draws_gutter_indicator_for_all_wrapped_rows_of_annotated_line() {
+        let mut view = make_view(&["abcdefghijklmnopqrstuvwxyz"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(
+            &mut view,
+            10,
+            5,
+            &[indicator(AnnotationType::Insertion, 0, 0)],
+        );
+
+        assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), "▌");
+        assert_eq!(buffer.cell((0, 1)).unwrap().symbol(), "▌");
+        assert_eq!(buffer.cell((0, 2)).unwrap().symbol(), "▌");
     }
 
     #[test]
