@@ -1,5 +1,10 @@
 mod core;
 
+#[cfg(test)]
+mod test_harness;
+#[cfg(test)]
+mod test_support;
+
 use crossterm::event::KeyEvent;
 
 use self::core::ANNOTATION_INSPECT_PAGE_SCROLL_LINES;
@@ -409,289 +414,22 @@ impl AppState {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
-pub(crate) mod test_harness {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    use super::AppState;
-    use crate::keybinds::mode::Mode;
-
-    pub struct AppTestHarness {
-        state: AppState,
-    }
-
-    impl AppTestHarness {
-        pub fn new(content: &str) -> Self {
-            let mut state = AppState::new_plain("[test]".to_string(), content.to_string());
-            state.document_view_mut().update_dimensions(80, 24);
-
-            Self { state }
-        }
-
-        pub fn key(&mut self, code: KeyCode) -> &mut Self {
-            self.key_mod(code, KeyModifiers::NONE)
-        }
-
-        pub fn key_mod(&mut self, code: KeyCode, modifiers: KeyModifiers) -> &mut Self {
-            self.state.handle_key(KeyEvent::new(code, modifiers));
-            self
-        }
-
-        pub fn keys(&mut self, sequence: &str) -> &mut Self {
-            for key_event in parse_key_sequence(sequence) {
-                self.state.handle_key(key_event);
-            }
-            self
-        }
-
-        pub fn state(&self) -> &AppState {
-            &self.state
-        }
-
-        pub fn state_mut(&mut self) -> &mut AppState {
-            &mut self.state
-        }
-
-        pub fn set_panel_available(&mut self, available: bool) -> &mut Self {
-            self.state.set_annotation_panel_available(available);
-            self
-        }
-
-        pub fn assert_mode(&mut self, expected: Mode) -> &mut Self {
-            assert_eq!(self.state.mode(), expected);
-            self
-        }
-
-        pub fn assert_annotation_count(&mut self, expected: usize) -> &mut Self {
-            assert_eq!(self.state.annotation_count(), expected);
-            self
-        }
-
-        pub fn assert_cursor(&mut self, row: usize, col: usize) -> &mut Self {
-            let cursor = self.state.cursor();
-            assert_eq!(cursor.row, row);
-            assert_eq!(cursor.col, col);
-            self
-        }
-
-        pub fn assert_should_quit(&mut self) -> &mut Self {
-            assert!(self.state.should_quit());
-            self
-        }
-
-        pub fn assert_not_quit(&mut self) -> &mut Self {
-            assert!(!self.state.should_quit());
-            self
-        }
-
-        pub fn assert_has_confirm_dialog(&mut self) -> &mut Self {
-            assert!(self.state.has_confirm_dialog());
-            self
-        }
-
-        pub fn assert_no_confirm_dialog(&mut self) -> &mut Self {
-            assert!(!self.state.has_confirm_dialog());
-            self
-        }
-
-        pub fn assert_panel_visible(&mut self) -> &mut Self {
-            assert!(self.state.is_panel_visible());
-            self
-        }
-
-        pub fn assert_panel_hidden(&mut self) -> &mut Self {
-            assert!(!self.state.is_panel_visible());
-            self
-        }
-
-        pub fn assert_help_visible(&mut self) -> &mut Self {
-            assert!(self.state.is_help_visible());
-            self
-        }
-
-        pub fn assert_help_hidden(&mut self) -> &mut Self {
-            assert!(!self.state.is_help_visible());
-            self
-        }
-
-        pub fn assert_annotation_inspect_visible(&mut self) -> &mut Self {
-            assert!(self.state.is_annotation_inspect_visible());
-            self
-        }
-
-        pub fn assert_annotation_inspect_hidden(&mut self) -> &mut Self {
-            assert!(!self.state.is_annotation_inspect_visible());
-            self
-        }
-    }
-
-    fn parse_key_sequence(sequence: &str) -> Vec<KeyEvent> {
-        let mut events = Vec::new();
-        let mut chars = sequence.chars().peekable();
-
-        while let Some(ch) = chars.next() {
-            if ch == '<' {
-                let mut token = String::new();
-
-                loop {
-                    let next = chars
-                        .next()
-                        .expect("special key token must terminate with '>'");
-                    if next == '>' {
-                        break;
-                    }
-                    token.push(next);
-                }
-
-                events.push(parse_special_token(&token));
-                continue;
-            }
-
-            events.push(parse_char_key(ch));
-        }
-
-        events
-    }
-
-    fn parse_special_token(token: &str) -> KeyEvent {
-        match token {
-            "Esc" => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-            "Enter" => KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            "Tab" => KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
-            "BS" => KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
-            "C-s" => KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
-            "C-c" => KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            _ => panic!("unsupported special key token: <{token}>"),
-        }
-    }
-
-    fn parse_char_key(ch: char) -> KeyEvent {
-        let modifiers = if ch.is_ascii_uppercase() {
-            KeyModifiers::SHIFT
-        } else {
-            KeyModifiers::NONE
-        };
-
-        KeyEvent::new(KeyCode::Char(ch), modifiers)
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::AppState;
     use super::test_harness::AppTestHarness;
-    use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
+    use super::test_support::{
+        add_mixed_annotations, create_three_deletions, create_two_deletions,
+        ordered_anchored_positions, ordered_panel_positions, range, reverse_panel_positions,
+    };
+    use crate::annotation::types::{Annotation, AnnotationType};
     use crate::app::ExitResult;
     use crate::keybinds::mode::Mode;
     use crate::startup::ExportFormat;
 
     fn harness(content: &str) -> AppTestHarness {
         AppTestHarness::new(content)
-    }
-
-    fn create_two_deletions(harness: &mut AppTestHarness) {
-        harness.keys("vldjvld").assert_annotation_count(2);
-    }
-
-    fn create_three_deletions(harness: &mut AppTestHarness) {
-        harness.keys("vldjvldjvld").assert_annotation_count(3);
-    }
-
-    fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
-        TextRange {
-            start: TextPosition {
-                line: sl,
-                column: sc,
-            },
-            end: TextPosition {
-                line: el,
-                column: ec,
-            },
-        }
-    }
-
-    fn add_mixed_annotations(harness: &mut AppTestHarness) {
-        let annotations = [
-            Annotation::deletion(range(0, 1, 0, 4), "lph".into()),
-            Annotation::insertion(TextPosition { line: 1, column: 2 }, "inserted".into()),
-            Annotation::comment(range(1, 2, 1, 5), "ta ".into(), "note".into()),
-            Annotation::deletion(range(2, 0, 2, 2), "ga".into()),
-            Annotation::global_comment("overall".into()),
-        ];
-
-        for annotation in annotations {
-            harness.state_mut().annotations_mut().add(annotation);
-        }
-    }
-
-    fn ordered_anchored_positions(state: &AppState) -> Vec<(usize, usize)> {
-        state
-            .annotations()
-            .ordered()
-            .into_iter()
-            .filter_map(|annotation| {
-                annotation
-                    .range
-                    .map(|range| (range.start.line, range.start.column))
-            })
-            .collect()
-    }
-
-    fn ordered_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
-        harness.keys("<Tab>k");
-
-        let mut positions = Vec::with_capacity(steps + 1);
-        positions.push(
-            harness
-                .state()
-                .selected_annotation_range()
-                .map(|range| (range.start.line, range.start.column))
-                .expect("panel should start on the first anchored annotation"),
-        );
-
-        for _ in 0..steps {
-            harness.keys("j");
-            let position = harness
-                .state()
-                .selected_annotation_range()
-                .map(|range| (range.start.line, range.start.column));
-            if let Some(position) = position {
-                positions.push(position);
-            }
-        }
-
-        positions
-    }
-
-    fn reverse_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
-        harness.keys("<Tab>k");
-        for _ in 0..steps {
-            harness.keys("j");
-        }
-
-        let mut positions = Vec::with_capacity(steps + 1);
-        positions.push(
-            harness
-                .state()
-                .selected_annotation_range()
-                .map(|range| (range.start.line, range.start.column))
-                .expect("panel should land on an anchored annotation before reversing"),
-        );
-
-        for _ in 0..steps {
-            harness.keys("k");
-            positions.push(
-                harness
-                    .state()
-                    .selected_annotation_range()
-                    .map(|range| (range.start.line, range.start.column))
-                    .expect("reverse panel step should stay on anchored annotations"),
-            );
-        }
-
-        positions
     }
 
     #[test]
