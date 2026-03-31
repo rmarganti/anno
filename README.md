@@ -175,7 +175,7 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | `:q!`    | Quit without saving output  |
 | `Ctrl-C` | Force quit                  |
 | `W`      | Toggle word wrap            |
-| `Tab`    | Toggle annotation list      |
+| `Tab`    | Toggle annotation panel focus |
 
 ### Normal Mode
 
@@ -191,6 +191,7 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | `i`         | Create insertion annotation       |
 | `gc`        | Create global comment annotation  |
 | `]a/[a`     | Jump to next/previous annotation  |
+| `Esc`       | Hide annotation panel             |
 
 ### Visual Mode
 
@@ -216,9 +217,14 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | Key     | Action                        |
 | ------- | ----------------------------- |
 | `j/k`   | Move selection                |
+| `Space` | Inspect selected annotation   |
+| `Up/Down` | Scroll inspect text         |
+| `PgUp/PgDn` | Page inspect text         |
+| `Ctrl-u/d` | Page inspect text          |
 | `Enter` | Jump to selected annotation   |
+| `Tab`   | Unfocus annotation panel      |
 | `dd`    | Delete selected annotation    |
-| `Esc`   | Exit annotation list          |
+| `Esc`   | Hide annotation panel         |
 
 Deleting an annotation opens a confirmation dialog. Press `y` or `Enter` to confirm, or `n` or `Esc` to cancel.
 

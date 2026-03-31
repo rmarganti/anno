@@ -23,7 +23,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry(":q!", "Quit without saving output"),
                 entry("Ctrl-C", "Force quit"),
                 entry("W", "Toggle word wrap"),
-                entry("Tab", "Toggle annotation list"),
+                entry("Tab", "Toggle annotation panel focus"),
             ],
         },
         HelpSection {
@@ -39,6 +39,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("i", "Create insertion annotation"),
                 entry("gc", "Create global comment annotation"),
                 entry("]a/[a", "Jump to next/previous annotation"),
+                entry("Esc", "Hide annotation panel"),
             ],
         },
         HelpSection {
@@ -64,9 +65,14 @@ pub fn help_sections() -> Vec<HelpSection> {
             title: "Annotation List",
             entries: vec![
                 entry("j/k", "Move selection"),
+                entry("Space", "Inspect selected annotation"),
+                entry("Up/Down", "Scroll inspect text"),
+                entry("PgUp/PgDn", "Page inspect text"),
+                entry("Ctrl-u/d", "Page inspect text"),
                 entry("Enter", "Jump to selected annotation"),
+                entry("Tab", "Unfocus annotation panel"),
                 entry("dd", "Delete selected annotation"),
-                entry("Esc", "Exit annotation list"),
+                entry("Esc", "Hide annotation panel"),
             ],
         },
         HelpSection {
@@ -139,7 +145,7 @@ mod tests {
                     },
                     HelpEntry {
                         keys: "Tab",
-                        action: "Toggle annotation list"
+                        action: "Toggle annotation panel focus"
                     },
                 ],
             }
@@ -188,6 +194,7 @@ mod tests {
             "]a/[a",
             "Jump to next/previous annotation"
         ));
+        assert!(contains_entry(&sections[1], "Esc", "Hide annotation panel"));
 
         assert!(contains_entry(
             &sections[2],
@@ -212,15 +219,40 @@ mod tests {
         assert!(contains_entry(&sections[4], "j/k", "Move selection"));
         assert!(contains_entry(
             &sections[4],
+            "Space",
+            "Inspect selected annotation"
+        ));
+        assert!(contains_entry(
+            &sections[4],
+            "Up/Down",
+            "Scroll inspect text"
+        ));
+        assert!(contains_entry(
+            &sections[4],
+            "PgUp/PgDn",
+            "Page inspect text"
+        ));
+        assert!(contains_entry(
+            &sections[4],
+            "Ctrl-u/d",
+            "Page inspect text"
+        ));
+        assert!(contains_entry(
+            &sections[4],
             "Enter",
             "Jump to selected annotation"
+        ));
+        assert!(contains_entry(
+            &sections[4],
+            "Tab",
+            "Unfocus annotation panel"
         ));
         assert!(contains_entry(
             &sections[4],
             "dd",
             "Delete selected annotation"
         ));
-        assert!(contains_entry(&sections[4], "Esc", "Exit annotation list"));
+        assert!(contains_entry(&sections[4], "Esc", "Hide annotation panel"));
 
         assert!(contains_entry(&sections[5], ":q", "Quit"));
         assert!(contains_entry(&sections[5], ":q!", "Force quit"));

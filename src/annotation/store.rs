@@ -34,6 +34,7 @@ impl AnnotationStore {
     }
 
     /// Return whether the store is empty.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_empty(&self) -> bool {
         self.annotations.is_empty()
     }

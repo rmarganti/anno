@@ -11,6 +11,8 @@ use crate::tui::theme::UiTheme;
 /// Data needed to render the status bar.
 pub struct StatusBarProps<'a> {
     pub mode: Mode,
+    pub annotation_inspect_visible: bool,
+    pub panel_visible: bool,
     pub title: Option<&'a str>,
     pub source_name: &'a str,
     pub annotation_count: usize,
@@ -47,10 +49,14 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         "[panel hidden: terminal too narrow]".to_string()
     } else {
         match props.mode {
-            Mode::Normal => "? help".to_string(),
+            Mode::Normal if props.panel_visible => "Tab focus panel  Esc hide  ? help".to_string(),
+            Mode::Normal => "Tab panel  ? help".to_string(),
             Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
-            Mode::AnnotationList => "j/k nav  Enter jump  dd delete  Esc".to_string(),
+            Mode::AnnotationList if props.annotation_inspect_visible => {
+                "j/k sel  Up/Down  Enter  Esc".to_string()
+            }
+            Mode::AnnotationList => "Tab unfocus  Space  Enter  Esc hide".to_string(),
             Mode::Command => format!(":{}", props.command_buffer),
         }
     };
@@ -97,6 +103,8 @@ mod tests {
     fn base_props(mode: Mode) -> StatusBarProps<'static> {
         StatusBarProps {
             mode,
+            annotation_inspect_visible: false,
+            panel_visible: true,
             title: None,
             source_name: "test.md",
             annotation_count: 0,
@@ -242,7 +250,10 @@ mod tests {
     fn normal_mode_shows_help_hint() {
         let props = base_props(Mode::Normal);
         let output = render_to_string(&props);
-        assert!(output.contains("? help"), "Expected '? help' in: {output}");
+        assert!(
+            output.contains("Tab focus panel  Esc hide  ? help"),
+            "Expected normal panel hint in: {output}"
+        );
     }
 
     #[test]
@@ -260,8 +271,25 @@ mod tests {
         let props = base_props(Mode::AnnotationList);
         let output = render_to_string(&props);
         assert!(
-            output.contains("j/k nav  Enter jump  dd delete  Esc"),
+            output.contains("Tab unfocus  Space  Enter  Esc hide"),
             "Expected annotation list hint in: {output}"
+        );
+    }
+
+    #[test]
+    fn annotation_inspect_open_shows_dismissal_actions() {
+        let props = StatusBarProps {
+            annotation_inspect_visible: true,
+            ..base_props(Mode::AnnotationList)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("j/k sel  Up/Down  Enter  Esc"),
+            "Expected inspect hint in: {output}"
+        );
+        assert!(
+            !output.contains("dd"),
+            "Did not expect delete hint while inspect is open: {output}"
         );
     }
 
@@ -278,6 +306,7 @@ mod tests {
     #[test]
     fn narrow_terminal_panel_hint_overrides_default_hint() {
         let props = StatusBarProps {
+            panel_visible: false,
             panel_hidden_due_to_width: true,
             ..base_props(Mode::Normal)
         };

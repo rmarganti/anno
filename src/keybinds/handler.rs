@@ -42,8 +42,14 @@ pub enum Action {
     PrevAnnotation,
 
     // -- Annotation list actions --
+    OpenAnnotationInspect,
     DeleteAnnotation,
     JumpToAnnotation,
+    ScrollOverlayUp,
+    ScrollOverlayDown,
+    ScrollOverlayPageUp,
+    ScrollOverlayPageDown,
+    HideAnnotationList,
 
     // -- Command mode --
     CommandChar(char),
@@ -115,6 +121,25 @@ impl KeybindHandler {
         }
     }
 
+    /// Translate a key event while the annotation inspect overlay is visible.
+    pub fn handle_annotation_inspect(&mut self, event: KeyEvent) -> Action {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('j'), KeyModifiers::NONE) => Action::MoveDown,
+            (KeyCode::Char('k'), KeyModifiers::NONE) => Action::MoveUp,
+            (KeyCode::Down, KeyModifiers::NONE) => Action::ScrollOverlayDown,
+            (KeyCode::Up, KeyModifiers::NONE) => Action::ScrollOverlayUp,
+            (KeyCode::PageDown, KeyModifiers::NONE)
+            | (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::ScrollOverlayPageDown,
+            (KeyCode::PageUp, KeyModifiers::NONE) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                Action::ScrollOverlayPageUp
+            }
+            (KeyCode::Enter, _) => Action::JumpToAnnotation,
+            (KeyCode::Esc, _) => Action::ExitToNormal,
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+            _ => Action::None,
+        }
+    }
+
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
         if matches!(event.code, KeyCode::Char('?'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
@@ -166,6 +191,7 @@ impl KeybindHandler {
                 Action::EnterCommandMode
             }
             (KeyCode::Tab, KeyModifiers::NONE) => Action::EnterAnnotationListMode,
+            (KeyCode::Esc, KeyModifiers::NONE) => Action::HideAnnotationList,
 
             // Help
             (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::ToggleHelp,
@@ -232,6 +258,11 @@ impl KeybindHandler {
     }
 
     fn handle_annotation_list(&mut self, event: KeyEvent) -> Action {
+        if matches!(event.code, KeyCode::Char(' ')) && event.modifiers == KeyModifiers::NONE {
+            self.clear_pending();
+            return Action::OpenAnnotationInspect;
+        }
+
         // Resolve pending multi-key sequences (dd).
         if let Some(first) = self.pending.take() {
             return self.resolve_annotation_list_sequence(first, event.code);
@@ -242,7 +273,7 @@ impl KeybindHandler {
             (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
             (KeyCode::Enter, _) => Action::JumpToAnnotation,
             (KeyCode::Tab, _) => Action::EnterAnnotationListMode,
-            (KeyCode::Esc, _) => Action::ExitToNormal,
+            (KeyCode::Esc, _) => Action::HideAnnotationList,
 
             // Ctrl-C — force quit
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
@@ -578,6 +609,10 @@ mod tests {
             h.handle(Mode::AnnotationList, key(KeyCode::Enter)),
             Action::JumpToAnnotation
         );
+        assert_eq!(
+            h.handle(Mode::AnnotationList, char_key(' ')),
+            Action::OpenAnnotationInspect
+        );
     }
 
     #[test]
@@ -589,6 +624,54 @@ mod tests {
             h.handle(Mode::AnnotationList, char_key('d')),
             Action::DeleteAnnotation
         );
+    }
+
+    #[test]
+    fn annotation_list_space_clears_pending_sequence() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::AnnotationList, char_key('d')), Action::None);
+        assert!(h.has_pending());
+
+        assert_eq!(
+            h.handle(Mode::AnnotationList, char_key(' ')),
+            Action::OpenAnnotationInspect
+        );
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn annotation_inspect_navigation_and_dismissal() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle_annotation_inspect(char_key('j')), Action::MoveDown);
+        assert_eq!(h.handle_annotation_inspect(char_key('k')), Action::MoveUp);
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Down)),
+            Action::ScrollOverlayDown
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Up)),
+            Action::ScrollOverlayUp
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::PageDown)),
+            Action::ScrollOverlayPageDown
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::PageUp)),
+            Action::ScrollOverlayPageUp
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Enter)),
+            Action::JumpToAnnotation
+        );
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Esc)),
+            Action::ExitToNormal
+        );
+        assert_eq!(h.handle_annotation_inspect(char_key('d')), Action::None);
+        assert!(!h.has_pending());
     }
 
     #[test]
@@ -605,7 +688,16 @@ mod tests {
         let mut h = KeybindHandler::new();
         assert_eq!(
             h.handle(Mode::AnnotationList, key(KeyCode::Esc)),
-            Action::ExitToNormal
+            Action::HideAnnotationList
+        );
+    }
+
+    #[test]
+    fn normal_esc_hides_annotation_list() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle(Mode::Normal, key(KeyCode::Esc)),
+            Action::HideAnnotationList
         );
     }
 

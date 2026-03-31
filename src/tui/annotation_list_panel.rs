@@ -39,7 +39,7 @@ struct ListState {
 impl AnnotationListPanel {
     pub fn new() -> Self {
         Self {
-            visible: false,
+            visible: true,
             list_state: ListState::default(),
         }
     }
@@ -62,6 +62,14 @@ impl AnnotationListPanel {
     /// Select a specific annotation by UUID.
     pub fn set_selected_annotation_id(&mut self, id: Uuid) {
         self.list_state.set_selected_annotation_id(id);
+    }
+
+    /// Initialize selection to the first annotation when the panel first gains focus.
+    pub fn ensure_selection_initialized(&mut self, store: &AnnotationStore) {
+        let ordered = store.ordered();
+        self.list_state.ensure_selection_initialized(&ordered);
+        self.list_state
+            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
     }
 
     /// Move the selection down by one in the ordered list.
@@ -210,6 +218,18 @@ impl ListState {
 
     fn set_selected_annotation_id(&mut self, id: Uuid) {
         self.selected_id = Some(id);
+    }
+
+    fn ensure_selection_initialized(&mut self, ordered: &[&Annotation]) {
+        if ordered.is_empty() {
+            self.selected_id = None;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        if self.selected_id.is_none() {
+            self.selected_id = Some(ordered[0].id);
+        }
     }
 
     fn move_selection_down(&mut self, ordered: &[&Annotation]) {
@@ -508,18 +528,18 @@ mod tests {
     // ───── visibility ─────
 
     #[test]
-    fn starts_hidden() {
+    fn starts_visible() {
         let panel = AnnotationListPanel::new();
-        assert!(!panel.is_visible());
+        assert!(panel.is_visible());
     }
 
     #[test]
     fn toggle_visibility() {
         let mut panel = AnnotationListPanel::new();
         panel.toggle();
-        assert!(panel.is_visible());
-        panel.toggle();
         assert!(!panel.is_visible());
+        panel.toggle();
+        assert!(panel.is_visible());
     }
 
     // ───── selection tracking ─────
@@ -552,6 +572,41 @@ mod tests {
         let mut state = ListState::default();
         state.move_selection_up(&store.ordered());
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
+    }
+
+    #[test]
+    fn initialize_selection_selects_first_item() {
+        let (store, ids) = make_store_with_deletions(3);
+        let mut state = ListState::default();
+
+        state.ensure_selection_initialized(&store.ordered());
+
+        assert_eq!(state.selected_annotation_id(), Some(ids[0]));
+    }
+
+    #[test]
+    fn initialize_selection_keeps_existing_selection() {
+        let (store, ids) = make_store_with_deletions(3);
+        let mut state = ListState::default();
+        state.set_selected_annotation_id(ids[1]);
+
+        state.ensure_selection_initialized(&store.ordered());
+
+        assert_eq!(state.selected_annotation_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn initialize_selection_clears_empty_store_selection() {
+        let store = AnnotationStore::new();
+        let mut state = ListState {
+            selected_id: Some(Uuid::new_v4()),
+            scroll_offset: 4,
+        };
+
+        state.ensure_selection_initialized(&store.ordered());
+
+        assert!(state.selected_annotation_id().is_none());
+        assert_eq!(state.scroll_offset, 0);
     }
 
     #[test]
