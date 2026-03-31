@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Paragraph},
 };
 
-use crate::annotation::types::TextRange;
+use crate::annotation::types::{AnnotationIndicator, TextRange};
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::Action;
 use crate::tui::renderer;
@@ -14,6 +14,7 @@ use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
+const GUTTER_WIDTH: usize = 1;
 
 /// Manages the document content display: viewport, cursor movement, word wrap,
 /// visual selection, and rendering of the main document area.
@@ -145,14 +146,14 @@ impl DocumentView {
         area: ratatui::layout::Rect,
         theme: &UiTheme,
         is_visual: bool,
-        annotation_ranges: &[TextRange],
+        annotation_indicators: &[AnnotationIndicator],
         selected_annotation_range: Option<&TextRange>,
     ) {
         frame.render_widget(Block::default().style(theme.document), area);
 
         // Update viewport dimensions (account for status row handled by caller).
         let doc_height = area.height as usize;
-        let doc_width = (area.width as usize).min(MAX_DOC_WIDTH as usize);
+        let doc_width = Self::viewport_width(area.width as usize);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(doc_width, doc_height);
 
@@ -176,6 +177,11 @@ impl DocumentView {
             None
         };
 
+        let annotation_ranges: Vec<TextRange> = annotation_indicators
+            .iter()
+            .map(|indicator| indicator.range)
+            .collect();
+
         let visible_lines: Vec<Line<'static>> =
             renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
                 slices: &render_slices,
@@ -185,7 +191,7 @@ impl DocumentView {
                 cursor_col: self.viewport.cursor.col,
                 theme,
                 selection,
-                annotation_ranges,
+                annotation_ranges: &annotation_ranges,
                 selected_annotation_range,
             });
 
@@ -198,6 +204,7 @@ impl DocumentView {
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
+        let width = Self::viewport_width(width);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(width, height);
         if width != old_width {
@@ -216,6 +223,12 @@ impl DocumentView {
             self.viewport.width,
             self.viewport.word_wrap,
         );
+    }
+
+    fn viewport_width(width: usize) -> usize {
+        width
+            .saturating_sub(GUTTER_WIDTH)
+            .min(MAX_DOC_WIDTH as usize)
     }
 }
 
@@ -463,5 +476,16 @@ mod tests {
     fn not_too_small_with_adequate_dimensions() {
         let view = make_view(&["hello"]);
         assert!(!view.is_too_small());
+    }
+
+    #[test]
+    fn update_dimensions_reserves_one_column_for_gutter() {
+        let mut view = make_view(&["hello"]);
+
+        view.update_dimensions(41, 5);
+        assert!(!view.is_too_small());
+
+        view.update_dimensions(40, 5);
+        assert!(view.is_too_small());
     }
 }

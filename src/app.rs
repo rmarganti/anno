@@ -11,6 +11,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use crate::annotation::types::{AnnotationIndicator, AnnotationType};
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
@@ -142,13 +143,20 @@ impl App {
             (None, main_area)
         };
 
-        // Collect annotation ranges for visual indicators.
-        let annotation_ranges: Vec<_> = self
+        // Collect typed indicators for in-document rendering. Global comments are
+        // excluded because they have no anchor range.
+        let annotation_indicators: Vec<AnnotationIndicator> = self
             .state
             .annotations()
             .all()
             .iter()
-            .filter_map(|a| a.range)
+            .filter_map(|annotation| {
+                annotation.range.map(|range| AnnotationIndicator {
+                    range,
+                    annotation_type: annotation.annotation_type,
+                })
+            })
+            .filter(|indicator| indicator.annotation_type != AnnotationType::GlobalComment)
             .collect();
 
         // Resolve the selected annotation's text range (if any) for document highlighting.
@@ -172,7 +180,7 @@ impl App {
             doc_area,
             &self.theme,
             is_visual,
-            &annotation_ranges,
+            &annotation_indicators,
             selected_annotation_range.as_ref(),
         );
 
