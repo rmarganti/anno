@@ -1,265 +1,20 @@
-use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+mod core;
 
+use crossterm::event::KeyEvent;
+
+use self::core::ANNOTATION_INSPECT_PAGE_SCROLL_LINES;
+pub(super) use self::core::AppState;
 use crate::annotation::export::{AgentExporter, AnnotationExporter, JsonExporter};
-use crate::annotation::store::AnnotationStore;
-use crate::annotation::types::{Annotation, TextRange};
 use crate::app::ExitResult;
-#[cfg(any(test, doctest))]
-use crate::highlight::StyledSpan;
-use crate::keybinds::handler::{Action, KeybindHandler};
+use crate::keybinds::handler::Action;
 use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
-use crate::tui::annotation_controller::{AnnotationAction, AnnotationController};
-use crate::tui::annotation_list_panel::AnnotationListPanel;
+use crate::tui::annotation_controller::AnnotationAction;
 use crate::tui::app_command::{AppCommand, QuitKind};
-use crate::tui::command_line::{CommandLine, CommandLineEvent};
+use crate::tui::command_line::CommandLineEvent;
 use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
-use crate::tui::document_view::DocumentView;
-use crate::tui::renderer;
-use crate::tui::theme::UiTheme;
-use crate::tui::viewport::CursorPosition;
-
-const ANNOTATION_INSPECT_PAGE_SCROLL_LINES: u16 = 8;
-
-/// Terminal-independent application state.
-pub struct AppState {
-    /// The source name (filename or "[stdin]").
-    source_name: String,
-    /// Output format used when exporting annotations on quit.
-    export_format: ExportFormat,
-    /// Current input mode.
-    mode: Mode,
-    /// Key event dispatcher.
-    keybinds: KeybindHandler,
-    /// Annotation storage.
-    annotations: AnnotationStore,
-    /// Command-line component (handles `:` command input).
-    command_line: CommandLine,
-    /// Whether the app should quit.
-    should_quit: bool,
-    /// The exit result to return.
-    exit_result: Option<ExitResult>,
-    /// Document view component (viewport, cursor, rendering).
-    document_view: DocumentView,
-    /// Annotation creation state machine.
-    annotation_controller: AnnotationController,
-    /// Annotation list sidebar panel.
-    annotation_list_panel: AnnotationListPanel,
-    /// Active confirmation dialog overlay, if any.
-    confirm_dialog: Option<ConfirmDialog>,
-    /// Whether the annotation inspect overlay is visible.
-    annotation_inspect_visible: bool,
-    /// Scroll offset for the annotation inspect overlay content.
-    annotation_inspect_scroll_offset: u16,
-    /// Whether the help overlay is visible.
-    help_visible: bool,
-    /// Scroll offset for the help overlay content.
-    help_scroll_offset: u16,
-    /// Whether the current terminal width can show the annotation list panel.
-    annotation_panel_available: bool,
-}
 
 impl AppState {
-    pub fn new(
-        source_name: String,
-        doc_lines_result: renderer::DocumentLines,
-        export_format: ExportFormat,
-    ) -> Self {
-        Self::from_document_lines(source_name, doc_lines_result, export_format)
-    }
-
-    #[cfg(any(test, doctest))]
-    pub fn new_plain(source_name: String, content: String) -> Self {
-        Self::new_plain_with_format(source_name, content, ExportFormat::Agent)
-    }
-
-    #[cfg(any(test, doctest))]
-    pub fn new_plain_with_format(
-        source_name: String,
-        content: String,
-        export_format: ExportFormat,
-    ) -> Self {
-        let plain = if content.is_empty() {
-            vec![String::new()]
-        } else {
-            content.split('\n').map(str::to_owned).collect::<Vec<_>>()
-        };
-        let styled = plain
-            .iter()
-            .map(|line| vec![StyledSpan::plain(line.clone())])
-            .collect();
-
-        Self::from_document_lines(
-            source_name,
-            renderer::DocumentLines { plain, styled },
-            export_format,
-        )
-    }
-
-    fn from_document_lines(
-        source_name: String,
-        doc_lines_result: renderer::DocumentLines,
-        export_format: ExportFormat,
-    ) -> Self {
-        let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
-
-        Self {
-            source_name,
-            export_format,
-            mode: Mode::Normal,
-            keybinds: KeybindHandler::new(),
-            annotations: AnnotationStore::new(),
-            command_line: CommandLine::new(),
-            should_quit: false,
-            exit_result: None,
-            document_view,
-            annotation_controller: AnnotationController::new(),
-            annotation_list_panel: AnnotationListPanel::new(),
-            confirm_dialog: None,
-            annotation_inspect_visible: false,
-            annotation_inspect_scroll_offset: 0,
-            help_visible: false,
-            help_scroll_offset: 0,
-            annotation_panel_available: true,
-        }
-    }
-
-    pub fn mode(&self) -> Mode {
-        self.mode
-    }
-
-    pub fn should_quit(&self) -> bool {
-        self.should_quit
-    }
-
-    pub fn take_exit_result(&mut self) -> Option<ExitResult> {
-        self.exit_result.take()
-    }
-
-    pub fn cursor(&self) -> CursorPosition {
-        self.document_view.cursor()
-    }
-
-    pub fn annotation_count(&self) -> usize {
-        self.annotations.len()
-    }
-
-    pub fn annotations(&self) -> &AnnotationStore {
-        &self.annotations
-    }
-
-    pub fn has_confirm_dialog(&self) -> bool {
-        self.confirm_dialog.is_some()
-    }
-
-    pub fn is_help_visible(&self) -> bool {
-        self.help_visible
-    }
-
-    pub fn is_annotation_inspect_visible(&self) -> bool {
-        self.annotation_inspect_visible
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn annotation_inspect_scroll_offset(&self) -> u16 {
-        self.annotation_inspect_scroll_offset
-    }
-
-    pub fn annotation_inspect_scroll_offset_mut(&mut self) -> &mut u16 {
-        &mut self.annotation_inspect_scroll_offset
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn help_scroll_offset(&self) -> u16 {
-        self.help_scroll_offset
-    }
-
-    #[allow(dead_code)]
-    pub fn help_scroll_offset_mut(&mut self) -> &mut u16 {
-        &mut self.help_scroll_offset
-    }
-
-    pub fn is_panel_visible(&self) -> bool {
-        self.annotation_list_panel.is_visible()
-    }
-
-    pub fn is_panel_hidden_due_to_width(&self) -> bool {
-        self.annotation_list_panel.is_visible() && !self.annotation_panel_available
-    }
-
-    pub fn command_buffer(&self) -> &str {
-        self.command_line.buffer()
-    }
-
-    pub fn word_wrap(&self) -> bool {
-        self.document_view.word_wrap()
-    }
-
-    pub fn source_name(&self) -> &str {
-        &self.source_name
-    }
-
-    pub fn document_view(&self) -> &DocumentView {
-        &self.document_view
-    }
-
-    pub fn document_view_mut(&mut self) -> &mut DocumentView {
-        &mut self.document_view
-    }
-
-    pub fn annotation_controller(&self) -> &AnnotationController {
-        &self.annotation_controller
-    }
-
-    pub fn confirm_dialog(&self) -> Option<&ConfirmDialog> {
-        self.confirm_dialog.as_ref()
-    }
-
-    #[cfg(any(test, doctest))]
-    pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
-        &self.annotation_list_panel
-    }
-
-    pub fn render_annotation_list_panel(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        theme: &UiTheme,
-        is_focused: bool,
-    ) {
-        self.annotation_list_panel
-            .render(frame, area, &self.annotations, theme, is_focused);
-    }
-
-    pub fn selected_annotation_range(&self) -> Option<TextRange> {
-        self.selected_annotation()
-            .and_then(|annotation| annotation.range)
-    }
-
-    pub fn selected_annotation(&self) -> Option<&Annotation> {
-        self.annotation_list_panel
-            .selected_annotation_id()
-            .and_then(|id| self.annotations.get(id))
-    }
-
-    fn initialize_annotation_list_selection(&mut self) {
-        self.annotation_list_panel
-            .ensure_selection_initialized(&self.annotations);
-    }
-
-    pub fn set_annotation_panel_available(&mut self, available: bool) {
-        self.annotation_panel_available = available;
-
-        if !available && self.mode == Mode::AnnotationList {
-            self.mode = Mode::Normal;
-        }
-
-        if !available {
-            self.close_annotation_inspect();
-        }
-    }
-
     pub fn handle_key(&mut self, key_event: KeyEvent) {
         if self.help_visible {
             match self.keybinds.handle_help_overlay(self.mode, key_event) {
@@ -536,9 +291,11 @@ impl AppState {
             AppCommand::Quit(QuitKind::WithOutput) => {
                 let output = match self.export_format {
                     ExportFormat::Agent => {
-                        AgentExporter.export(&self.annotations, &self.source_name)
+                        AgentExporter.export(&self.annotations, self.source_name())
                     }
-                    ExportFormat::Json => JsonExporter.export(&self.annotations, &self.source_name),
+                    ExportFormat::Json => {
+                        JsonExporter.export(&self.annotations, self.source_name())
+                    }
                 };
                 self.exit_result = Some(ExitResult::QuitWithOutput(output));
                 self.should_quit = true;
@@ -823,9 +580,10 @@ pub(crate) mod test_harness {
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+    use super::AppState;
     use super::test_harness::AppTestHarness;
-    use super::{AppState, ExitResult};
     use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
+    use crate::app::ExitResult;
     use crate::keybinds::mode::Mode;
     use crate::startup::ExportFormat;
 
@@ -864,7 +622,7 @@ mod tests {
         ];
 
         for annotation in annotations {
-            harness.state_mut().annotations.add(annotation);
+            harness.state_mut().annotations_mut().add(annotation);
         }
     }
 
@@ -1275,14 +1033,17 @@ mod tests {
     #[test]
     fn annotation_inspect_arrow_keys_scroll_without_changing_selection() {
         let mut harness = harness("alpha\nbeta\ngamma");
-        harness.state_mut().annotations.add(Annotation::comment(
-            range(0, 0, 0, 5),
-            "alpha".into(),
-            (0..24)
-                .map(|idx| format!("detail line {idx}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        ));
+        harness
+            .state_mut()
+            .annotations_mut()
+            .add(Annotation::comment(
+                range(0, 0, 0, 5),
+                "alpha".into(),
+                (0..24)
+                    .map(|idx| format!("detail line {idx}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ));
 
         harness.keys("<Tab>k ");
         let selected_id = harness
@@ -1366,8 +1127,8 @@ mod tests {
     #[test]
     fn help_dismissal_preserves_the_active_mode() {
         let mut harness = harness("hello");
-        harness.state_mut().mode = Mode::Visual;
-        harness.state_mut().help_visible = true;
+        harness.state_mut().set_mode_for_test(Mode::Visual);
+        harness.state_mut().set_help_visible_for_test(true);
 
         harness
             .keys("q")
@@ -1380,16 +1141,16 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
 
         harness.keys("jg").assert_cursor(1, 0);
-        assert!(harness.state().keybinds.has_pending());
+        assert!(harness.state().keybinds().has_pending());
 
         harness.keys("?").assert_help_visible();
-        assert!(!harness.state().keybinds.has_pending());
+        assert!(!harness.state().keybinds().has_pending());
 
         harness.keys("q").assert_help_hidden();
-        assert!(!harness.state().keybinds.has_pending());
+        assert!(!harness.state().keybinds().has_pending());
 
         harness.keys("g").assert_cursor(1, 0);
-        assert!(harness.state().keybinds.has_pending());
+        assert!(harness.state().keybinds().has_pending());
     }
 
     #[test]
@@ -1397,19 +1158,19 @@ mod tests {
         let mut harness = harness("alpha\nbeta");
 
         harness.keys("vld<Tab>d");
-        assert!(harness.state().keybinds.has_pending());
+        assert!(harness.state().keybinds().has_pending());
 
         harness
             .keys(" ")
             .assert_annotation_inspect_visible()
             .assert_mode(Mode::AnnotationList);
-        assert!(!harness.state().keybinds.has_pending());
+        assert!(!harness.state().keybinds().has_pending());
 
         harness
             .keys("<Esc>")
             .assert_annotation_inspect_hidden()
             .assert_mode(Mode::AnnotationList);
-        assert!(!harness.state().keybinds.has_pending());
+        assert!(!harness.state().keybinds().has_pending());
     }
 
     #[test]
