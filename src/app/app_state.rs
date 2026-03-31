@@ -1,4 +1,5 @@
 use crossterm::event::KeyEvent;
+use ratatui::{Frame, layout::Rect};
 
 use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
 use crate::annotation::store::AnnotationStore;
@@ -15,6 +16,7 @@ use crate::tui::command_line::{CommandLine, CommandLineEvent};
 use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
+use crate::tui::theme::UiTheme;
 use crate::tui::viewport::CursorPosition;
 
 /// Terminal-independent application state.
@@ -45,6 +47,8 @@ pub struct AppState {
     help_visible: bool,
     /// Scroll offset for the help overlay content.
     help_scroll_offset: u16,
+    /// Whether the current terminal width can show the annotation list panel.
+    annotation_panel_available: bool,
 }
 
 impl AppState {
@@ -84,6 +88,7 @@ impl AppState {
             confirm_dialog: None,
             help_visible: false,
             help_scroll_offset: 0,
+            annotation_panel_available: true,
         }
     }
 
@@ -133,6 +138,10 @@ impl AppState {
         self.annotation_list_panel.is_visible()
     }
 
+    pub fn is_panel_hidden_due_to_width(&self) -> bool {
+        self.annotation_list_panel.is_visible() && !self.annotation_panel_available
+    }
+
     pub fn command_buffer(&self) -> &str {
         self.command_line.buffer()
     }
@@ -161,8 +170,20 @@ impl AppState {
         self.confirm_dialog.as_ref()
     }
 
+    #[cfg(any(test, doctest))]
     pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
         &self.annotation_list_panel
+    }
+
+    pub fn render_annotation_list_panel(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        theme: &UiTheme,
+        is_focused: bool,
+    ) {
+        self.annotation_list_panel
+            .render(frame, area, &self.annotations, theme, is_focused);
     }
 
     pub fn selected_annotation_range(&self) -> Option<TextRange> {
@@ -170,6 +191,14 @@ impl AppState {
             .selected_annotation_id()
             .and_then(|id| self.annotations.get(id))
             .and_then(|annotation| annotation.range)
+    }
+
+    pub fn set_annotation_panel_available(&mut self, available: bool) {
+        self.annotation_panel_available = available;
+
+        if !available && self.mode == Mode::AnnotationList {
+            self.mode = Mode::Normal;
+        }
     }
 
     pub fn handle_key(&mut self, key_event: KeyEvent) {
@@ -195,7 +224,18 @@ impl AppState {
             match dialog.handle_key(key_event) {
                 ConfirmDialogEvent::Confirm => {
                     if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
-                        self.annotations.delete(id);
+                        let deleted_index = self
+                            .annotations
+                            .ordered()
+                            .iter()
+                            .position(|annotation| annotation.id == id);
+
+                        if self.annotations.delete(id)
+                            && let Some(deleted_index) = deleted_index
+                        {
+                            self.annotation_list_panel
+                                .reconcile_after_deletion(&self.annotations, deleted_index);
+                        }
                     }
                 }
                 ConfirmDialogEvent::Cancel => {}
@@ -262,7 +302,10 @@ impl AppState {
             }
             Action::EnterAnnotationListMode => {
                 self.annotation_list_panel.toggle();
-                if self.annotation_list_panel.is_visible() && !self.annotations.is_empty() {
+                if self.annotation_list_panel.is_visible()
+                    && self.annotation_panel_available
+                    && !self.annotations.is_empty()
+                {
                     self.mode = Mode::AnnotationList;
                 } else {
                     self.mode = Mode::Normal;
@@ -389,29 +432,78 @@ impl AppState {
             return;
         }
 
+        let current_idx = self.current_annotation_index(&ordered, cursor_pos, forward);
+
         let target = if forward {
-            ordered.iter().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) > cursor_pos
-                } else {
-                    false
-                }
-            })
+            if let Some(current_idx) = current_idx {
+                ordered
+                    .iter()
+                    .skip(current_idx + 1)
+                    .find(|annotation| annotation.range.is_some())
+            } else {
+                ordered.iter().find(|annotation| {
+                    annotation
+                        .range
+                        .map(|range| (range.start.line, range.start.column) > cursor_pos)
+                        .unwrap_or(false)
+                })
+            }
+        } else if let Some(current_idx) = current_idx {
+            ordered[..current_idx]
+                .iter()
+                .rev()
+                .find(|annotation| annotation.range.is_some())
         } else {
-            ordered.iter().rev().find(|a| {
-                if let Some(r) = a.range {
-                    (r.start.line, r.start.column) < cursor_pos
-                } else {
-                    false
-                }
+            ordered.iter().rev().find(|annotation| {
+                annotation
+                    .range
+                    .map(|range| (range.start.line, range.start.column) < cursor_pos)
+                    .unwrap_or(false)
             })
         };
 
         if let Some(annotation) = target
             && let Some(range) = annotation.range
         {
+            self.annotation_list_panel
+                .set_selected_annotation_id(annotation.id);
             self.document_view
                 .set_cursor(range.start.line, range.start.column);
+        }
+    }
+
+    fn current_annotation_index(
+        &self,
+        ordered: &[&crate::annotation::types::Annotation],
+        cursor_pos: (usize, usize),
+        forward: bool,
+    ) -> Option<usize> {
+        if let Some(selected_id) = self.annotation_list_panel.selected_annotation_id()
+            && let Some(index) = ordered
+                .iter()
+                .position(|annotation| annotation.id == selected_id)
+            && ordered[index]
+                .range
+                .map(|range| (range.start.line, range.start.column) == cursor_pos)
+                .unwrap_or(false)
+        {
+            return Some(index);
+        }
+
+        let matching_indices: Vec<_> = ordered
+            .iter()
+            .enumerate()
+            .filter_map(|(index, annotation)| {
+                annotation.range.and_then(|range| {
+                    ((range.start.line, range.start.column) == cursor_pos).then_some(index)
+                })
+            })
+            .collect();
+
+        if forward {
+            matching_indices.last().copied()
+        } else {
+            matching_indices.first().copied()
         }
     }
 }
@@ -458,6 +550,11 @@ pub(crate) mod test_harness {
 
         pub fn state_mut(&mut self) -> &mut AppState {
             &mut self.state
+        }
+
+        pub fn set_panel_available(&mut self, available: bool) -> &mut Self {
+            self.state.set_annotation_panel_available(available);
+            self
         }
 
         pub fn assert_mode(&mut self, expected: Mode) -> &mut Self {
@@ -573,7 +670,7 @@ pub(crate) mod test_harness {
 mod tests {
     use super::test_harness::AppTestHarness;
     use super::{AppState, ExitResult};
-    use crate::annotation::types::AnnotationType;
+    use crate::annotation::types::{Annotation, AnnotationType, TextPosition, TextRange};
     use crate::keybinds::mode::Mode;
 
     fn harness(content: &str) -> AppTestHarness {
@@ -582,6 +679,105 @@ mod tests {
 
     fn create_two_deletions(harness: &mut AppTestHarness) {
         harness.keys("vldjvld").assert_annotation_count(2);
+    }
+
+    fn create_three_deletions(harness: &mut AppTestHarness) {
+        harness.keys("vldjvldjvld").assert_annotation_count(3);
+    }
+
+    fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
+        TextRange {
+            start: TextPosition {
+                line: sl,
+                column: sc,
+            },
+            end: TextPosition {
+                line: el,
+                column: ec,
+            },
+        }
+    }
+
+    fn add_mixed_annotations(harness: &mut AppTestHarness) {
+        let annotations = [
+            Annotation::deletion(range(0, 1, 0, 4), "lph".into()),
+            Annotation::insertion(TextPosition { line: 1, column: 2 }, "inserted".into()),
+            Annotation::comment(range(1, 2, 1, 5), "ta ".into(), "note".into()),
+            Annotation::deletion(range(2, 0, 2, 2), "ga".into()),
+            Annotation::global_comment("overall".into()),
+        ];
+
+        for annotation in annotations {
+            harness.state_mut().annotations.add(annotation);
+        }
+    }
+
+    fn ordered_anchored_positions(state: &AppState) -> Vec<(usize, usize)> {
+        state
+            .annotations()
+            .ordered()
+            .into_iter()
+            .filter_map(|annotation| {
+                annotation
+                    .range
+                    .map(|range| (range.start.line, range.start.column))
+            })
+            .collect()
+    }
+
+    fn ordered_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
+        harness.keys("<Tab>k");
+
+        let mut positions = Vec::with_capacity(steps + 1);
+        positions.push(
+            harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column))
+                .expect("panel should start on the first anchored annotation"),
+        );
+
+        for _ in 0..steps {
+            harness.keys("j");
+            let position = harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column));
+            if let Some(position) = position {
+                positions.push(position);
+            }
+        }
+
+        positions
+    }
+
+    fn reverse_panel_positions(harness: &mut AppTestHarness, steps: usize) -> Vec<(usize, usize)> {
+        harness.keys("<Tab>k");
+        for _ in 0..steps {
+            harness.keys("j");
+        }
+
+        let mut positions = Vec::with_capacity(steps + 1);
+        positions.push(
+            harness
+                .state()
+                .selected_annotation_range()
+                .map(|range| (range.start.line, range.start.column))
+                .expect("panel should land on an anchored annotation before reversing"),
+        );
+
+        for _ in 0..steps {
+            harness.keys("k");
+            positions.push(
+                harness
+                    .state()
+                    .selected_annotation_range()
+                    .map(|range| (range.start.line, range.start.column))
+                    .expect("reverse panel step should stay on anchored annotations"),
+            );
+        }
+
+        positions
     }
 
     #[test]
@@ -652,6 +848,27 @@ mod tests {
     fn tab_enters_annotation_list_mode_when_annotations_exist() {
         let mut harness = harness("first\nsecond");
         harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
+    }
+
+    #[test]
+    fn tab_keeps_panel_hidden_from_annotation_list_mode_when_terminal_is_narrow() {
+        let mut harness = harness("first\nsecond");
+        harness
+            .set_panel_available(false)
+            .keys("vld<Tab>")
+            .assert_mode(Mode::Normal)
+            .assert_panel_visible();
+
+        assert!(harness.state().is_panel_hidden_due_to_width());
+    }
+
+    #[test]
+    fn narrow_terminal_forces_annotation_list_mode_back_to_normal() {
+        let mut harness = harness("first\nsecond");
+        harness.keys("vld<Tab>").assert_mode(Mode::AnnotationList);
+
+        harness.set_panel_available(false).assert_mode(Mode::Normal);
+        assert!(harness.state().is_panel_hidden_due_to_width());
     }
 
     #[test]
@@ -802,6 +1019,49 @@ mod tests {
     }
 
     #[test]
+    fn next_annotation_matches_panel_order_for_mixed_annotations() {
+        let mut panel_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut panel_harness);
+        let expected = ordered_panel_positions(&mut panel_harness, 4);
+
+        let mut navigation_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut navigation_harness);
+
+        let anchored = ordered_anchored_positions(navigation_harness.state());
+        let mut visited = Vec::with_capacity(anchored.len());
+        for _ in 0..anchored.len() {
+            navigation_harness.keys("]a");
+            let cursor = navigation_harness.state().cursor();
+            visited.push((cursor.row, cursor.col));
+        }
+
+        assert_eq!(visited, expected);
+        assert_eq!(visited, anchored);
+    }
+
+    #[test]
+    fn prev_annotation_matches_panel_order_for_mixed_annotations() {
+        let mut panel_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut panel_harness);
+        let anchored = ordered_anchored_positions(panel_harness.state());
+        let expected = reverse_panel_positions(&mut panel_harness, anchored.len() - 1);
+
+        let mut navigation_harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut navigation_harness);
+        navigation_harness.keys("G$");
+
+        let mut visited = Vec::with_capacity(anchored.len());
+        for _ in 0..anchored.len() {
+            navigation_harness.keys("[a");
+            let cursor = navigation_harness.state().cursor();
+            visited.push((cursor.row, cursor.col));
+        }
+
+        assert_eq!(visited, expected);
+        assert_eq!(visited, anchored.into_iter().rev().collect::<Vec<_>>());
+    }
+
+    #[test]
     fn tab_toggles_annotation_panel_visibility() {
         harness("hello")
             .keys("vld<Tab>")
@@ -912,7 +1172,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("<Tab>j");
+        harness.keys("<Tab>jj");
 
         let expected_range = harness.state().annotations().ordered()[1]
             .range
@@ -931,7 +1191,7 @@ mod tests {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
 
-        harness.keys("gg<Tab>j<Enter>").assert_cursor(1, 1);
+        harness.keys("gg<Tab>jj<Enter>").assert_cursor(1, 1);
     }
 
     #[test]
@@ -950,6 +1210,31 @@ mod tests {
             .keys("vld<Tab>kddn")
             .assert_annotation_count(1)
             .assert_no_confirm_dialog();
+    }
+
+    #[test]
+    fn confirm_dialog_delete_keeps_selection_on_same_list_index() {
+        let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+        create_three_deletions(&mut harness);
+
+        let ordered = harness.state().annotations().ordered();
+        let expected_id = ordered[2].id;
+        drop(ordered);
+
+        harness
+            .keys("<Tab>kjdd")
+            .assert_has_confirm_dialog()
+            .keys("y")
+            .assert_annotation_count(2)
+            .assert_no_confirm_dialog();
+
+        assert_eq!(
+            harness
+                .state()
+                .annotation_list_panel()
+                .selected_annotation_id(),
+            Some(expected_id)
+        );
     }
 
     #[test]

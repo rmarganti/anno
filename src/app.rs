@@ -95,10 +95,12 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        let panel_available = area.width >= MIN_WIDTH_FOR_PANEL;
+        self.state.set_annotation_panel_available(panel_available);
 
         // Decide whether the panel should actually be shown: it must be
         // toggled visible AND the terminal must be wide enough.
-        let show_panel = self.state.is_panel_visible() && area.width >= MIN_WIDTH_FOR_PANEL;
+        let show_panel = self.state.is_panel_visible() && panel_available;
 
         // Compute the document area width for dimension checks.
         let doc_area_width = if show_panel {
@@ -153,12 +155,9 @@ impl App {
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            self.state.annotation_list_panel().render(
-                frame,
-                panel_area,
-                self.state.annotations(),
-                &self.theme,
-            );
+            let is_focused = self.state.mode() == Mode::AnnotationList;
+            self.state
+                .render_annotation_list_panel(frame, panel_area, &self.theme, is_focused);
         }
 
         // -- Main document area --
@@ -186,6 +185,7 @@ impl App {
                 cursor_col: cursor.col,
                 word_wrap: self.state.word_wrap(),
                 command_buffer: self.state.command_buffer(),
+                panel_hidden_due_to_width: self.state.is_panel_hidden_due_to_width(),
             },
         );
 

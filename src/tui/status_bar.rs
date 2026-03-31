@@ -17,6 +17,7 @@ pub struct StatusBarProps<'a> {
     pub cursor_col: usize,
     pub word_wrap: bool,
     pub command_buffer: &'a str,
+    pub panel_hidden_due_to_width: bool,
 }
 
 /// Render the status bar into the given area.
@@ -40,12 +41,16 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         Span::raw(wrap_indicator),
     ];
 
-    let hint = match props.mode {
-        Mode::Normal => "? help".to_string(),
-        Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
-        Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
-        Mode::AnnotationList => "j/k nav  Enter jump  dd delete  Esc".to_string(),
-        Mode::Command => format!(":{}", props.command_buffer),
+    let hint = if props.panel_hidden_due_to_width {
+        "[panel hidden: terminal too narrow]".to_string()
+    } else {
+        match props.mode {
+            Mode::Normal => "? help".to_string(),
+            Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
+            Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
+            Mode::AnnotationList => "j/k nav  Enter jump  dd delete  Esc".to_string(),
+            Mode::Command => format!(":{}", props.command_buffer),
+        }
     };
     status_spans.push(Span::raw(hint));
 
@@ -96,6 +101,7 @@ mod tests {
             cursor_col: 0,
             word_wrap: false,
             command_buffer: "",
+            panel_hidden_due_to_width: false,
         }
     }
 
@@ -264,6 +270,23 @@ mod tests {
         };
         let output = render_to_string(&props);
         assert!(output.contains(":q!"), "Expected ':q!' in: {output}");
+    }
+
+    #[test]
+    fn narrow_terminal_panel_hint_overrides_default_hint() {
+        let props = StatusBarProps {
+            panel_hidden_due_to_width: true,
+            ..base_props(Mode::Normal)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("[panel hidden: terminal too narrow]"),
+            "Expected narrow terminal hint in: {output}"
+        );
+        assert!(
+            !output.contains("? help"),
+            "Did not expect default help hint in: {output}"
+        );
     }
 
     #[test]
