@@ -1,4 +1,6 @@
 mod core;
+mod overlay_state;
+mod panel_state;
 
 #[cfg(test)]
 mod test_harness;
@@ -7,6 +9,7 @@ mod test_support;
 
 use crossterm::event::KeyEvent;
 
+#[cfg(test)]
 use self::core::ANNOTATION_INSPECT_PAGE_SCROLL_LINES;
 pub(super) use self::core::AppState;
 use crate::annotation::export::{AgentExporter, AnnotationExporter, JsonExporter};
@@ -17,90 +20,10 @@ use crate::startup::ExportFormat;
 use crate::tui::annotation_controller::AnnotationAction;
 use crate::tui::app_command::{AppCommand, QuitKind};
 use crate::tui::command_line::CommandLineEvent;
-use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 
 impl AppState {
     pub fn handle_key(&mut self, key_event: KeyEvent) {
-        if self.help_visible {
-            match self.keybinds.handle_help_overlay(self.mode, key_event) {
-                Action::ToggleHelp => {
-                    self.help_visible = false;
-                    self.keybinds.clear_pending();
-                }
-                Action::MoveDown => {
-                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
-                }
-                Action::MoveUp => {
-                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
-                }
-                _ => {}
-            }
-            return;
-        }
-
-        // If a confirm dialog is active, route all input to it.
-        if let Some(dialog) = self.confirm_dialog.take() {
-            match dialog.handle_key(key_event) {
-                ConfirmDialogEvent::Confirm => {
-                    if let Some(id) = self.annotation_list_panel.selected_annotation_id() {
-                        let deleted_index = self
-                            .annotations
-                            .ordered()
-                            .iter()
-                            .position(|annotation| annotation.id == id);
-
-                        if self.annotations.delete(id)
-                            && let Some(deleted_index) = deleted_index
-                        {
-                            self.annotation_list_panel
-                                .reconcile_after_deletion(&self.annotations, deleted_index);
-                        }
-                    }
-                }
-                ConfirmDialogEvent::Cancel => {}
-                ConfirmDialogEvent::Consumed => {
-                    self.confirm_dialog = Some(dialog);
-                }
-            }
-            return;
-        }
-
-        if self.annotation_inspect_visible {
-            match self.keybinds.handle_annotation_inspect(key_event) {
-                Action::MoveDown => {
-                    self.annotation_list_panel
-                        .move_selection_down(&self.annotations);
-                    self.annotation_inspect_scroll_offset = 0;
-                }
-                Action::MoveUp => {
-                    self.annotation_list_panel
-                        .move_selection_up(&self.annotations);
-                    self.annotation_inspect_scroll_offset = 0;
-                }
-                Action::ScrollOverlayDown => self.scroll_annotation_inspect_down(1),
-                Action::ScrollOverlayUp => self.scroll_annotation_inspect_up(1),
-                Action::ScrollOverlayPageDown => {
-                    self.scroll_annotation_inspect_down(ANNOTATION_INSPECT_PAGE_SCROLL_LINES);
-                }
-                Action::ScrollOverlayPageUp => {
-                    self.scroll_annotation_inspect_up(ANNOTATION_INSPECT_PAGE_SCROLL_LINES);
-                }
-                Action::JumpToAnnotation => {
-                    if let Some(annotation) = self.selected_annotation()
-                        && let Some(range) = annotation.range
-                    {
-                        self.document_view
-                            .set_cursor(range.start.line, range.start.column);
-                    }
-                }
-                Action::ExitToNormal => {
-                    self.close_annotation_inspect();
-                }
-                Action::ForceQuit => {
-                    self.should_quit = true;
-                }
-                _ => {}
-            }
+        if self.handle_overlay_key(key_event) {
             return;
         }
 
@@ -131,15 +54,11 @@ impl AppState {
                     return;
                 }
                 Action::DeleteAnnotation => {
-                    self.confirm_dialog = Some(ConfirmDialog::new("Delete annotation? (y/n)"));
+                    self.open_delete_confirmation();
                     return;
                 }
                 Action::OpenAnnotationInspect => {
-                    if self.selected_annotation().is_some() {
-                        self.annotation_inspect_visible = true;
-                        self.annotation_inspect_scroll_offset = 0;
-                        self.keybinds.clear_pending();
-                    }
+                    self.open_annotation_inspect();
                     return;
                 }
                 Action::ExitToNormal => {
@@ -188,17 +107,11 @@ impl AppState {
             }
             Action::HideAnnotationList => {
                 if self.annotation_list_panel.is_visible() {
-                    self.annotation_list_panel.toggle();
-                    self.close_annotation_inspect();
-                    self.mode = Mode::Normal;
+                    self.hide_annotation_list_panel();
                 }
             }
             Action::ToggleHelp => {
-                self.help_visible = !self.help_visible;
-                if self.help_visible {
-                    self.help_scroll_offset = 0;
-                }
-                self.keybinds.clear_pending();
+                self.toggle_help_overlay();
             }
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
@@ -394,22 +307,6 @@ impl AppState {
         } else {
             matching_indices.first().copied()
         }
-    }
-
-    fn close_annotation_inspect(&mut self) {
-        self.annotation_inspect_visible = false;
-        self.annotation_inspect_scroll_offset = 0;
-        self.keybinds.clear_pending();
-    }
-
-    fn scroll_annotation_inspect_down(&mut self, lines: u16) {
-        self.annotation_inspect_scroll_offset =
-            self.annotation_inspect_scroll_offset.saturating_add(lines);
-    }
-
-    fn scroll_annotation_inspect_up(&mut self, lines: u16) {
-        self.annotation_inspect_scroll_offset =
-            self.annotation_inspect_scroll_offset.saturating_sub(lines);
     }
 }
 

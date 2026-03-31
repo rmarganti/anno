@@ -255,23 +255,6 @@ impl AppState {
             .and_then(|id| self.annotations.get(id))
     }
 
-    pub(super) fn initialize_annotation_list_selection(&mut self) {
-        self.annotation_list_panel
-            .ensure_selection_initialized(&self.annotations);
-    }
-
-    pub fn set_annotation_panel_available(&mut self, available: bool) {
-        self.annotation_panel_available = available;
-
-        if !available && self.mode == Mode::AnnotationList {
-            self.mode = Mode::Normal;
-        }
-
-        if !available {
-            self.close_annotation_inspect();
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn set_mode_for_test(&mut self, mode: Mode) {
         self.mode = mode;
