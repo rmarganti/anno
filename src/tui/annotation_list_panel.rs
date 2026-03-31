@@ -167,10 +167,10 @@ impl AnnotationListPanel {
             let type_color = theme.annotation_type_color(&annotation.annotation_type);
             let glyph = type_glyph(&annotation.annotation_type);
 
-            // Build the line: "██ ✕ preview text..."
-            // Indicator (2 chars) + space + glyph + space + preview
+            // Build the line: "▌ ✕ preview text..."
+            // Indicator (1 char) + space + glyph + space + preview
             let indicator = Span::styled(
-                "██",
+                "▌",
                 Style::default()
                     .fg(type_color)
                     .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
@@ -185,9 +185,9 @@ impl AnnotationListPanel {
             let spacer2 = Span::styled(" ", base_style);
 
             // Truncate preview to fit remaining width.
-            // Used columns: 2 (indicator) + 1 (space) + glyph_width + 1 (space)
+            // Used columns: 1 (indicator) + 1 (space) + glyph_width + 1 (space)
             let glyph_width = 1; // All our glyphs are single-width for layout purposes.
-            let used = 2 + 1 + glyph_width + 1;
+            let used = 1 + 1 + glyph_width + 1;
             let available = (inner.width as usize).saturating_sub(used);
             let preview = format_item_preview(annotation, available);
             // Pad to fill remaining space.
