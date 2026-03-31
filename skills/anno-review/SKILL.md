@@ -30,45 +30,47 @@ Use this skill when the user wants interactive review of text content inside `an
 4. Write the review content to that temp file.
 5. Launch `anno` against the temp file instead of piping via stdin.
    This keeps syntax detection stronger and causes exported annotations to reference a file path instead of `source="stdin"`.
-6. Prefer JSON export when available.
-   Run `anno --format json --syntax <syntax> <temp-file>`.
-7. If a future `anno` build supports `--title`, include it.
-   The current repo supports `--format` and `--syntax`, but not `--title`, so do not assume that flag exists.
-8. Let the human review interactively in `anno`.
+6. Prefer a contextual status-bar title and JSON export when available.
+   Run `anno --title "Reviewing: <context>" --format json --syntax <syntax> <temp-file>`.
+7. If the installed `anno` binary does not support `--title`, fall back to the same command without that flag.
+8. If the installed `anno` binary also lacks JSON export, fall back to the default export format and parse that instead.
+9. Let the human review interactively in `anno`.
    `:q` exports annotations to stdout.
    `:q!` exits silently with no review output.
-9. Capture stdout after `anno` exits.
-10. Interpret the result:
-    - Empty stdout means the reviewer exited with `:q!` or otherwise produced no annotations. Treat that as approval or no requested changes.
-    - Non-empty stdout means the reviewer left annotations. Parse them and convert them into concrete revision tasks.
-11. Apply revisions to the source text when the workflow calls for edits, then summarize what changed.
-12. Offer another review pass if the user wants the revised content checked again.
+10. Capture stdout after `anno` exits.
+11. Interpret the result:
+     - Empty stdout means the reviewer exited with `:q!` or otherwise produced no annotations. Treat that as approval or no requested changes.
+     - Non-empty stdout means the reviewer left annotations. Parse them and convert them into concrete revision tasks.
+12. Apply revisions to the source text when the workflow calls for edits, then summarize what changed.
+13. Offer another review pass if the user wants the revised content checked again.
 
 ## Command Patterns
 
 Preferred command:
 
 ```bash
+anno --title "Reviewing: Implementation Plan" --format json --syntax md /tmp/anno-review-<hash>.md
+```
+
+Fallback when `--title` is unavailable in the installed binary:
+
+```bash
 anno --format json --syntax md /tmp/anno-review-<hash>.md
 ```
 
-Fallback when JSON is unavailable in the installed binary:
+Fallback when both `--title` and JSON export are unavailable:
 
 ```bash
 anno --syntax md /tmp/anno-review-<hash>.md
 ```
 
-Future-friendly form when `--title` exists:
-
-```bash
-anno --title "Reviewing: Implementation Plan" --format json --syntax md /tmp/anno-review-<hash>.md
-```
-
 ## Parsing Guidance
 
-- Prefer `--format json` and parse the returned JSON object directly.
+- Prefer `--title` plus `--format json` so the reviewer sees a contextual label instead of a temp path in the status bar and the output is structured for parsing.
+- Parse the JSON export as the primary path.
+- Expect a top-level JSON object with source metadata and an annotations array rather than the legacy XML-like text format.
 - Expect the export to identify the temp file path as the review source.
-- If JSON is unavailable, parse the default XML-like export.
+- If JSON is unavailable, parse the default XML-like export as a compatibility fallback.
 - Preserve annotation ordering because `anno` exports annotations in document order, with global comments last.
 - Treat deletion, replacement, insertion, comment, and global comment annotations as distinct actions.
 
