@@ -20,6 +20,10 @@ mod theme_resolution;
 #[derive(Debug, Parser)]
 #[command(name = "anno", about = "Annotate markdown files in the terminal")]
 pub struct Cli {
+    /// Output format used when exporting annotations on :q
+    #[arg(long, value_enum, default_value_t = ExportFormat::Agent)]
+    pub format: ExportFormat,
+
     /// Built-in theme name or path to a .tmTheme file
     #[arg(long)]
     pub theme: Option<String>,
@@ -34,6 +38,13 @@ pub struct Cli {
 
     /// Text file to annotate
     pub file: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Agent,
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
@@ -100,6 +111,7 @@ pub struct ThemeProvenance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupSettings {
+    pub export_format: ExportFormat,
     pub document_background: DocumentBackground,
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
@@ -203,6 +215,7 @@ impl StartupSettings {
         )?;
 
         Ok(Self {
+            export_format: cli.format,
             document_background: config.background,
             theme_mode,
             theme: theme.resolved,
@@ -502,6 +515,7 @@ mod tests {
                 let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 
                 assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
+                assert_eq!(startup.export_format, ExportFormat::Agent);
                 assert_eq!(startup.theme_mode.source, SettingSource::Cli);
                 assert_eq!(startup.theme.source, SettingSource::Cli);
                 assert_eq!(startup.document_background, DocumentBackground::Theme);
@@ -781,6 +795,8 @@ mod tests {
     fn cli_parser_accepts_new_flags() {
         let cli = cli_from(&[
             "anno",
+            "--format",
+            "json",
             "--theme",
             "mocha",
             "--theme-mode",
@@ -790,10 +806,33 @@ mod tests {
             "demo.md",
         ]);
 
+        assert_eq!(cli.format, ExportFormat::Json);
         assert_eq!(cli.theme.as_deref(), Some("mocha"));
         assert_eq!(cli.theme_mode, Some(ThemeMode::Dark));
         assert_eq!(cli.syntax.as_deref(), Some("rust"));
         assert_eq!(cli.file.as_deref(), Some("demo.md"));
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_agent_format_by_default() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.export_format, ExportFormat::Agent);
+        });
+    }
+
+    #[test]
+    fn startup_settings_resolve_uses_cli_export_format() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "--format", "json", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.export_format, ExportFormat::Json);
+        });
     }
 
     #[test]

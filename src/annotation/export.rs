@@ -1,5 +1,6 @@
 use super::store::AnnotationStore;
 use super::types::{Annotation, AnnotationType};
+use serde::Serialize;
 
 /// Trait for exporting annotations to a string format.
 pub trait AnnotationExporter {
@@ -8,6 +9,9 @@ pub trait AnnotationExporter {
 
 /// Exports annotations in an XML-like structured format designed for LLM agent consumption.
 pub struct AgentExporter;
+
+/// Exports annotations as structured JSON for programmatic tooling.
+pub struct JsonExporter;
 
 impl AnnotationExporter for AgentExporter {
     fn export(&self, store: &AnnotationStore, source_name: &str) -> String {
@@ -47,6 +51,80 @@ impl AnnotationExporter for AgentExporter {
 
         output.push_str("\n</annotations>\n");
         output
+    }
+}
+
+impl AnnotationExporter for JsonExporter {
+    fn export(&self, store: &AnnotationStore, source_name: &str) -> String {
+        let annotations = store
+            .ordered()
+            .into_iter()
+            .map(JsonAnnotation::from)
+            .collect::<Vec<_>>();
+
+        serde_json::to_string(&JsonExport {
+            source: source_name,
+            total: annotations.len(),
+            annotations,
+        })
+        .expect("json annotation export should serialize")
+    }
+}
+
+#[derive(Serialize)]
+struct JsonExport<'a> {
+    source: &'a str,
+    total: usize,
+    annotations: Vec<JsonAnnotation>,
+}
+
+#[derive(Serialize)]
+struct JsonAnnotation {
+    #[serde(rename = "type")]
+    annotation_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lines: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+impl From<&Annotation> for JsonAnnotation {
+    fn from(annotation: &Annotation) -> Self {
+        let (line, lines) = match annotation.range {
+            Some(range) => {
+                let start = range.start.line + 1;
+                let end = range.end.line + 1;
+                if start == end {
+                    (Some(start), None)
+                } else {
+                    (None, Some(format!("{start}-{end}")))
+                }
+            }
+            None => (None, None),
+        };
+
+        Self {
+            annotation_type: annotation_type_name(&annotation.annotation_type),
+            line,
+            lines,
+            selected_text: (!annotation.selected_text.is_empty())
+                .then(|| annotation.selected_text.clone()),
+            text: (!annotation.text.is_empty()).then(|| annotation.text.clone()),
+        }
+    }
+}
+
+fn annotation_type_name(annotation_type: &AnnotationType) -> &'static str {
+    match annotation_type {
+        AnnotationType::Deletion => "delete",
+        AnnotationType::Comment => "comment",
+        AnnotationType::Replacement => "replace",
+        AnnotationType::Insertion => "insert",
+        AnnotationType::GlobalComment => "global_comment",
     }
 }
 
@@ -109,6 +187,10 @@ mod tests {
 
     fn exporter() -> AgentExporter {
         AgentExporter
+    }
+
+    fn json_exporter() -> JsonExporter {
+        JsonExporter
     }
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
@@ -283,5 +365,81 @@ mod tests {
         assert!(pos_first < pos_second);
         assert!(pos_second < pos_later);
         assert!(pos_later < pos_global);
+    }
+
+    #[test]
+    fn json_export_empty_store() {
+        let store = AnnotationStore::new();
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":0,\"annotations\":[]}"
+        );
+    }
+
+    #[test]
+    fn json_export_deletion() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::deletion(range(2, 0, 2, 9), "remove me".into()));
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"delete\",\"line\":3,\"selected_text\":\"remove me\"}]}"
+        );
+    }
+
+    #[test]
+    fn json_export_comment() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::comment(
+            range(11, 0, 13, 5),
+            "selected text".into(),
+            "needs more detail".into(),
+        ));
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"comment\",\"lines\":\"12-14\",\"selected_text\":\"selected text\",\"text\":\"needs more detail\"}]}"
+        );
+    }
+
+    #[test]
+    fn json_export_replacement() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::replacement(
+            range(0, 0, 0, 4),
+            "old".into(),
+            "new".into(),
+        ));
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"replace\",\"line\":1,\"selected_text\":\"old\",\"text\":\"new\"}]}"
+        );
+    }
+
+    #[test]
+    fn json_export_insertion() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::insertion(
+            TextPosition { line: 4, column: 2 },
+            "inserted content".into(),
+        ));
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"insert\",\"line\":5,\"text\":\"inserted content\"}]}"
+        );
+    }
+
+    #[test]
+    fn json_export_global_comment() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::global_comment("overall looks good".into()));
+
+        assert_eq!(
+            json_exporter().export(&store, "test.md"),
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"global_comment\",\"text\":\"overall looks good\"}]}"
+        );
     }
 }

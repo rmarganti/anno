@@ -48,6 +48,7 @@ impl App {
         content: String,
         startup: StartupSettings,
     ) -> Result<Self, StartupError> {
+        let export_format = startup.export_format;
         let highlighter = SyntectHighlighter::from_startup(&startup)?;
         let theme = UiTheme::from_syntect_theme(
             highlighter.theme(),
@@ -58,7 +59,7 @@ impl App {
 
         Ok(Self {
             theme,
-            state: AppState::new(source_name, document_lines),
+            state: AppState::new(source_name, document_lines, export_format),
         })
     }
 
