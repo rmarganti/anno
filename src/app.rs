@@ -16,6 +16,7 @@ use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
+use crate::tui::annotation_inspect_overlay::AnnotationInspectOverlay;
 use crate::tui::annotation_list_panel::PANEL_WIDTH;
 use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
@@ -213,6 +214,18 @@ impl App {
             && let Some(dialog) = self.state.confirm_dialog()
         {
             dialog.render(frame, main_area);
+        }
+
+        // -- Annotation inspect overlay --
+        if self.state.is_annotation_inspect_visible()
+            && let Some(annotation) = self.state.selected_annotation().cloned()
+        {
+            AnnotationInspectOverlay::new(annotation).render(
+                frame,
+                main_area,
+                &self.theme,
+                self.state.annotation_inspect_scroll_offset_mut(),
+            );
         }
 
         // -- Help overlay --

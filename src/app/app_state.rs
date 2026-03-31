@@ -3,7 +3,7 @@ use ratatui::{Frame, layout::Rect};
 
 use crate::annotation::export::{AgentExporter, AnnotationExporter, JsonExporter};
 use crate::annotation::store::AnnotationStore;
-use crate::annotation::types::TextRange;
+use crate::annotation::types::{Annotation, TextRange};
 use crate::app::ExitResult;
 #[cfg(any(test, doctest))]
 use crate::highlight::StyledSpan;
@@ -46,6 +46,10 @@ pub struct AppState {
     annotation_list_panel: AnnotationListPanel,
     /// Active confirmation dialog overlay, if any.
     confirm_dialog: Option<ConfirmDialog>,
+    /// Whether the annotation inspect overlay is visible.
+    annotation_inspect_visible: bool,
+    /// Scroll offset for the annotation inspect overlay content.
+    annotation_inspect_scroll_offset: u16,
     /// Whether the help overlay is visible.
     help_visible: bool,
     /// Scroll offset for the help overlay content.
@@ -111,6 +115,8 @@ impl AppState {
             annotation_controller: AnnotationController::new(),
             annotation_list_panel: AnnotationListPanel::new(),
             confirm_dialog: None,
+            annotation_inspect_visible: false,
+            annotation_inspect_scroll_offset: 0,
             help_visible: false,
             help_scroll_offset: 0,
             annotation_panel_available: true,
@@ -147,6 +153,14 @@ impl AppState {
 
     pub fn is_help_visible(&self) -> bool {
         self.help_visible
+    }
+
+    pub fn is_annotation_inspect_visible(&self) -> bool {
+        self.annotation_inspect_visible
+    }
+
+    pub fn annotation_inspect_scroll_offset_mut(&mut self) -> &mut u16 {
+        &mut self.annotation_inspect_scroll_offset
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -212,10 +226,14 @@ impl AppState {
     }
 
     pub fn selected_annotation_range(&self) -> Option<TextRange> {
+        self.selected_annotation()
+            .and_then(|annotation| annotation.range)
+    }
+
+    pub fn selected_annotation(&self) -> Option<&Annotation> {
         self.annotation_list_panel
             .selected_annotation_id()
             .and_then(|id| self.annotations.get(id))
-            .and_then(|annotation| annotation.range)
     }
 
     pub fn set_annotation_panel_available(&mut self, available: bool) {
@@ -223,6 +241,10 @@ impl AppState {
 
         if !available && self.mode == Mode::AnnotationList {
             self.mode = Mode::Normal;
+        }
+
+        if !available {
+            self.close_annotation_inspect();
         }
     }
 
@@ -271,6 +293,37 @@ impl AppState {
             return;
         }
 
+        if self.annotation_inspect_visible {
+            match self.keybinds.handle_annotation_inspect(key_event) {
+                Action::MoveDown => {
+                    self.annotation_list_panel
+                        .move_selection_down(&self.annotations);
+                    self.annotation_inspect_scroll_offset = 0;
+                }
+                Action::MoveUp => {
+                    self.annotation_list_panel
+                        .move_selection_up(&self.annotations);
+                    self.annotation_inspect_scroll_offset = 0;
+                }
+                Action::JumpToAnnotation => {
+                    if let Some(annotation) = self.selected_annotation()
+                        && let Some(range) = annotation.range
+                    {
+                        self.document_view
+                            .set_cursor(range.start.line, range.start.column);
+                    }
+                }
+                Action::ExitToNormal => {
+                    self.close_annotation_inspect();
+                }
+                Action::ForceQuit => {
+                    self.should_quit = true;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         let action = self.keybinds.handle(self.mode, key_event);
 
         // In AnnotationList mode, MoveDown/MoveUp control panel selection,
@@ -299,6 +352,14 @@ impl AppState {
                 }
                 Action::DeleteAnnotation => {
                     self.confirm_dialog = Some(ConfirmDialog::new("Delete annotation? (y/n)"));
+                    return;
+                }
+                Action::OpenAnnotationInspect => {
+                    if self.selected_annotation().is_some() {
+                        self.annotation_inspect_visible = true;
+                        self.annotation_inspect_scroll_offset = 0;
+                        self.keybinds.clear_pending();
+                    }
                     return;
                 }
                 Action::ExitToNormal => {
@@ -536,6 +597,12 @@ impl AppState {
             matching_indices.first().copied()
         }
     }
+
+    fn close_annotation_inspect(&mut self) {
+        self.annotation_inspect_visible = false;
+        self.annotation_inspect_scroll_offset = 0;
+        self.keybinds.clear_pending();
+    }
 }
 
 #[cfg(test)]
@@ -641,6 +708,16 @@ pub(crate) mod test_harness {
 
         pub fn assert_help_hidden(&mut self) -> &mut Self {
             assert!(!self.state.is_help_visible());
+            self
+        }
+
+        pub fn assert_annotation_inspect_visible(&mut self) -> &mut Self {
+            assert!(self.state.is_annotation_inspect_visible());
+            self
+        }
+
+        pub fn assert_annotation_inspect_hidden(&mut self) -> &mut Self {
+            assert!(!self.state.is_annotation_inspect_visible());
             self
         }
     }
@@ -823,6 +900,7 @@ mod tests {
         assert_eq!(state.annotation_count(), 0);
         assert!(!state.should_quit());
         assert!(!state.has_confirm_dialog());
+        assert!(!state.is_annotation_inspect_visible());
         assert!(!state.is_help_visible());
         assert!(!state.is_panel_visible());
         assert_eq!(state.command_buffer(), "");
@@ -910,6 +988,29 @@ mod tests {
         harness
             .keys("vld<Tab><Esc>")
             .assert_mode(Mode::Normal)
+            .assert_panel_visible();
+    }
+
+    #[test]
+    fn space_opens_annotation_inspect_from_annotation_list() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .keys("vldjvld<Tab>k ")
+            .assert_mode(Mode::AnnotationList)
+            .assert_annotation_inspect_visible();
+    }
+
+    #[test]
+    fn escape_dismisses_annotation_inspect_back_to_list_mode() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .keys("vld<Tab>k ")
+            .assert_annotation_inspect_visible()
+            .keys("<Esc>")
+            .assert_annotation_inspect_hidden()
+            .assert_mode(Mode::AnnotationList)
             .assert_panel_visible();
     }
 
@@ -1174,6 +1275,26 @@ mod tests {
     }
 
     #[test]
+    fn opening_annotation_inspect_clears_pending_delete_sequence() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness.keys("vld<Tab>kd");
+        assert!(harness.state().keybinds.has_pending());
+
+        harness
+            .keys(" ")
+            .assert_annotation_inspect_visible()
+            .assert_mode(Mode::AnnotationList);
+        assert!(!harness.state().keybinds.has_pending());
+
+        harness
+            .keys("<Esc>")
+            .assert_annotation_inspect_hidden()
+            .assert_mode(Mode::AnnotationList);
+        assert!(!harness.state().keybinds.has_pending());
+    }
+
+    #[test]
     fn annotation_list_navigation_updates_selection() {
         let mut harness = harness("alpha\nbeta\ngamma");
         create_two_deletions(&mut harness);
@@ -1225,6 +1346,94 @@ mod tests {
         create_two_deletions(&mut harness);
 
         harness.keys("gg<Tab>jj<Enter>").assert_cursor(1, 1);
+    }
+
+    #[test]
+    fn annotation_inspect_j_k_cycle_annotations_without_closing() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>k ");
+        let first = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        harness.keys("j").assert_annotation_inspect_visible();
+        let second = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        harness.keys("k").assert_annotation_inspect_visible();
+        let back_to_first = harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id();
+
+        assert_ne!(first, second);
+        assert_eq!(first, back_to_first);
+    }
+
+    #[test]
+    fn enter_in_annotation_inspect_jumps_to_selected_annotation() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        create_two_deletions(&mut harness);
+
+        harness.keys("<Tab>kj ");
+        let expected = harness
+            .state()
+            .selected_annotation_range()
+            .expect("inspect selection should be anchored")
+            .start;
+
+        harness
+            .keys("<Enter>")
+            .assert_annotation_inspect_visible()
+            .assert_cursor(expected.line, expected.column);
+    }
+
+    #[test]
+    fn enter_in_annotation_inspect_is_noop_for_global_comments() {
+        let mut harness = harness("alpha\nbeta\ngamma");
+        add_mixed_annotations(&mut harness);
+
+        harness
+            .keys("<Tab>kjjjj ")
+            .assert_annotation_inspect_visible();
+        assert!(harness.state().selected_annotation_range().is_none());
+
+        let cursor = harness.state().cursor();
+        harness
+            .keys("<Enter>")
+            .assert_annotation_inspect_visible()
+            .assert_cursor(cursor.row, cursor.col);
+    }
+
+    #[test]
+    fn dd_is_disabled_while_annotation_inspect_is_open() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .keys("vld<Tab>k dd")
+            .assert_annotation_count(1)
+            .assert_no_confirm_dialog()
+            .assert_annotation_inspect_visible();
+    }
+
+    #[test]
+    fn narrow_terminal_closes_annotation_inspect_and_returns_to_normal() {
+        let mut harness = harness("alpha\nbeta");
+
+        harness
+            .keys("vld<Tab>k ")
+            .assert_mode(Mode::AnnotationList)
+            .assert_annotation_inspect_visible();
+
+        harness
+            .set_panel_available(false)
+            .assert_mode(Mode::Normal)
+            .assert_annotation_inspect_hidden();
     }
 
     #[test]
