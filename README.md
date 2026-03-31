@@ -216,6 +216,7 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | Key     | Action                        |
 | ------- | ----------------------------- |
 | `j/k`   | Move selection                |
+| `Space` | Inspect selected annotation   |
 | `Enter` | Jump to selected annotation   |
 | `dd`    | Delete selected annotation    |
 | `Esc`   | Exit annotation list          |
