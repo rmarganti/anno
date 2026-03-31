@@ -229,40 +229,40 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 
 ## Output Format
 
-Annotations are exported as markdown when quitting with `:q`. Example output:
+Annotations are exported as structured XML-like output when quitting with `:q`, designed for consumption by LLM coding agents. Example output:
 
-````markdown
-# Plan Feedback
+```xml
+<annotations file="path/to/file.md" total="5">
+The reviewer left 5 annotations on this document.
 
-I've reviewed this plan and have 3 pieces of feedback:
-
-## 1. Remove this
-
-```
+<delete line="3">
 selected text to remove
-```
+</delete>
 
-> I don't want this in the plan.
+<comment line="8">
+This needs more detail.
+</comment>
 
-## 2. Feedback on: "some text"
-
-> This needs more detail.
-
-## 3. Change this
-
-**From:**
-
-```
+<replace lines="12-14">
+<original>
 old text
-```
-
-**To:**
-
-```
+</original>
+<replacement>
 new text
+</replacement>
+</replace>
+
+<insert line="20">
+new content to insert here
+</insert>
+
+<comment>
+Global comment not tied to any specific location.
+</comment>
+
+</annotations>
 ```
 
----
-````
+When the source is piped from stdin, the opening tag uses `source="stdin"` instead of `file="..."`.
 
 Annotations are ordered by their position in the document, with global comments appearing last.

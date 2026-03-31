@@ -3,63 +3,101 @@ use super::types::{Annotation, AnnotationType};
 
 /// Trait for exporting annotations to a string format.
 pub trait AnnotationExporter {
-    fn export(&self, store: &AnnotationStore) -> String;
+    fn export(&self, store: &AnnotationStore, source_name: &str) -> String;
 }
 
-/// Exports annotations in Plannotator-compatible markdown format.
-pub struct PlannotatorExporter;
+/// Exports annotations in an XML-like structured format designed for LLM agent consumption.
+pub struct AgentExporter;
 
-impl AnnotationExporter for PlannotatorExporter {
-    fn export(&self, store: &AnnotationStore) -> String {
+impl AnnotationExporter for AgentExporter {
+    fn export(&self, store: &AnnotationStore, source_name: &str) -> String {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
-            return "No changes detected.".to_string();
+            return "No annotations.".to_string();
         }
-
-        let mut output = String::from("# Plan Feedback\n\n");
 
         let count = ordered.len();
-        let plural = if count > 1 { "s" } else { "" };
-        output.push_str(&format!(
-            "I've reviewed this plan and have {count} piece{plural} of feedback:\n\n"
-        ));
+        let mut output = String::new();
 
-        for (index, ann) in ordered.iter().enumerate() {
-            export_annotation(&mut output, ann, index + 1);
-            output.push('\n');
+        // Open <annotations> tag
+        if source_name == "[stdin]" {
+            output.push_str(&format!(
+                "<annotations source=\"stdin\" total=\"{count}\">\n"
+            ));
+        } else {
+            output.push_str(&format!(
+                "<annotations file=\"{source_name}\" total=\"{count}\">\n"
+            ));
         }
 
-        output.push_str("---\n");
+        let plural = if count == 1 {
+            "annotation"
+        } else {
+            "annotations"
+        };
+        output.push_str(&format!(
+            "The reviewer left {count} {plural} on this document.\n"
+        ));
+
+        for ann in &ordered {
+            output.push('\n');
+            export_annotation(&mut output, ann);
+        }
+
+        output.push_str("\n</annotations>\n");
         output
     }
 }
 
-fn export_annotation(output: &mut String, ann: &Annotation, number: usize) {
-    output.push_str(&format!("## {number}. "));
+fn line_attr(ann: &Annotation) -> String {
+    match ann.range {
+        Some(range) => {
+            let start = range.start.line + 1;
+            let end = range.end.line + 1;
+            if start == end {
+                format!(" line=\"{start}\"")
+            } else {
+                format!(" lines=\"{start}-{end}\"")
+            }
+        }
+        None => String::new(),
+    }
+}
+
+fn export_annotation(output: &mut String, ann: &Annotation) {
+    let lines = line_attr(ann);
 
     match ann.annotation_type {
         AnnotationType::Deletion => {
-            output.push_str("Remove this\n");
-            output.push_str(&format!("```\n{}\n```\n", ann.selected_text));
-            output.push_str("> I don't want this in the plan.\n");
-        }
-        AnnotationType::Insertion => {
-            output.push_str("Add this\n");
-            output.push_str(&format!("```\n{}\n```\n", ann.text));
-        }
-        AnnotationType::Replacement => {
-            output.push_str("Change this\n");
-            output.push_str(&format!("**From:**\n```\n{}\n```\n", ann.selected_text));
-            output.push_str(&format!("**To:**\n```\n{}\n```\n", ann.text));
+            output.push_str(&format!("<delete{lines}>\n"));
+            output.push_str(&ann.selected_text);
+            output.push_str("\n</delete>\n");
         }
         AnnotationType::Comment => {
-            output.push_str(&format!("Feedback on: \"{}\"\n", ann.selected_text));
-            output.push_str(&format!("> {}\n", ann.text));
+            output.push_str(&format!("<comment{lines}>\n"));
+            output.push_str(&ann.text);
+            output.push_str("\n</comment>\n");
+        }
+        AnnotationType::Replacement => {
+            output.push_str(&format!("<replace{lines}>\n"));
+            output.push_str("<original>\n");
+            output.push_str(&ann.selected_text);
+            output.push_str("\n</original>\n");
+            output.push_str("<replacement>\n");
+            output.push_str(&ann.text);
+            output.push_str("\n</replacement>\n");
+            output.push_str("</replace>\n");
+        }
+        AnnotationType::Insertion => {
+            output.push_str(&format!("<insert{lines}>\n"));
+            output.push_str(&ann.text);
+            output.push_str("\n</insert>\n");
         }
         AnnotationType::GlobalComment => {
-            output.push_str("General feedback about the plan\n");
-            output.push_str(&format!("> {}\n", ann.text));
+            output.push_str("<comment>\n");
+            output.push_str(&ann.text);
+            output.push_str("\n</comment>\n");
         }
     }
 }
@@ -69,8 +107,8 @@ mod tests {
     use super::*;
     use crate::annotation::types::{Annotation, TextPosition, TextRange};
 
-    fn exporter() -> PlannotatorExporter {
-        PlannotatorExporter
+    fn exporter() -> AgentExporter {
+        AgentExporter
     }
 
     fn range(sl: usize, sc: usize, el: usize, ec: usize) -> TextRange {
@@ -91,7 +129,7 @@ mod tests {
     #[test]
     fn export_empty_store() {
         let store = AnnotationStore::new();
-        assert_eq!(exporter().export(&store), "No changes detected.");
+        assert_eq!(exporter().export(&store, "test.md"), "No annotations.");
     }
 
     #[test]
@@ -99,13 +137,11 @@ mod tests {
         let mut store = AnnotationStore::new();
         store.add(Annotation::deletion(range(0, 0, 0, 10), "remove me".into()));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("# Plan Feedback"));
-        assert!(result.contains("1 piece of feedback"));
-        assert!(result.contains("## 1. Remove this"));
-        assert!(result.contains("```\nremove me\n```"));
-        assert!(result.contains("> I don't want this in the plan."));
-        assert!(result.ends_with("---\n"));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<annotations file=\"test.md\" total=\"1\">"));
+        assert!(result.contains("1 annotation on this document."));
+        assert!(result.contains("<delete line=\"1\">\nremove me\n</delete>"));
+        assert!(result.contains("</annotations>"));
     }
 
     #[test]
@@ -117,9 +153,8 @@ mod tests {
             "needs more detail".into(),
         ));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("## 1. Feedback on: \"hello\""));
-        assert!(result.contains("> needs more detail"));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<comment line=\"1\">\nneeds more detail\n</comment>"));
     }
 
     #[test]
@@ -131,10 +166,11 @@ mod tests {
             "new text".into(),
         ));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("## 1. Change this"));
-        assert!(result.contains("**From:**\n```\nold text\n```"));
-        assert!(result.contains("**To:**\n```\nnew text\n```"));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<replace line=\"1\">"));
+        assert!(result.contains("<original>\nold text\n</original>"));
+        assert!(result.contains("<replacement>\nnew text\n</replacement>"));
+        assert!(result.contains("</replace>"));
     }
 
     #[test]
@@ -145,9 +181,8 @@ mod tests {
             "inserted content".into(),
         ));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("## 1. Add this"));
-        assert!(result.contains("```\ninserted content\n```"));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<insert line=\"1\">\ninserted content\n</insert>"));
     }
 
     #[test]
@@ -155,15 +190,57 @@ mod tests {
         let mut store = AnnotationStore::new();
         store.add(Annotation::global_comment("overall looks good".into()));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("## 1. General feedback about the plan"));
-        assert!(result.contains("> overall looks good"));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<comment>\noverall looks good\n</comment>"));
+    }
+
+    // ───── Line number formatting ─────
+
+    #[test]
+    fn export_multiline_range() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::deletion(
+            range(4, 0, 6, 10),
+            "three lines".into(),
+        ));
+
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<delete lines=\"5-7\">"));
+    }
+
+    #[test]
+    fn export_single_line_range() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::deletion(range(9, 0, 9, 5), "one line".into()));
+
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<delete line=\"10\">"));
+    }
+
+    // ───── Source name handling ─────
+
+    #[test]
+    fn export_stdin_source() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::global_comment("a note".into()));
+
+        let result = exporter().export(&store, "[stdin]");
+        assert!(result.contains("<annotations source=\"stdin\" total=\"1\">"));
+    }
+
+    #[test]
+    fn export_file_source() {
+        let mut store = AnnotationStore::new();
+        store.add(Annotation::global_comment("a note".into()));
+
+        let result = exporter().export(&store, "src/main.rs");
+        assert!(result.contains("<annotations file=\"src/main.rs\" total=\"1\">"));
     }
 
     // ───── Combined output ─────
 
     #[test]
-    fn export_multiple_annotations_numbered_correctly() {
+    fn export_multiple_annotations() {
         let mut store = AnnotationStore::new();
         store.add(Annotation::deletion(range(0, 0, 0, 5), "first".into()));
         store.add(Annotation::comment(
@@ -173,11 +250,9 @@ mod tests {
         ));
         store.add(Annotation::global_comment("general note".into()));
 
-        let result = exporter().export(&store);
-        assert!(result.contains("3 pieces of feedback"));
-        assert!(result.contains("## 1."));
-        assert!(result.contains("## 2."));
-        assert!(result.contains("## 3."));
+        let result = exporter().export(&store, "test.md");
+        assert!(result.contains("total=\"3\""));
+        assert!(result.contains("3 annotations on this document."));
     }
 
     // ───── Ordering ─────
@@ -198,28 +273,15 @@ mod tests {
             "first in line".into(),
         ));
 
-        let result = exporter().export(&store);
+        let result = exporter().export(&store, "test.md");
 
-        // Verify ordering: line 1 col 0, line 1 col 10, line 5, then global
         let pos_first = result.find("first in line").unwrap();
-        let pos_second = result.find("second in line").unwrap();
+        let pos_second = result.find("note").unwrap();
         let pos_later = result.find("later line").unwrap();
-        let pos_global = result.find("General feedback").unwrap();
+        let pos_global = result.find("global").unwrap();
 
         assert!(pos_first < pos_second);
         assert!(pos_second < pos_later);
         assert!(pos_later < pos_global);
-    }
-
-    #[test]
-    fn export_plural_grammar() {
-        let mut store = AnnotationStore::new();
-        store.add(Annotation::global_comment("only one".into()));
-        let result = exporter().export(&store);
-        assert!(result.contains("1 piece of feedback"));
-
-        store.add(Annotation::global_comment("two now".into()));
-        let result = exporter().export(&store);
-        assert!(result.contains("2 pieces of feedback"));
     }
 }

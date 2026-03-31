@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 use ratatui::{Frame, layout::Rect};
 
-use crate::annotation::export::{AnnotationExporter, PlannotatorExporter};
+use crate::annotation::export::{AgentExporter, AnnotationExporter};
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::TextRange;
 use crate::app::ExitResult;
@@ -412,7 +412,7 @@ impl AppState {
     fn process_app_command(&mut self, cmd: AppCommand) {
         match cmd {
             AppCommand::Quit(QuitKind::WithOutput) => {
-                let output = PlannotatorExporter.export(&self.annotations);
+                let output = AgentExporter.export(&self.annotations, &self.source_name);
                 self.exit_result = Some(ExitResult::QuitWithOutput(output));
                 self.should_quit = true;
             }
@@ -1244,7 +1244,7 @@ mod tests {
 
         match harness.state_mut().take_exit_result() {
             Some(ExitResult::QuitWithOutput(output)) => {
-                assert_eq!(output, "No changes detected.");
+                assert_eq!(output, "No annotations.");
             }
             _ => panic!("expected quit with output"),
         }
