@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType};
+use crate::app::app_state::AppState;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
@@ -22,7 +23,6 @@ use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
-use app_state::AppState;
 
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
