@@ -148,6 +148,18 @@ anno --theme "$(bat --config-dir)/themes/Catppuccin Mocha.tmTheme" notes.rs
 
 On exit with `:q`, annotations are exported in the configured format. The default is `agent`, which prints XML-like markup to stdout unless `--output-file` is set. Use `:q!` to quit without output.
 
+## Pi Extension Package
+
+This repository also includes a repo-local Pi package scaffold for direct anno review integration at `pi/anno-review/`.
+
+Preferred install path:
+
+```bash
+pi install ./pi/anno-review
+```
+
+That package layout keeps Pi-specific `package.json` metadata and future extension dependencies out of the Cargo workspace root. See [`pi/anno-review/README.md`](pi/anno-review/README.md) for the chosen layout, planned `/anno-review` command and `anno_review` tool names, and installation options for copy/symlink workflows.
+
 ## Modes
 
 anno uses vim-inspired modal editing:
