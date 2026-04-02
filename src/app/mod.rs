@@ -18,7 +18,7 @@ use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_inspect_overlay::AnnotationInspectOverlay;
-use crate::tui::annotation_list_panel::PANEL_WIDTH;
+use crate::tui::annotation_list_panel::{self, PANEL_WIDTH};
 use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
@@ -169,9 +169,23 @@ impl App {
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            let is_focused = self.state.mode() == Mode::AnnotationList;
+            // Sync the visible height so scroll calculations use the real
+            // panel size. The inner height accounts for the left border (1 col)
+            // and vertical padding (1 row top + 1 row bottom).
+            let inner_height = panel_area.height.saturating_sub(2);
             self.state
-                .render_annotation_list_panel(frame, panel_area, &self.theme, is_focused);
+                .annotation_list_panel_mut()
+                .set_visible_height(inner_height);
+
+            let is_focused = self.state.mode() == Mode::AnnotationList;
+            annotation_list_panel::render_annotation_list_panel(
+                frame,
+                panel_area,
+                self.state.annotation_list_panel(),
+                self.state.annotations(),
+                &self.theme,
+                is_focused,
+            );
         }
 
         // -- Main document area --

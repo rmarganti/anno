@@ -1,5 +1,3 @@
-use ratatui::{Frame, layout::Rect};
-
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::{Annotation, TextRange};
 use crate::app::ExitResult;
@@ -9,12 +7,11 @@ use crate::keybinds::handler::KeybindHandler;
 use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
 use crate::tui::annotation_controller::AnnotationController;
-use crate::tui::annotation_list_panel::AnnotationListPanel;
+use crate::tui::annotation_list_panel::AnnotationListState;
 use crate::tui::command_line::CommandLine;
 use crate::tui::confirm_dialog::ConfirmDialog;
 use crate::tui::document_view::DocumentView;
 use crate::tui::renderer;
-use crate::tui::theme::UiTheme;
 use crate::tui::viewport::CursorPosition;
 
 pub(super) const ANNOTATION_INSPECT_PAGE_SCROLL_LINES: u16 = 8;
@@ -41,8 +38,8 @@ pub struct AppState {
     pub(super) document_view: DocumentView,
     /// Annotation creation state machine.
     pub(super) annotation_controller: AnnotationController,
-    /// Annotation list sidebar panel.
-    pub(super) annotation_list_panel: AnnotationListPanel,
+    /// Annotation list sidebar panel state.
+    pub(super) annotation_list_panel: AnnotationListState,
     /// Active confirmation dialog overlay, if any.
     pub(super) confirm_dialog: Option<ConfirmDialog>,
     /// Whether the annotation inspect overlay is visible.
@@ -112,7 +109,7 @@ impl AppState {
             exit_result: None,
             document_view,
             annotation_controller: AnnotationController::new(),
-            annotation_list_panel: AnnotationListPanel::new(),
+            annotation_list_panel: AnnotationListState::new(),
             confirm_dialog: None,
             annotation_inspect_visible: false,
             annotation_inspect_scroll_offset: 0,
@@ -228,20 +225,12 @@ impl AppState {
         self.confirm_dialog.as_ref()
     }
 
-    #[cfg(any(test, doctest))]
-    pub fn annotation_list_panel(&self) -> &AnnotationListPanel {
+    pub fn annotation_list_panel(&self) -> &AnnotationListState {
         &self.annotation_list_panel
     }
 
-    pub fn render_annotation_list_panel(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        theme: &UiTheme,
-        is_focused: bool,
-    ) {
-        self.annotation_list_panel
-            .render(frame, area, &self.annotations, theme, is_focused);
+    pub fn annotation_list_panel_mut(&mut self) -> &mut AnnotationListState {
+        &mut self.annotation_list_panel
     }
 
     pub fn selected_annotation_range(&self) -> Option<TextRange> {
