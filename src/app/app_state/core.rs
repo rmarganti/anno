@@ -6,7 +6,7 @@ use crate::highlight::StyledSpan;
 use crate::keybinds::handler::KeybindHandler;
 use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
-use crate::tui::annotation_list_panel::AnnotationListState;
+use crate::tui::annotation_list_panel::{AnnotationListState, PANEL_WIDTH};
 use crate::tui::confirm_dialog::ConfirmDialog;
 use crate::tui::document_view::DocumentViewState;
 use crate::tui::input_box::InputBox;
@@ -74,6 +74,8 @@ pub struct AppState {
     pub(super) overlay_area: (u16, u16),
     /// Whether the current terminal width can show the annotation list panel.
     pub(super) annotation_panel_available: bool,
+    /// Number of annotation rows visible inside the panel's current layout.
+    pub(super) annotation_list_visible_height: u16,
 }
 
 impl AppState {
@@ -140,6 +142,10 @@ impl AppState {
             help_scroll_offset: 0,
             overlay_area: (80, 23),
             annotation_panel_available: true,
+            annotation_list_visible_height:
+                crate::tui::annotation_list_panel::visible_content_height(
+                    ratatui::layout::Rect::new(0, 0, PANEL_WIDTH, 23),
+                ),
         }
     }
 
@@ -224,7 +230,11 @@ impl AppState {
     }
 
     pub fn annotation_list_visible_height(&self) -> u16 {
-        self.document_view.viewport_height().saturating_sub(2) as u16
+        self.annotation_list_visible_height
+    }
+
+    pub(crate) fn set_annotation_list_visible_height(&mut self, visible_height: u16) {
+        self.annotation_list_visible_height = visible_height;
     }
 
     pub(crate) fn set_overlay_area(&mut self, width: u16, height: u16) {

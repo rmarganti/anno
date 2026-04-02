@@ -136,6 +136,14 @@ impl App {
 
         let [main_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+        self.state.set_annotation_list_visible_height(
+            annotation_list_panel::visible_content_height(ratatui::layout::Rect::new(
+                0,
+                0,
+                PANEL_WIDTH,
+                main_area.height,
+            )),
+        );
 
         // Split main_area into panel + document when the panel is shown.
         let (panel_area, doc_area) = if show_panel {

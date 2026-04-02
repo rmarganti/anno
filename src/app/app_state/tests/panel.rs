@@ -1,4 +1,6 @@
 use super::*;
+use crate::tui::annotation_list_panel::{PANEL_WIDTH, visible_content_height};
+use ratatui::layout::Rect;
 
 #[test]
 fn tab_focuses_annotation_list_mode() {
@@ -221,4 +223,23 @@ fn confirm_dialog_delete_keeps_selection_on_same_list_index() {
             .selected_annotation_id(),
         Some(expected_id)
     );
+}
+
+#[test]
+fn annotation_list_navigation_uses_layout_derived_visible_height() {
+    let mut harness = harness("a\nb\nc\nd\ne\nf\ng");
+    harness
+        .state_mut()
+        .set_annotation_list_visible_height(visible_content_height(Rect::new(
+            0,
+            0,
+            PANEL_WIDTH,
+            4,
+        )));
+    harness.keys("vldjvldjvldjvldjvld");
+
+    harness.keys("<Tab>jjj");
+
+    assert_eq!(harness.state().annotation_list_visible_height(), 2);
+    assert_eq!(harness.state().annotation_list_panel().scroll_offset, 2);
 }

@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::Rect;
 
 use super::AppState;
 use crate::keybinds::mode::Mode;
+use crate::tui::annotation_list_panel::{PANEL_WIDTH, visible_content_height};
 
 pub(crate) struct AppTestHarness {
     state: AppState,
@@ -13,6 +15,12 @@ impl AppTestHarness {
     pub(crate) fn new(content: &str) -> Self {
         let mut state = AppState::new_plain("[test]".to_string(), content.to_string());
         state.set_overlay_area(80, 23);
+        state.set_annotation_list_visible_height(visible_content_height(Rect::new(
+            0,
+            0,
+            PANEL_WIDTH,
+            23,
+        )));
         state.document_view_mut().update_dimensions(80, 24);
 
         Self { state }

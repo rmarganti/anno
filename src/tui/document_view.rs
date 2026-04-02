@@ -56,10 +56,6 @@ impl DocumentViewState {
         self.viewport.word_wrap
     }
 
-    pub fn viewport_height(&self) -> usize {
-        self.viewport.height
-    }
-
     /// Handle a movement or visual-mode action. Returns `true` if consumed.
     pub fn handle_action(&mut self, action: &Action) -> bool {
         match action {

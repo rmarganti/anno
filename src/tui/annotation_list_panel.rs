@@ -20,6 +20,7 @@ const EMPTY_STATE_LINES: [&str; 4] = [
     "Select text and press d, c, or r",
     "to create an annotation.",
 ];
+const PANEL_VERTICAL_PADDING: u16 = 1;
 
 /// State for the annotation list sidebar panel.
 #[derive(Debug)]
@@ -177,6 +178,10 @@ impl AnnotationListState {
     }
 }
 
+pub fn visible_content_height(area: Rect) -> u16 {
+    content_area(area).height
+}
+
 /// Render the annotation list panel into the given area.
 pub fn render_annotation_list_panel(
     frame: &mut Frame,
@@ -194,7 +199,7 @@ pub fn render_annotation_list_panel(
         } else {
             theme.panel_border
         });
-    let inner = vertical_padding(block.inner(area), 1);
+    let inner = content_area(area);
     frame.render_widget(block, area);
 
     let ordered = store.ordered();
@@ -295,6 +300,11 @@ pub fn render_annotation_list_panel(
     }
 
     render_scroll_indicators(frame, inner, theme, has_items_above, has_items_below);
+}
+
+fn content_area(area: Rect) -> Rect {
+    let block = Block::default().borders(Borders::LEFT);
+    vertical_padding(block.inner(area), PANEL_VERTICAL_PADDING)
 }
 
 fn vertical_padding(area: Rect, padding: u16) -> Rect {
@@ -920,6 +930,28 @@ mod tests {
         assert_ne!(
             unfocused.cell((5, 1)).unwrap().bg,
             focused.cell((5, 1)).unwrap().bg
+        );
+    }
+
+    #[test]
+    fn visible_content_height_matches_rendered_row_capacity() {
+        let (store, ids) = make_store_with_deletions(20);
+        let mut state = AnnotationListState::new();
+        let panel_area = Rect::new(0, 0, 36, 7);
+        let visible_height = visible_content_height(panel_area);
+        state.set_selected_annotation_id(ids[0]);
+
+        for _ in 0..visible_height {
+            state.move_selection_down(&store, visible_height);
+        }
+
+        let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
+
+        assert_eq!(visible_height, 5);
+        assert_eq!(state.scroll_offset, 1);
+        assert!(
+            output.contains("L6 del5"),
+            "Expected helper-derived viewport to keep the selected row visible: {output}"
         );
     }
 
