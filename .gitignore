@@ -9,3 +9,7 @@
 
 # AI tools. Not ready to commit
 ralph.sh
+
+# Used by harness plugins
+node_modules
+package-lock.json
