@@ -154,6 +154,12 @@ This repository also includes a Pi extension for running anno reviews directly f
 
 For installation, usage, requirements, and limitations, see [`pi/anno-review/README.md`](pi/anno-review/README.md).
 
+## OpenCode TUI Plugin
+
+This repository also includes an OpenCode TUI plugin for running anno reviews directly from the OpenCode slash-command prompt.
+
+For installation, usage, requirements, limitations, and validation steps, see [`opencode/anno-review/README.md`](opencode/anno-review/README.md).
+
 ## Modes
 
 anno uses vim-inspired modal editing:
