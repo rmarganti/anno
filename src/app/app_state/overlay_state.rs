@@ -97,8 +97,11 @@ impl AppState {
         if self.annotations.delete(id)
             && let Some(deleted_index) = deleted_index
         {
-            self.annotation_list_panel
-                .reconcile_after_deletion(&self.annotations, deleted_index);
+            self.annotation_list_panel.reconcile_after_deletion(
+                &self.annotations,
+                deleted_index,
+                self.annotation_list_visible_height(),
+            );
         }
     }
 
@@ -106,12 +109,12 @@ impl AppState {
         match self.keybinds.handle_annotation_inspect(key_event) {
             Action::MoveDown => {
                 self.annotation_list_panel
-                    .move_selection_down(&self.annotations);
+                    .move_selection_down(&self.annotations, self.annotation_list_visible_height());
                 self.annotation_inspect_scroll_offset = 0;
             }
             Action::MoveUp => {
                 self.annotation_list_panel
-                    .move_selection_up(&self.annotations);
+                    .move_selection_up(&self.annotations, self.annotation_list_visible_height());
                 self.annotation_inspect_scroll_offset = 0;
             }
             Action::ScrollOverlayDown => self.scroll_annotation_inspect_down(1),

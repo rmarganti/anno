@@ -46,12 +46,12 @@ impl AppState {
         match action {
             Action::MoveDown => {
                 self.annotation_list_panel
-                    .move_selection_down(&self.annotations);
+                    .move_selection_down(&self.annotations, self.annotation_list_visible_height());
                 true
             }
             Action::MoveUp => {
                 self.annotation_list_panel
-                    .move_selection_up(&self.annotations);
+                    .move_selection_up(&self.annotations, self.annotation_list_visible_height());
                 true
             }
             Action::JumpToAnnotation => {

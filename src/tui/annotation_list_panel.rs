@@ -21,16 +21,12 @@ const EMPTY_STATE_LINES: [&str; 4] = [
     "to create an annotation.",
 ];
 
-const DEFAULT_VISIBLE_HEIGHT: u16 = 8;
-
 /// State for the annotation list sidebar panel.
 #[derive(Debug)]
 pub struct AnnotationListState {
     pub visible: bool,
     pub selected_id: Option<Uuid>,
     pub scroll_offset: usize,
-    /// Cached visible height from the last render, used for scroll calculations.
-    visible_height: u16,
 }
 
 impl Default for AnnotationListState {
@@ -45,13 +41,7 @@ impl AnnotationListState {
             visible: true,
             selected_id: None,
             scroll_offset: 0,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         }
-    }
-
-    /// Update the cached visible height (called during render).
-    pub fn set_visible_height(&mut self, height: u16) {
-        self.visible_height = height;
     }
 
     /// Toggle panel visibility.
@@ -75,7 +65,7 @@ impl AnnotationListState {
     }
 
     /// Initialize selection to the first annotation when the panel first gains focus.
-    pub fn ensure_selection_initialized(&mut self, store: &AnnotationStore) {
+    pub fn ensure_selection_initialized(&mut self, store: &AnnotationStore, visible_height: u16) {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
@@ -88,11 +78,11 @@ impl AnnotationListState {
             self.selected_id = Some(ordered[0].id);
         }
 
-        self.ensure_visible(&ordered, self.visible_height);
+        self.ensure_visible(&ordered, visible_height);
     }
 
     /// Move the selection down by one in the ordered list.
-    pub fn move_selection_down(&mut self, store: &AnnotationStore) {
+    pub fn move_selection_down(&mut self, store: &AnnotationStore, visible_height: u16) {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
@@ -109,11 +99,11 @@ impl AnnotationListState {
             self.selected_id = Some(ordered[next_idx].id);
         }
 
-        self.ensure_visible(&ordered, self.visible_height);
+        self.ensure_visible(&ordered, visible_height);
     }
 
     /// Move the selection up by one in the ordered list.
-    pub fn move_selection_up(&mut self, store: &AnnotationStore) {
+    pub fn move_selection_up(&mut self, store: &AnnotationStore, visible_height: u16) {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
@@ -130,11 +120,16 @@ impl AnnotationListState {
             self.selected_id = Some(ordered[next_idx].id);
         }
 
-        self.ensure_visible(&ordered, self.visible_height);
+        self.ensure_visible(&ordered, visible_height);
     }
 
     /// Recover selection after deleting the currently selected annotation.
-    pub fn reconcile_after_deletion(&mut self, store: &AnnotationStore, deleted_index: usize) {
+    pub fn reconcile_after_deletion(
+        &mut self,
+        store: &AnnotationStore,
+        deleted_index: usize,
+        visible_height: u16,
+    ) {
         let ordered = store.ordered();
 
         if ordered.is_empty() {
@@ -146,7 +141,7 @@ impl AnnotationListState {
         let next_idx = deleted_index.min(ordered.len() - 1);
         self.selected_id = Some(ordered[next_idx].id);
 
-        self.ensure_visible(&ordered, self.visible_height);
+        self.ensure_visible(&ordered, visible_height);
     }
 
     /// Resolve `selected_id` to an index in the ordered list.
@@ -547,7 +542,7 @@ mod tests {
     fn move_down_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
-        state.move_selection_down(&store);
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
@@ -555,7 +550,7 @@ mod tests {
     fn move_up_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
-        state.move_selection_up(&store);
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
@@ -564,7 +559,7 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
 
-        state.ensure_selection_initialized(&store);
+        state.ensure_selection_initialized(&store, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
@@ -575,7 +570,7 @@ mod tests {
         let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[1]);
 
-        state.ensure_selection_initialized(&store);
+        state.ensure_selection_initialized(&store, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -587,10 +582,9 @@ mod tests {
             visible: true,
             selected_id: Some(Uuid::new_v4()),
             scroll_offset: 4,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         };
 
-        state.ensure_selection_initialized(&store);
+        state.ensure_selection_initialized(&store, 8);
 
         assert!(state.selected_annotation_id().is_none());
         assert_eq!(state.scroll_offset, 0);
@@ -601,7 +595,7 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[2]);
-        state.move_selection_down(&store);
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
@@ -610,7 +604,7 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
-        state.move_selection_up(&store);
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
@@ -619,9 +613,9 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
-        state.move_selection_down(&store);
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
-        state.move_selection_down(&store);
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
@@ -630,9 +624,9 @@ mod tests {
         let (store, ids) = make_store_with_deletions(3);
         let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[2]);
-        state.move_selection_up(&store);
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
-        state.move_selection_up(&store);
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
@@ -645,7 +639,7 @@ mod tests {
         state.set_selected_annotation_id(ids[1]);
         store.delete(ids[1]);
 
-        state.reconcile_after_deletion(&store, 1);
+        state.reconcile_after_deletion(&store, 1, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
@@ -657,7 +651,7 @@ mod tests {
         state.set_selected_annotation_id(ids[2]);
         store.delete(ids[2]);
 
-        state.reconcile_after_deletion(&store, 2);
+        state.reconcile_after_deletion(&store, 2, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -669,7 +663,7 @@ mod tests {
         state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
 
-        state.reconcile_after_deletion(&store, 0);
+        state.reconcile_after_deletion(&store, 0, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -681,7 +675,7 @@ mod tests {
         state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
 
-        state.reconcile_after_deletion(&store, 0);
+        state.reconcile_after_deletion(&store, 0, 8);
 
         assert!(state.selected_annotation_id().is_none());
     }
@@ -690,9 +684,9 @@ mod tests {
     fn empty_store_move_does_nothing() {
         let store = AnnotationStore::new();
         let mut state = AnnotationListState::default();
-        state.move_selection_down(&store);
+        state.move_selection_down(&store, 8);
         assert!(state.selected_annotation_id().is_none());
-        state.move_selection_up(&store);
+        state.move_selection_up(&store, 8);
         assert!(state.selected_annotation_id().is_none());
     }
 
@@ -703,7 +697,6 @@ mod tests {
             visible: true,
             selected_id: Some(ids[0]),
             scroll_offset: 2,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         };
 
         state.ensure_visible(&store.ordered(), 3);
@@ -718,7 +711,6 @@ mod tests {
             visible: true,
             selected_id: Some(ids[4]),
             scroll_offset: 0,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         };
 
         state.ensure_visible(&store.ordered(), 3);
@@ -733,7 +725,6 @@ mod tests {
             visible: true,
             selected_id: Some(ids[2]),
             scroll_offset: 1,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         };
 
         state.ensure_visible(&store.ordered(), 3);
@@ -748,7 +739,6 @@ mod tests {
             visible: true,
             selected_id: Some(Uuid::new_v4()),
             scroll_offset: 4,
-            visible_height: DEFAULT_VISIBLE_HEIGHT,
         };
 
         state.ensure_visible(&store.ordered(), 3);
@@ -938,11 +928,9 @@ mod tests {
         let (store, ids) = make_store_with_deletions(20);
         let mut state = AnnotationListState::new();
         state.set_selected_annotation_id(ids[0]);
-        // Simulate the real render height: 7 total - 2 padding = 5 inner.
-        state.set_visible_height(5);
 
         for _ in 0..6 {
-            state.move_selection_down(&store);
+            state.move_selection_down(&store, 5);
         }
 
         let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
@@ -967,16 +955,14 @@ mod tests {
         let (store, ids) = make_store_with_deletions(20);
         let mut state = AnnotationListState::new();
         state.set_selected_annotation_id(ids[0]);
-        // Simulate the real render height: 7 total - 2 padding = 5 inner.
-        state.set_visible_height(5);
 
         for _ in 0..8 {
-            state.move_selection_down(&store);
+            state.move_selection_down(&store, 5);
         }
         let _ = render_store_to_lines(36, 7, &state, &store, false);
 
         for _ in 0..5 {
-            state.move_selection_up(&store);
+            state.move_selection_up(&store, 5);
         }
 
         let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
@@ -1007,10 +993,9 @@ mod tests {
             visible: true,
             selected_id: Some(ids[0]),
             scroll_offset: 4,
-            visible_height: 5,
         };
         // Trigger ensure_visible via a mutation to clamp the scroll_offset
-        single_state.ensure_selection_initialized(&store);
+        single_state.ensure_selection_initialized(&store, 5);
 
         let output = render_store_to_lines(36, 7, &single_state, &store, false).join("\n");
 

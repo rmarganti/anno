@@ -191,18 +191,9 @@ impl AppState {
         self.annotation_inspect_scroll_offset
     }
 
-    pub fn annotation_inspect_scroll_offset_mut(&mut self) -> &mut u16 {
-        &mut self.annotation_inspect_scroll_offset
-    }
-
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn help_scroll_offset(&self) -> u16 {
         self.help_scroll_offset
-    }
-
-    #[allow(dead_code)]
-    pub fn help_scroll_offset_mut(&mut self) -> &mut u16 {
-        &mut self.help_scroll_offset
     }
 
     pub fn is_panel_visible(&self) -> bool {
@@ -229,6 +220,10 @@ impl AppState {
         &self.document_view
     }
 
+    pub fn annotation_list_visible_height(&self) -> u16 {
+        self.document_view.viewport_height().saturating_sub(2) as u16
+    }
+
     pub fn document_view_mut(&mut self) -> &mut DocumentViewState {
         &mut self.document_view
     }
@@ -248,10 +243,6 @@ impl AppState {
 
     pub fn annotation_list_panel(&self) -> &AnnotationListState {
         &self.annotation_list_panel
-    }
-
-    pub fn annotation_list_panel_mut(&mut self) -> &mut AnnotationListState {
-        &mut self.annotation_list_panel
     }
 
     pub fn selected_annotation_range(&self) -> Option<TextRange> {

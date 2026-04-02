@@ -4,7 +4,7 @@ use crate::keybinds::mode::Mode;
 impl AppState {
     pub(super) fn initialize_annotation_list_selection(&mut self) {
         self.annotation_list_panel
-            .ensure_selection_initialized(&self.annotations);
+            .ensure_selection_initialized(&self.annotations, self.annotation_list_visible_height());
     }
 
     pub(super) fn hide_annotation_list_panel(&mut self) {

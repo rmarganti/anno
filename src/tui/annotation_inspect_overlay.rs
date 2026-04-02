@@ -29,7 +29,7 @@ impl AnnotationInspectOverlay {
     }
 
     /// Render the inspect overlay centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: &mut u16) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: u16) {
         let box_width = ((area.width as usize * 4) / 5)
             .max(MIN_WIDTH as usize)
             .min(area.width as usize) as u16;
@@ -70,9 +70,7 @@ impl AnnotationInspectOverlay {
         let content_lines = self.content_lines(theme, inner.width as usize);
         let visible_height = content_height as usize;
         let max_offset = content_lines.len().saturating_sub(visible_height);
-        *scroll_offset = (*scroll_offset as usize).min(max_offset) as u16;
-
-        let offset = *scroll_offset as usize;
+        let offset = (scroll_offset as usize).min(max_offset);
         let has_lines_above = offset > 0;
         let has_lines_below = offset + visible_height < content_lines.len();
 
@@ -311,7 +309,7 @@ mod tests {
         width: u16,
         height: u16,
         overlay: &AnnotationInspectOverlay,
-        scroll_offset: &mut u16,
+        scroll_offset: u16,
     ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -345,7 +343,7 @@ mod tests {
     }
 
     fn render_to_lines(width: u16, height: u16, overlay: &AnnotationInspectOverlay) -> Vec<String> {
-        render_to_lines_with_offset(width, height, overlay, &mut 0)
+        render_to_lines_with_offset(width, height, overlay, 0)
     }
 
     #[test]
@@ -422,7 +420,7 @@ mod tests {
         ));
 
         let top = render_to_lines(40, 12, &overlay).join("\n");
-        let scrolled = render_to_lines_with_offset(40, 12, &overlay, &mut 4).join("\n");
+        let scrolled = render_to_lines_with_offset(40, 12, &overlay, 4).join("\n");
 
         assert!(top.contains('▼'), "Expected down indicator at top: {top}");
         assert!(
@@ -455,10 +453,8 @@ mod tests {
             "line one\nline two\nline three\nline four\nline five\nline six".to_string(),
         ));
 
-        let mut offset = 999u16;
-        let output = render_to_lines_with_offset(40, 10, &overlay, &mut offset).join("\n");
+        let output = render_to_lines_with_offset(40, 10, &overlay, 999).join("\n");
 
-        assert!(offset < 999, "Expected offset to be clamped");
         assert!(!output.is_empty(), "Expected output after clamping");
     }
 }

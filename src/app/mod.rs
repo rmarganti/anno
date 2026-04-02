@@ -170,14 +170,6 @@ impl App {
 
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
-            // Sync the visible height so scroll calculations use the real
-            // panel size. The inner height accounts for the left border (1 col)
-            // and vertical padding (1 row top + 1 row bottom).
-            let inner_height = panel_area.height.saturating_sub(2);
-            self.state
-                .annotation_list_panel_mut()
-                .set_visible_height(inner_height);
-
             let is_focused = self.state.mode() == Mode::AnnotationList;
             annotation_list_panel::render_annotation_list_panel(
                 frame,
@@ -242,7 +234,7 @@ impl App {
                 frame,
                 main_area,
                 &self.theme,
-                self.state.annotation_inspect_scroll_offset_mut(),
+                self.state.annotation_inspect_scroll_offset(),
             );
         }
 
@@ -252,7 +244,7 @@ impl App {
                 frame,
                 main_area,
                 &self.theme,
-                self.state.help_scroll_offset_mut(),
+                self.state.help_scroll_offset(),
             );
         }
     }
