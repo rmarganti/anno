@@ -158,7 +158,7 @@ Preferred install path:
 pi install ./pi/anno-review
 ```
 
-That package layout keeps Pi-specific `package.json` metadata and future extension dependencies out of the Cargo workspace root. See [`pi/anno-review/README.md`](pi/anno-review/README.md) for the chosen layout, planned `/anno-review` command and `anno_review` tool names, and installation options for copy/symlink workflows.
+That package layout keeps Pi-specific `package.json` metadata and future extension dependencies out of the Cargo workspace root. See [`pi/anno-review/README.md`](pi/anno-review/README.md) for installation options plus the implemented `/anno-review` command and `anno_review` tool.
 
 ## Modes
 

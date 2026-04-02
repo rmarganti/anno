@@ -50,59 +50,79 @@ ln -sf "$(pwd)/pi/anno-review/index.ts" .pi/extensions/anno-review/index.ts
 
 Copying the file instead of symlinking also works, but symlinks are better during development because `/reload` can pick up edits from an auto-discovered extension location.
 
-## Naming decisions
-
-These names are reserved for the implementation tracked by the follow-up beads:
+## Exposed entrypoints
 
 - Package name: `anno-pi-review`
 - Slash command: `/anno-review`
-- Planned custom tool name: `anno_review`
+- Custom tool: `anno_review`
 
-The command should be the primary user entrypoint.
-The tool name is reserved for a future guarded interactive workflow so the LLM can invoke anno only when Pi is running with a TUI and direct terminal handoff is possible.
+The slash command is the primary human-facing entrypoint.
+The tool is intentionally guarded by its description and behavior for interactive use only.
 
-## Implementation plan for the follow-up extension
+## Implemented behavior
 
-The follow-up implementation should use the direct interactive-subprocess pattern documented in Pi's extension docs and examples:
+The extension now uses Pi's direct interactive-subprocess pattern:
 
-1. Expose `/anno-review` as the human-facing command.
-2. For interactive TUI sessions, use `ctx.ui.custom()` to access `tui.stop()` / `tui.start()`.
-3. Spawn `anno` with inherited stdio so it owns the terminal directly while Pi is suspended.
-4. Pass `--export-format json --output-file <temp-output>` so Pi can parse review results reliably after anno exits.
-5. Resume Pi's TUI, parse the JSON output, and surface the result back to the user and/or model.
+1. `ctx.ui.custom()` suspends Pi's TUI with `tui.stop()`.
+2. `anno` is launched with inherited stdio so it owns the terminal directly.
+3. The extension passes `--export-format json --output-file <temp-output>`.
+4. After anno exits, Pi's TUI is restored with `tui.start()`.
+5. The exported JSON is parsed and surfaced back to Pi.
+
+## Slash command usage
+
+Review an existing file:
+
+```bash
+/anno-review path/to/file.md
+/anno-review docs/api.md --syntax markdown
+/anno-review notes.txt --title "API review"
+```
+
+Behavior:
+
+- Relative paths resolve from `ctx.cwd`.
+- Successful reviews are sent back into the Pi conversation as a user message containing the structured JSON export.
+- If the agent is busy, the imported review is queued as a follow-up message.
+
+## Tool usage
+
+The `anno_review` tool supports both file review and generated-content review.
+
+Supported parameters:
+
+- `path`: review an existing file
+- `content`: write generated text to a temp file before opening anno
+- `fileName`: optional filename for generated content so anno can infer syntax from the extension
+- `syntax`: optional `anno --syntax` override
+- `title`: optional `anno --title` value
+
+Generated-content review is intended for agent-driven workflows that need a temporary review file instead of an existing path.
 
 ## File and temp-data strategy
 
-The implementation should support two inputs:
+The extension supports two inputs:
 
 - **Existing file review**: user supplies a path to an on-disk file.
 - **Generated content review**: the extension writes supplied content to a temp file before launching anno.
 
-Planned temp-file flow:
+Temp-file flow:
 
 1. Resolve any user-supplied path against `ctx.cwd`.
 2. For generated content, create a temp review file under the system temp directory.
 3. Create a second temp file for anno's `--output-file` JSON export.
 4. Run anno against the resolved real file or generated temp file.
 5. In a `finally` block, remove temp files created by the extension.
-6. If anno fails before producing output, return a clear error instead of pretending the review succeeded.
 
-## Working-directory-relative path behavior
+## Fallbacks and failure modes
 
-User-visible path handling should be based on `ctx.cwd`:
-
-- Relative paths passed to `/anno-review <path>` should resolve via `path.resolve(ctx.cwd, path)`.
-- The extension should invoke `anno` with the resolved absolute path for reliability.
-- Titles should default from the reviewed file basename, but allow explicit override.
-- Generated temp files should preserve a useful extension based on the requested syntax or source filename when possible.
-
-## Fallback expectations
-
-The future implementation should fail clearly in these cases:
+The extension fails clearly when:
 
 - `anno` is not on `PATH`
 - Pi is running without a TUI / without `ctx.hasUI`
 - the command/tool is asked to review a missing file
-- anno exits unsuccessfully or emits invalid JSON
+- anno exits unsuccessfully
+- anno exits without exporting JSON (for example after `:q!`)
+- anno emits invalid JSON
 
-In those cases the extension should explain why direct anno handoff is unavailable so agents can fall back to a normal in-chat review or the older tmux-based skill.
+In those cases the extension returns a clear explanation so users or agents can fall back to a normal in-chat review or the older tmux-based skill.
