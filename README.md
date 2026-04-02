@@ -150,7 +150,13 @@ On exit with `:q`, annotations are exported in the configured format. The defaul
 
 ## Pi Extension Package
 
-This repository also includes a repo-local Pi package scaffold for direct anno review integration at `pi/anno-review/`.
+This repository also includes a repo-local Pi package for direct anno review integration at `pi/anno-review/`.
+
+Prerequisites:
+
+- `anno` must be installed and available on `PATH`.
+- Pi must be running with an interactive TUI when you launch the review.
+- For package-based installation, run the install command from this repository root or point Pi at the same package path explicitly.
 
 Preferred install path:
 
@@ -158,7 +164,21 @@ Preferred install path:
 pi install ./pi/anno-review
 ```
 
-That package layout keeps Pi-specific `package.json` metadata and future extension dependencies out of the Cargo workspace root. See [`pi/anno-review/README.md`](pi/anno-review/README.md) for installation options plus the implemented `/anno-review` command and `anno_review` tool.
+Alternative extension-discovery paths are also supported by copying or symlinking `pi/anno-review/index.ts` into `~/.pi/agent/extensions/anno-review/` or `.pi/extensions/anno-review/`.
+
+The extension exposes:
+
+- `/anno-review` for interactive file review from the Pi chat
+- `anno_review` for guarded tool-driven review flows
+
+Interactive limitations and fallback behavior:
+
+- The direct integration requires Pi's interactive terminal UI; it does not run in headless or background-only sessions.
+- If `anno` is missing, Pi has no TUI, the file does not exist, anno exits unsuccessfully, or the review is quit without exported JSON (for example with `:q!`), the extension returns a clear failure so you can fall back to an in-chat review or the older tmux-based workflow.
+
+Compared with the older tmux review skill, the Pi extension suspends Pi's own TUI, runs `anno` directly in the current terminal, then restores Pi and imports the exported JSON review back into the conversation. The tmux skill instead requires an active tmux session and launches anno in a separate tmux window.
+
+That package layout keeps Pi-specific `package.json` metadata and future extension dependencies out of the Cargo workspace root. See [`pi/anno-review/README.md`](pi/anno-review/README.md) for detailed prerequisites, installation options, usage examples, limitations, and migration notes from the tmux-based skill.
 
 ## Modes
 

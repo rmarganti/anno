@@ -20,6 +20,14 @@ Why this layout:
 - `index.ts` is the extension entrypoint declared through `package.json -> pi.extensions`.
 - Future extension-only helper modules can live beside `index.ts` without affecting the Rust build.
 
+## Prerequisites
+
+Before using this extension:
+
+- Install `anno` and make sure the `anno` binary is available on `PATH`.
+- Run Pi in its interactive TUI. The extension needs terminal control so it can temporarily stop Pi, hand the terminal to anno, then restart Pi.
+- Keep this repository available locally if you want to install directly from `./pi/anno-review` or symlink back to the in-repo `index.ts`.
+
 ## Installation paths this package is designed to support
 
 ### 1. Local package install with Pi
@@ -114,7 +122,15 @@ Temp-file flow:
 4. Run anno against the resolved real file or generated temp file.
 5. In a `finally` block, remove temp files created by the extension.
 
-## Fallbacks and failure modes
+## Interactive limitations and fallback behavior
+
+This integration is intentionally interactive.
+
+Important limitations:
+
+- It only works when Pi has a live TUI (`ctx.hasUI`).
+- It is not suitable for headless/background execution where Pi cannot give terminal control to anno.
+- The slash command always reviews an on-disk file path; only the tool supports writing generated content to a temp file first.
 
 The extension fails clearly when:
 
@@ -126,3 +142,19 @@ The extension fails clearly when:
 - anno emits invalid JSON
 
 In those cases the extension returns a clear explanation so users or agents can fall back to a normal in-chat review or the older tmux-based skill.
+
+## Migrating from the tmux-based review skill
+
+The repository still includes the older [`skills/anno-tmux-review/`](../../skills/anno-tmux-review/) workflow. Use this table to choose between them:
+
+| Workflow | Best for | Requirements | How it launches anno | Review result |
+| --- | --- | --- | --- | --- |
+| Pi extension (`pi/anno-review`) | Pi users already working inside Pi's interactive TUI | `anno` on `PATH`, Pi TUI available | Suspends Pi and runs anno directly in the current terminal | JSON export is parsed and imported back into the Pi conversation |
+| tmux skill (`skills/anno-tmux-review`) | Agent workflows that need anno even when Pi cannot hand over the current terminal | `anno` on `PATH`, active tmux session (`$TMUX`) | Opens a separate tmux window and blocks until anno exits | Prints anno's default `agent` XML-like output to stdout |
+
+Migration guidance:
+
+1. Prefer `pi install ./pi/anno-review` when you want the smoothest Pi-native experience.
+2. Update any human instructions from `scripts/anno-review.sh <file>` to `/anno-review <path>` when the review starts from an existing file inside Pi.
+3. Keep the tmux skill as a fallback for non-TUI environments, remote automation, or sessions that already depend on tmux window management.
+4. Expect different output shapes: the extension imports JSON review data back into Pi, while the tmux skill emits the legacy `agent` format to stdout.
