@@ -14,9 +14,11 @@ use crossterm::event::KeyEvent;
 #[cfg(test)]
 use self::core::ANNOTATION_INSPECT_PAGE_SCROLL_LINES;
 pub(super) use self::core::AppState;
+use self::core::PendingAnnotation;
+use crate::annotation::types::{Annotation, TextPosition};
 use crate::keybinds::handler::Action;
 use crate::keybinds::mode::Mode;
-use crate::tui::annotation_controller::AnnotationAction;
+use crate::tui::input_box::InputBoxEvent;
 
 impl AppState {
     pub fn handle_key(&mut self, key_event: KeyEvent) {
@@ -163,7 +165,7 @@ impl AppState {
             Action::ExitToNormal => {
                 self.mode = Mode::Normal;
                 self.document_view.clear_visual();
-                self.annotation_controller.cancel();
+                self.cancel_pending_annotation();
             }
             _ => return false,
         }
@@ -194,33 +196,23 @@ impl AppState {
     }
 
     fn handle_visual_annotation_action(&mut self, action: Action) -> bool {
-        let annotation_action = match action {
-            Action::CreateDeletion => self
-                .annotation_controller
-                .create_deletion(&mut self.document_view, &mut self.annotations),
-            Action::CreateComment => self
-                .annotation_controller
-                .start_input_for_visual_annotation("Comment", &mut self.document_view),
-            Action::CreateReplacement => self
-                .annotation_controller
-                .start_input_for_visual_annotation("Replacement", &mut self.document_view),
+        match action {
+            Action::CreateDeletion => self.create_deletion_annotation(),
+            Action::CreateComment => self.start_visual_annotation_input("Comment", true),
+            Action::CreateReplacement => self.start_visual_annotation_input("Replacement", false),
             _ => return false,
-        };
+        }
 
-        self.apply_annotation_action(annotation_action);
         true
     }
 
     fn handle_normal_annotation_action(&mut self, action: Action) -> bool {
-        let annotation_action = match action {
-            Action::CreateInsertion => self
-                .annotation_controller
-                .start_insertion(&self.document_view),
-            Action::CreateGlobalComment => self.annotation_controller.start_global_comment(),
+        match action {
+            Action::CreateInsertion => self.start_insertion_annotation(),
+            Action::CreateGlobalComment => self.start_global_comment_annotation(),
             _ => return false,
-        };
+        }
 
-        self.apply_annotation_action(annotation_action);
         true
     }
 
@@ -229,17 +221,105 @@ impl AppState {
             return false;
         };
 
-        let annotation_action = self
-            .annotation_controller
-            .handle_input_key(key_event, &mut self.annotations);
-        self.apply_annotation_action(annotation_action);
+        self.handle_annotation_input_key(key_event);
         true
     }
 
-    fn apply_annotation_action(&mut self, action: AnnotationAction) {
-        if let AnnotationAction::SwitchMode(mode) = action {
-            self.mode = mode;
+    fn cancel_pending_annotation(&mut self) {
+        self.input_box = None;
+        self.pending_annotation = None;
+    }
+
+    fn create_deletion_annotation(&mut self) {
+        if let Some((range, text)) = self.document_view.take_visual_selection() {
+            self.annotations.add(Annotation::deletion(range, text));
         }
+
+        self.mode = Mode::Normal;
+    }
+
+    fn start_visual_annotation_input(&mut self, prompt: &str, is_comment: bool) {
+        if let Some((range, selected_text)) = self.document_view.take_visual_selection() {
+            let pending = if is_comment {
+                PendingAnnotation::Comment {
+                    range,
+                    selected_text,
+                }
+            } else {
+                PendingAnnotation::Replacement {
+                    range,
+                    selected_text,
+                }
+            };
+
+            self.pending_annotation = Some(pending);
+            self.input_box = Some(crate::tui::input_box::InputBox::new(prompt));
+            self.mode = Mode::Insert;
+        } else {
+            self.mode = Mode::Normal;
+        }
+    }
+
+    fn start_insertion_annotation(&mut self) {
+        let cursor = self.document_view.cursor();
+        let position = TextPosition {
+            line: cursor.row,
+            column: cursor.col,
+        };
+
+        self.pending_annotation = Some(PendingAnnotation::Insertion { position });
+        self.input_box = Some(crate::tui::input_box::InputBox::new("Insertion"));
+        self.mode = Mode::Insert;
+    }
+
+    fn start_global_comment_annotation(&mut self) {
+        self.pending_annotation = Some(PendingAnnotation::GlobalComment);
+        self.input_box = Some(crate::tui::input_box::InputBox::new("Global Comment"));
+        self.mode = Mode::Insert;
+    }
+
+    fn handle_annotation_input_key(&mut self, key_event: KeyEvent) {
+        if let Some(ref mut input_box) = self.input_box {
+            match input_box.handle_key(key_event) {
+                InputBoxEvent::Confirm => {
+                    self.confirm_pending_annotation();
+                    self.mode = Mode::Normal;
+                }
+                InputBoxEvent::Cancel => {
+                    self.cancel_pending_annotation();
+                    self.mode = Mode::Normal;
+                }
+                InputBoxEvent::Consumed => {}
+            }
+        }
+    }
+
+    fn confirm_pending_annotation(&mut self) {
+        let text = self
+            .input_box
+            .as_ref()
+            .map(|input_box| input_box.text())
+            .unwrap_or_default();
+
+        if let Some(pending) = self.pending_annotation.take()
+            && !text.is_empty()
+        {
+            let annotation = match pending {
+                PendingAnnotation::Comment {
+                    range,
+                    selected_text,
+                } => Annotation::comment(range, selected_text, text),
+                PendingAnnotation::Replacement {
+                    range,
+                    selected_text,
+                } => Annotation::replacement(range, selected_text, text),
+                PendingAnnotation::Insertion { position } => Annotation::insertion(position, text),
+                PendingAnnotation::GlobalComment => Annotation::global_comment(text),
+            };
+            self.annotations.add(annotation);
+        }
+
+        self.input_box = None;
     }
 }
 

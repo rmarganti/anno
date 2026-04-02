@@ -223,7 +223,7 @@ impl App {
         );
 
         // -- Input box overlay --
-        if let Some(ib) = self.state.annotation_controller().input_box() {
+        if let Some(ib) = self.state.input_box() {
             ib.render(frame, main_area, &self.theme);
         }
 

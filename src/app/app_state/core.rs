@@ -1,19 +1,38 @@
 use crate::annotation::store::AnnotationStore;
-use crate::annotation::types::{Annotation, TextRange};
+use crate::annotation::types::{Annotation, TextPosition, TextRange};
 use crate::app::ExitResult;
 #[cfg(any(test, doctest))]
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::KeybindHandler;
 use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
-use crate::tui::annotation_controller::AnnotationController;
 use crate::tui::annotation_list_panel::AnnotationListState;
 use crate::tui::confirm_dialog::ConfirmDialog;
 use crate::tui::document_view::DocumentViewState;
+use crate::tui::input_box::InputBox;
 use crate::tui::renderer;
 use crate::tui::viewport::CursorPosition;
 
 pub(super) const ANNOTATION_INSPECT_PAGE_SCROLL_LINES: u16 = 8;
+
+/// Tracks the kind of annotation being created via the input box.
+#[derive(Debug, Clone)]
+pub(super) enum PendingAnnotation {
+    /// Comment on a selection — stores the selection range and original text.
+    Comment {
+        range: TextRange,
+        selected_text: String,
+    },
+    /// Replacement for a selection — stores the selection range and original text.
+    Replacement {
+        range: TextRange,
+        selected_text: String,
+    },
+    /// Insertion at a cursor position.
+    Insertion { position: TextPosition },
+    /// Global comment (not anchored to text).
+    GlobalComment,
+}
 
 /// Terminal-independent application state.
 pub struct AppState {
@@ -35,8 +54,10 @@ pub struct AppState {
     pub(super) exit_result: Option<ExitResult>,
     /// Document view state (viewport, cursor, document layout).
     pub(super) document_view: DocumentViewState,
-    /// Annotation creation state machine.
-    pub(super) annotation_controller: AnnotationController,
+    /// Active input box (shown in Insert mode for annotation text entry).
+    pub(super) input_box: Option<InputBox<'static>>,
+    /// The pending annotation being created (set when entering Insert mode).
+    pub(super) pending_annotation: Option<PendingAnnotation>,
     /// Annotation list sidebar panel state.
     pub(super) annotation_list_panel: AnnotationListState,
     /// Active confirmation dialog overlay, if any.
@@ -107,7 +128,8 @@ impl AppState {
             should_quit: false,
             exit_result: None,
             document_view,
-            annotation_controller: AnnotationController::new(),
+            input_box: None,
+            pending_annotation: None,
             annotation_list_panel: AnnotationListState::new(),
             confirm_dialog: None,
             annotation_inspect_visible: false,
@@ -211,8 +233,8 @@ impl AppState {
         &mut self.document_view
     }
 
-    pub fn annotation_controller(&self) -> &AnnotationController {
-        &self.annotation_controller
+    pub fn input_box(&self) -> Option<&InputBox<'static>> {
+        self.input_box.as_ref()
     }
 
     #[cfg(test)]

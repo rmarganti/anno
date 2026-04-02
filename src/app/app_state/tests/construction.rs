@@ -22,7 +22,7 @@ fn new_plain_builds_terminal_independent_default_state() {
     assert_eq!(cursor.col, 0);
 
     assert_eq!(state.document_view().cursor(), cursor);
-    assert!(state.annotation_controller().input_box().is_none());
+    assert!(state.input_box().is_none());
     let _ = state.annotation_list_panel();
 
     let _ = ExitResult::QuitSilent;
