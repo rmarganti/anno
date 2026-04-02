@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import {
   USAGE,
   createLaunchPlan,
+  formatImportPrompt,
+  importReviewToSession,
   isSupportedRoute,
+  parseAnnoExport,
   parseCommandArgs,
   resolveReviewPath,
   summarizeLaunchResult,
@@ -95,5 +98,129 @@ test('summarizeLaunchResult treats missing export as cancellation', () => {
     cancelled: true,
     message:
       'anno closed without exporting annotations for /tmp/project/README.md. This usually means the review was cancelled.',
+  });
+});
+
+test('parseAnnoExport validates expected schema', () => {
+  const exportData = parseAnnoExport(
+    JSON.stringify({
+      source: 'README.md',
+      total: 2,
+      annotations: [
+        { type: 'comment', line: 4, text: 'Clarify this section.' },
+        { type: 'global_comment', text: 'Looks good overall.' },
+      ],
+    }),
+  );
+
+  assert.deepEqual(exportData, {
+    source: 'README.md',
+    total: 2,
+    annotations: [
+      { type: 'comment', line: 4, text: 'Clarify this section.' },
+      { type: 'global_comment', text: 'Looks good overall.' },
+    ],
+  });
+});
+
+test('parseAnnoExport rejects mismatched totals', () => {
+  assert.throws(
+    () =>
+      parseAnnoExport(
+        JSON.stringify({
+          source: 'README.md',
+          total: 1,
+          annotations: [
+            { type: 'comment', line: 4, text: 'Clarify this section.' },
+            { type: 'comment', line: 9, text: 'Second note.' },
+          ],
+        }),
+      ),
+    /did not match 2 annotations/,
+  );
+});
+
+test('formatImportPrompt includes summaries, notes, and json export', () => {
+  const prompt = formatImportPrompt(
+    '/tmp/project/README.md',
+    {
+      source: 'README.md',
+      total: 2,
+      annotations: [
+        { type: 'comment', line: 4, text: 'Clarify this section.' },
+        { type: 'global_comment', text: 'Looks good overall.' },
+      ],
+    },
+    ['This anno version does not support --title, so the review ran without a custom title.'],
+  );
+
+  assert.match(prompt, /Completed anno review for README\.md \(\/tmp\/project\/README\.md\)\./);
+  assert.match(prompt, /Captured 2 annotations from source `README\.md`\./);
+  assert.match(prompt, /- 1 comment/);
+  assert.match(prompt, /- 1 global comment/);
+  assert.match(prompt, /- comment at line 4/);
+  assert.match(prompt, /- global comment at document-wide/);
+  assert.match(prompt, /Notes:/);
+  assert.match(prompt, /```json/);
+});
+
+test('formatImportPrompt handles no-annotation reviews', () => {
+  const prompt = formatImportPrompt('/tmp/project/README.md', {
+    source: 'README.md',
+    total: 0,
+    annotations: [],
+  });
+
+  assert.match(prompt, /No annotations were exported/);
+  assert.doesNotMatch(prompt, /Type breakdown:/);
+});
+
+test('importReviewToSession appends and submits prompt text', async () => {
+  const calls = [];
+  const client = {
+    tui: {
+      async appendPrompt(input) {
+        calls.push(['appendPrompt', input]);
+        return true;
+      },
+      async submitPrompt() {
+        calls.push(['submitPrompt']);
+        return { data: true };
+      },
+    },
+  };
+
+  const result = await importReviewToSession(client, 'review payload');
+  assert.deepEqual(result, {
+    ok: true,
+    appended: true,
+    submitted: true,
+    message: 'Imported the anno review into the active OpenCode session.',
+  });
+  assert.deepEqual(calls, [
+    ['appendPrompt', { body: { text: 'review payload' } }],
+    ['submitPrompt'],
+  ]);
+});
+
+test('importReviewToSession reports manual submit fallback when submit fails', async () => {
+  const client = {
+    tui: {
+      async appendPrompt() {
+        return true;
+      },
+      async submitPrompt() {
+        return false;
+      },
+    },
+  };
+
+  const result = await importReviewToSession(client, 'review payload');
+  assert.deepEqual(result, {
+    ok: false,
+    appended: true,
+    submitted: false,
+    message:
+      'OpenCode appended the anno review to the prompt, but could not submit it automatically. Review the prompt and submit it manually.',
   });
 });

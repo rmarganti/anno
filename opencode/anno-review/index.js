@@ -1,4 +1,21 @@
-import { COMMAND_NAME, COMMAND_VALUE, PLUGIN_ID, USAGE, createLaunchPlan, createTempArtifacts, ensureReviewTarget, isAnnoAvailable, isInteractiveTerminal, isSupportedRoute, launchAnno, parseCommandArgs, summarizeLaunchResult } from './lib.js';
+import {
+  COMMAND_NAME,
+  COMMAND_VALUE,
+  PLUGIN_ID,
+  USAGE,
+  createLaunchPlan,
+  createTempArtifacts,
+  ensureReviewTarget,
+  formatImportPrompt,
+  importReviewToSession,
+  isAnnoAvailable,
+  isInteractiveTerminal,
+  isSupportedRoute,
+  launchAnno,
+  loadAnnoExport,
+  parseCommandArgs,
+  summarizeLaunchResult,
+} from './lib.js';
 
 async function runAnnoReview(api, rawArgs) {
   if (!isSupportedRoute(api.route.current)) {
@@ -60,9 +77,30 @@ async function runAnnoReview(api, rawArgs) {
 
     const launch = launchAnno(api.renderer, plan.buildArgs(artifacts.outputPath));
     const summary = summarizeLaunchResult(launch, artifacts.outputPath, plan.request.path);
+    if (!summary.ok) {
+      api.ui.toast({
+        variant: summary.cancelled ? 'info' : 'error',
+        message: summary.message,
+      });
+      return;
+    }
+
+    let exportData;
+    try {
+      exportData = loadAnnoExport(artifacts.outputPath);
+    } catch (error) {
+      api.ui.toast({
+        variant: 'error',
+        message: error instanceof Error ? error.message : 'Failed to parse anno export.',
+      });
+      return;
+    }
+
+    const prompt = formatImportPrompt(plan.request.path, exportData, plan.notes);
+    const imported = await importReviewToSession(api.client, prompt);
     api.ui.toast({
-      variant: summary.ok ? 'success' : summary.cancelled ? 'info' : 'error',
-      message: summary.message,
+      variant: imported.ok ? 'success' : imported.appended ? 'warning' : 'error',
+      message: imported.ok ? `${summary.message} ${imported.message}` : imported.message,
     });
   } finally {
     artifacts.cleanup();

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export const PLUGIN_ID = 'anno.opencode-review';
@@ -243,4 +243,206 @@ export function summarizeLaunchResult(result, outputPath, reviewedPath) {
     cancelled: false,
     message: `anno review completed for ${reviewedPath}.`,
   };
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeAnnotation(annotation, index) {
+  if (!isRecord(annotation)) {
+    throw new Error(`Annotation ${index + 1} must be an object.`);
+  }
+
+  const annotationType = annotation.type;
+  if (typeof annotationType !== 'string' || annotationType.length === 0) {
+    throw new Error(`Annotation ${index + 1} is missing a string type.`);
+  }
+
+  const normalized = { type: annotationType };
+
+  if ('line' in annotation) {
+    if (typeof annotation.line !== 'number' || !Number.isInteger(annotation.line) || annotation.line < 1) {
+      throw new Error(`Annotation ${index + 1} has an invalid line.`);
+    }
+    normalized.line = annotation.line;
+  }
+
+  if ('lines' in annotation) {
+    if (typeof annotation.lines !== 'string' || annotation.lines.length === 0) {
+      throw new Error(`Annotation ${index + 1} has invalid lines.`);
+    }
+    normalized.lines = annotation.lines;
+  }
+
+  if ('selected_text' in annotation) {
+    if (typeof annotation.selected_text !== 'string') {
+      throw new Error(`Annotation ${index + 1} has invalid selected_text.`);
+    }
+    normalized.selected_text = annotation.selected_text;
+  }
+
+  if ('text' in annotation) {
+    if (typeof annotation.text !== 'string') {
+      throw new Error(`Annotation ${index + 1} has invalid text.`);
+    }
+    normalized.text = annotation.text;
+  }
+
+  return normalized;
+}
+
+export function parseAnnoExport(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Unknown JSON parse error';
+    throw new Error(`anno produced invalid JSON: ${detail}`);
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error('anno export must be a JSON object.');
+  }
+
+  if (typeof parsed.source !== 'string' || parsed.source.length === 0) {
+    throw new Error('anno export is missing a string source field.');
+  }
+
+  if (typeof parsed.total !== 'number' || !Number.isInteger(parsed.total) || parsed.total < 0) {
+    throw new Error('anno export is missing a valid total field.');
+  }
+
+  if (!Array.isArray(parsed.annotations)) {
+    throw new Error('anno export is missing an annotations array.');
+  }
+
+  const annotations = parsed.annotations.map((annotation, index) => normalizeAnnotation(annotation, index));
+  if (annotations.length !== parsed.total) {
+    throw new Error(`anno export total ${parsed.total} did not match ${annotations.length} annotations.`);
+  }
+
+  return {
+    source: parsed.source,
+    total: parsed.total,
+    annotations,
+  };
+}
+
+export function loadAnnoExport(outputPath) {
+  if (!existsSync(outputPath)) {
+    throw new Error(`anno did not write an export file at ${outputPath}.`);
+  }
+
+  return parseAnnoExport(readFileSync(outputPath, 'utf8'));
+}
+
+function formatAnnotationLocation(annotation) {
+  if (annotation.line) return `line ${annotation.line}`;
+  if (annotation.lines) return `lines ${annotation.lines}`;
+  return 'document-wide';
+}
+
+function countByType(annotations) {
+  const counts = new Map();
+  for (const annotation of annotations) {
+    counts.set(annotation.type, (counts.get(annotation.type) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
+}
+
+function humanizeType(annotationType) {
+  return annotationType.replaceAll('_', ' ');
+}
+
+export function formatImportPrompt(reviewedPath, exportData, notes = []) {
+  const fileName = basename(reviewedPath);
+  const heading = `Completed anno review for ${fileName} (${reviewedPath}).`;
+  const lines = [heading, ''];
+
+  if (exportData.total === 0) {
+    lines.push('No annotations were exported. The review completed without recorded comments.', '');
+  } else {
+    const plural = exportData.total === 1 ? 'annotation' : 'annotations';
+    lines.push(`Captured ${exportData.total} ${plural} from source \`${exportData.source}\`.`, '');
+
+    const counts = countByType(exportData.annotations);
+    if (counts.length > 0) {
+      lines.push('Type breakdown:');
+      for (const [annotationType, count] of counts) {
+        lines.push(`- ${count} ${humanizeType(annotationType)}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('Locations:');
+    for (const annotation of exportData.annotations) {
+      lines.push(`- ${humanizeType(annotation.type)} at ${formatAnnotationLocation(annotation)}`);
+    }
+    lines.push('');
+  }
+
+  if (notes.length > 0) {
+    lines.push('Notes:');
+    for (const note of notes) {
+      lines.push(`- ${note}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('JSON export:', '```json', JSON.stringify(exportData, null, 2), '```');
+  return lines.join('\n');
+}
+
+function unwrapClientBoolean(result) {
+  if (typeof result === 'boolean') return result;
+  if (isRecord(result)) {
+    if (typeof result.data === 'boolean') return result.data;
+    if (typeof result.body === 'boolean') return result.body;
+  }
+  return false;
+}
+
+export async function importReviewToSession(client, prompt) {
+  try {
+    const appended = unwrapClientBoolean(
+      await client.tui.appendPrompt({
+        body: { text: prompt },
+      }),
+    );
+
+    if (!appended) {
+      return {
+        ok: false,
+        appended: false,
+        submitted: false,
+        message: 'OpenCode could not append the anno review to the active prompt.',
+      };
+    }
+
+    const submitted = unwrapClientBoolean(await client.tui.submitPrompt());
+    if (!submitted) {
+      return {
+        ok: false,
+        appended: true,
+        submitted: false,
+        message:
+          'OpenCode appended the anno review to the prompt, but could not submit it automatically. Review the prompt and submit it manually.',
+      };
+    }
+
+    return {
+      ok: true,
+      appended: true,
+      submitted: true,
+      message: 'Imported the anno review into the active OpenCode session.',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      appended: false,
+      submitted: false,
+      message: error instanceof Error ? `Failed to import anno review into OpenCode: ${error.message}` : 'Failed to import anno review into OpenCode.',
+    };
+  }
 }
