@@ -1,0 +1,14 @@
+{
+  "name": "anno-opencode-review",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./index.js",
+    "./lib": "./lib.js"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opentui/core": "*",
+    "@opentui/solid": "*"
+  }
+}
