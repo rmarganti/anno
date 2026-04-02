@@ -1,8 +1,6 @@
-pub mod annotation_controller;
 pub mod annotation_inspect_overlay;
 pub mod annotation_list_panel;
 pub mod app_command;
-pub mod command_line;
 pub mod confirm_dialog;
 pub mod document_view;
 pub mod help_overlay;

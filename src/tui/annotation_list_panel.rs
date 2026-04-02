@@ -20,27 +20,28 @@ const EMPTY_STATE_LINES: [&str; 4] = [
     "Select text and press d, c, or r",
     "to create an annotation.",
 ];
+const PANEL_VERTICAL_PADDING: u16 = 1;
 
-const DEFAULT_VISIBLE_HEIGHT: u16 = 8;
-
-/// The annotation list sidebar panel widget.
+/// State for the annotation list sidebar panel.
 #[derive(Debug)]
-pub struct AnnotationListPanel {
-    visible: bool,
-    list_state: ListState,
+pub struct AnnotationListState {
+    pub visible: bool,
+    pub selected_id: Option<Uuid>,
+    pub scroll_offset: usize,
 }
 
-#[derive(Debug, Default)]
-struct ListState {
-    selected_id: Option<Uuid>,
-    scroll_offset: usize,
+impl Default for AnnotationListState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-impl AnnotationListPanel {
+impl AnnotationListState {
     pub fn new() -> Self {
         Self {
             visible: true,
-            list_state: ListState::default(),
+            selected_id: None,
+            scroll_offset: 0,
         }
     }
 
@@ -56,171 +57,18 @@ impl AnnotationListPanel {
 
     /// Return the UUID of the currently selected annotation, if any.
     pub fn selected_annotation_id(&self) -> Option<Uuid> {
-        self.list_state.selected_annotation_id()
+        self.selected_id
     }
 
     /// Select a specific annotation by UUID.
     pub fn set_selected_annotation_id(&mut self, id: Uuid) {
-        self.list_state.set_selected_annotation_id(id);
-    }
-
-    /// Initialize selection to the first annotation when the panel first gains focus.
-    pub fn ensure_selection_initialized(&mut self, store: &AnnotationStore) {
-        let ordered = store.ordered();
-        self.list_state.ensure_selection_initialized(&ordered);
-        self.list_state
-            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
-    }
-
-    /// Move the selection down by one in the ordered list.
-    pub fn move_selection_down(&mut self, store: &AnnotationStore) {
-        let ordered = store.ordered();
-        self.list_state.move_selection_down(&ordered);
-        self.list_state
-            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
-    }
-
-    /// Move the selection up by one in the ordered list.
-    pub fn move_selection_up(&mut self, store: &AnnotationStore) {
-        let ordered = store.ordered();
-        self.list_state.move_selection_up(&ordered);
-        self.list_state
-            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
-    }
-
-    /// Recover selection after deleting the currently selected annotation.
-    pub fn reconcile_after_deletion(&mut self, store: &AnnotationStore, deleted_index: usize) {
-        let ordered = store.ordered();
-        self.list_state
-            .reconcile_after_deletion(&ordered, deleted_index);
-        self.list_state
-            .ensure_visible(&ordered, DEFAULT_VISIBLE_HEIGHT);
-    }
-
-    /// Render the panel into the given area.
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        store: &AnnotationStore,
-        theme: &UiTheme,
-        is_focused: bool,
-    ) {
-        let block = Block::default()
-            .borders(Borders::LEFT)
-            .style(theme.panel)
-            .border_style(if is_focused {
-                theme.panel_border_focused
-            } else {
-                theme.panel_border
-            });
-        let inner = vertical_padding(block.inner(area), 1);
-        frame.render_widget(block, area);
-
-        let ordered = store.ordered();
-        self.list_state.ensure_visible(&ordered, inner.height);
-
-        if ordered.is_empty() {
-            let msg = Paragraph::new(
-                EMPTY_STATE_LINES
-                    .iter()
-                    .map(|line| Line::from(*line))
-                    .collect::<Vec<_>>(),
-            )
-            .alignment(Alignment::Center)
-            .style(theme.panel);
-
-            let message_height = EMPTY_STATE_LINES.len() as u16;
-            let centered_area = Rect::new(
-                inner.x,
-                inner.y + inner.height.saturating_sub(message_height) / 2,
-                inner.width,
-                inner.height.min(message_height),
-            );
-            frame.render_widget(msg, centered_area);
-            return;
-        }
-
-        let visible_height = inner.height as usize;
-        if visible_height == 0 {
-            return;
-        }
-
-        let max_offset = ordered.len().saturating_sub(visible_height);
-        self.list_state.scroll_offset = self.list_state.scroll_offset.min(max_offset);
-
-        let current_idx = self.list_state.resolve_index(&ordered);
-        let has_items_above = self.list_state.scroll_offset > 0;
-        let has_items_below = self.list_state.scroll_offset + visible_height < ordered.len();
-
-        for (row, annotation) in ordered
-            .iter()
-            .enumerate()
-            .skip(self.list_state.scroll_offset)
-            .take(visible_height)
-        {
-            let visible_idx = row - self.list_state.scroll_offset;
-
-            let is_selected = row == current_idx;
-            let base_style = if is_selected {
-                if is_focused {
-                    theme.panel_selected
-                } else {
-                    theme.panel_selected_unfocused
-                }
-            } else {
-                theme.panel
-            };
-
-            let type_color = theme.annotation_type_color(&annotation.annotation_type);
-            let glyph = type_glyph(&annotation.annotation_type);
-
-            // Build the line: "▌ ✕ preview text..."
-            // Indicator (1 char) + space + glyph + space + preview
-            let indicator = Span::styled(
-                "▌",
-                Style::default()
-                    .fg(type_color)
-                    .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
-            );
-            let spacer = Span::styled(" ", base_style);
-            let glyph_span = Span::styled(
-                glyph,
-                Style::default()
-                    .fg(type_color)
-                    .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
-            );
-            let spacer2 = Span::styled(" ", base_style);
-
-            // Truncate preview to fit remaining width.
-            // Used columns: 1 (indicator) + 1 (space) + glyph_width + 1 (space)
-            let glyph_width = 1; // All our glyphs are single-width for layout purposes.
-            let used = 1 + 1 + glyph_width + 1;
-            let available = (inner.width as usize).saturating_sub(used);
-            let preview = format_item_preview(annotation, available);
-            // Pad to fill remaining space.
-            let padded = format!("{preview:<available$}");
-            let preview_span = Span::styled(padded, base_style);
-
-            let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);
-            let line_area = Rect::new(inner.x, inner.y + visible_idx as u16, inner.width, 1);
-            frame.render_widget(Paragraph::new(line), line_area);
-        }
-
-        render_scroll_indicators(frame, inner, theme, has_items_above, has_items_below);
-    }
-}
-
-impl ListState {
-    fn selected_annotation_id(&self) -> Option<Uuid> {
-        self.selected_id
-    }
-
-    fn set_selected_annotation_id(&mut self, id: Uuid) {
         self.selected_id = Some(id);
     }
 
-    fn ensure_selection_initialized(&mut self, ordered: &[&Annotation]) {
+    /// Initialize selection to the first annotation when the panel first gains focus.
+    pub fn ensure_selection_initialized(&mut self, store: &AnnotationStore, visible_height: u16) {
+        let ordered = store.ordered();
+
         if ordered.is_empty() {
             self.selected_id = None;
             self.scroll_offset = 0;
@@ -230,9 +78,14 @@ impl ListState {
         if self.selected_id.is_none() {
             self.selected_id = Some(ordered[0].id);
         }
+
+        self.ensure_visible(&ordered, visible_height);
     }
 
-    fn move_selection_down(&mut self, ordered: &[&Annotation]) {
+    /// Move the selection down by one in the ordered list.
+    pub fn move_selection_down(&mut self, store: &AnnotationStore, visible_height: u16) {
+        let ordered = store.ordered();
+
         if ordered.is_empty() {
             self.selected_id = None;
             self.scroll_offset = 0;
@@ -241,15 +94,19 @@ impl ListState {
 
         if self.selected_id.is_none() {
             self.selected_id = Some(ordered[0].id);
-            return;
+        } else {
+            let current_idx = self.resolve_index(&ordered);
+            let next_idx = (current_idx + 1).min(ordered.len() - 1);
+            self.selected_id = Some(ordered[next_idx].id);
         }
 
-        let current_idx = self.resolve_index(ordered);
-        let next_idx = (current_idx + 1).min(ordered.len() - 1);
-        self.selected_id = Some(ordered[next_idx].id);
+        self.ensure_visible(&ordered, visible_height);
     }
 
-    fn move_selection_up(&mut self, ordered: &[&Annotation]) {
+    /// Move the selection up by one in the ordered list.
+    pub fn move_selection_up(&mut self, store: &AnnotationStore, visible_height: u16) {
+        let ordered = store.ordered();
+
         if ordered.is_empty() {
             self.selected_id = None;
             self.scroll_offset = 0;
@@ -258,15 +115,24 @@ impl ListState {
 
         if self.selected_id.is_none() {
             self.selected_id = Some(ordered[0].id);
-            return;
+        } else {
+            let current_idx = self.resolve_index(&ordered);
+            let next_idx = current_idx.saturating_sub(1);
+            self.selected_id = Some(ordered[next_idx].id);
         }
 
-        let current_idx = self.resolve_index(ordered);
-        let next_idx = current_idx.saturating_sub(1);
-        self.selected_id = Some(ordered[next_idx].id);
+        self.ensure_visible(&ordered, visible_height);
     }
 
-    fn reconcile_after_deletion(&mut self, ordered: &[&Annotation], deleted_index: usize) {
+    /// Recover selection after deleting the currently selected annotation.
+    pub fn reconcile_after_deletion(
+        &mut self,
+        store: &AnnotationStore,
+        deleted_index: usize,
+        visible_height: u16,
+    ) {
+        let ordered = store.ordered();
+
         if ordered.is_empty() {
             self.selected_id = None;
             self.scroll_offset = 0;
@@ -275,11 +141,11 @@ impl ListState {
 
         let next_idx = deleted_index.min(ordered.len() - 1);
         self.selected_id = Some(ordered[next_idx].id);
+
+        self.ensure_visible(&ordered, visible_height);
     }
 
     /// Resolve `selected_id` to an index in the ordered list.
-    /// If the selected UUID is gone (deleted), clamp to the nearest valid index.
-    /// If nothing is selected, defaults to 0.
     fn resolve_index(&self, ordered: &[&Annotation]) -> usize {
         if ordered.is_empty() {
             return 0;
@@ -310,6 +176,135 @@ impl ListState {
             self.scroll_offset = selected_idx + 1 - visible_height;
         }
     }
+}
+
+pub fn visible_content_height(area: Rect) -> u16 {
+    content_area(area).height
+}
+
+/// Render the annotation list panel into the given area.
+pub fn render_annotation_list_panel(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AnnotationListState,
+    store: &AnnotationStore,
+    theme: &UiTheme,
+    is_focused: bool,
+) {
+    let block = Block::default()
+        .borders(Borders::LEFT)
+        .style(theme.panel)
+        .border_style(if is_focused {
+            theme.panel_border_focused
+        } else {
+            theme.panel_border
+        });
+    let inner = content_area(area);
+    frame.render_widget(block, area);
+
+    let ordered = store.ordered();
+
+    // Compute a local scroll offset, clamped to the actual inner height.
+    // The authoritative scroll_offset lives in AnnotationListState and is
+    // updated at mutation time via ensure_visible(). Here we only need a
+    // read-only, clamped copy for rendering.
+    let scroll_offset = if ordered.is_empty() || inner.height == 0 {
+        0
+    } else {
+        let max_offset = ordered.len().saturating_sub(inner.height as usize);
+        state.scroll_offset.min(max_offset)
+    };
+
+    if ordered.is_empty() {
+        let msg = Paragraph::new(
+            EMPTY_STATE_LINES
+                .iter()
+                .map(|line| Line::from(*line))
+                .collect::<Vec<_>>(),
+        )
+        .alignment(Alignment::Center)
+        .style(theme.panel);
+
+        let message_height = EMPTY_STATE_LINES.len() as u16;
+        let centered_area = Rect::new(
+            inner.x,
+            inner.y + inner.height.saturating_sub(message_height) / 2,
+            inner.width,
+            inner.height.min(message_height),
+        );
+        frame.render_widget(msg, centered_area);
+        return;
+    }
+
+    let visible_height = inner.height as usize;
+    if visible_height == 0 {
+        return;
+    }
+
+    let current_idx = state.resolve_index(&ordered);
+    let has_items_above = scroll_offset > 0;
+    let has_items_below = scroll_offset + visible_height < ordered.len();
+
+    for (row, annotation) in ordered
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(visible_height)
+    {
+        let visible_idx = row - scroll_offset;
+
+        let is_selected = row == current_idx;
+        let base_style = if is_selected {
+            if is_focused {
+                theme.panel_selected
+            } else {
+                theme.panel_selected_unfocused
+            }
+        } else {
+            theme.panel
+        };
+
+        let type_color = theme.annotation_type_color(&annotation.annotation_type);
+        let glyph = type_glyph(&annotation.annotation_type);
+
+        // Build the line: "▌ ✕ preview text..."
+        // Indicator (1 char) + space + glyph + space + preview
+        let indicator = Span::styled(
+            "▌",
+            Style::default()
+                .fg(type_color)
+                .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
+        );
+        let spacer = Span::styled(" ", base_style);
+        let glyph_span = Span::styled(
+            glyph,
+            Style::default()
+                .fg(type_color)
+                .bg(base_style.bg.unwrap_or(theme.panel.bg.unwrap_or_default())),
+        );
+        let spacer2 = Span::styled(" ", base_style);
+
+        // Truncate preview to fit remaining width.
+        // Used columns: 1 (indicator) + 1 (space) + glyph_width + 1 (space)
+        let glyph_width = 1; // All our glyphs are single-width for layout purposes.
+        let used = 1 + 1 + glyph_width + 1;
+        let available = (inner.width as usize).saturating_sub(used);
+        let preview = format_item_preview(annotation, available);
+        // Pad to fill remaining space.
+        let padded = format!("{preview:<available$}");
+        let preview_span = Span::styled(padded, base_style);
+
+        let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);
+        let line_area = Rect::new(inner.x, inner.y + visible_idx as u16, inner.width, 1);
+        frame.render_widget(Paragraph::new(line), line_area);
+    }
+
+    render_scroll_indicators(frame, inner, theme, has_items_above, has_items_below);
+}
+
+fn content_area(area: Rect) -> Rect {
+    let block = Block::default().borders(Borders::LEFT);
+    vertical_padding(block.inner(area), PANEL_VERTICAL_PADDING)
 }
 
 fn vertical_padding(area: Rect, padding: u16) -> Rect {
@@ -433,12 +428,6 @@ fn truncate_with_ellipsis(text: &str, width: usize) -> String {
     format!("{truncated}…")
 }
 
-impl Default for AnnotationListPanel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Return a Unicode glyph for each annotation type.
 fn type_glyph(annotation_type: &AnnotationType) -> &'static str {
     match annotation_type {
@@ -481,14 +470,14 @@ mod tests {
         (store, ids)
     }
 
-    fn render_to_lines(width: u16, height: u16, panel: &mut AnnotationListPanel) -> Vec<String> {
-        render_store_to_lines(width, height, panel, &AnnotationStore::new(), false)
+    fn render_to_lines(width: u16, height: u16, state: &AnnotationListState) -> Vec<String> {
+        render_store_to_lines(width, height, state, &AnnotationStore::new(), false)
     }
 
     fn render_store_to_lines(
         width: u16,
         height: u16,
-        panel: &mut AnnotationListPanel,
+        state: &AnnotationListState,
         store: &AnnotationStore,
         is_focused: bool,
     ) -> Vec<String> {
@@ -498,9 +487,10 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                panel.render(
+                render_annotation_list_panel(
                     frame,
                     Rect::new(0, 0, width, height),
+                    state,
                     store,
                     &theme,
                     is_focused,
@@ -529,30 +519,30 @@ mod tests {
 
     #[test]
     fn starts_visible() {
-        let panel = AnnotationListPanel::new();
-        assert!(panel.is_visible());
+        let state = AnnotationListState::new();
+        assert!(state.is_visible());
     }
 
     #[test]
     fn toggle_visibility() {
-        let mut panel = AnnotationListPanel::new();
-        panel.toggle();
-        assert!(!panel.is_visible());
-        panel.toggle();
-        assert!(panel.is_visible());
+        let mut state = AnnotationListState::new();
+        state.toggle();
+        assert!(!state.is_visible());
+        state.toggle();
+        assert!(state.is_visible());
     }
 
     // ───── selection tracking ─────
 
     #[test]
     fn no_selection_initially() {
-        let state = ListState::default();
+        let state = AnnotationListState::default();
         assert!(state.selected_annotation_id().is_none());
     }
 
     #[test]
     fn select_by_id() {
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         let id = Uuid::new_v4();
         state.set_selected_annotation_id(id);
         assert_eq!(state.selected_annotation_id(), Some(id));
@@ -561,25 +551,25 @@ mod tests {
     #[test]
     fn move_down_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
-        state.move_selection_down(&store.ordered());
+        let mut state = AnnotationListState::default();
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn move_up_from_unselected_selects_first() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
-        state.move_selection_up(&store.ordered());
+        let mut state = AnnotationListState::default();
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn initialize_selection_selects_first_item() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
 
-        state.ensure_selection_initialized(&store.ordered());
+        state.ensure_selection_initialized(&store, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
@@ -587,10 +577,10 @@ mod tests {
     #[test]
     fn initialize_selection_keeps_existing_selection() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[1]);
 
-        state.ensure_selection_initialized(&store.ordered());
+        state.ensure_selection_initialized(&store, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -598,12 +588,13 @@ mod tests {
     #[test]
     fn initialize_selection_clears_empty_store_selection() {
         let store = AnnotationStore::new();
-        let mut state = ListState {
+        let mut state = AnnotationListState {
+            visible: true,
             selected_id: Some(Uuid::new_v4()),
             scroll_offset: 4,
         };
 
-        state.ensure_selection_initialized(&store.ordered());
+        state.ensure_selection_initialized(&store, 8);
 
         assert!(state.selected_annotation_id().is_none());
         assert_eq!(state.scroll_offset, 0);
@@ -612,40 +603,40 @@ mod tests {
     #[test]
     fn move_down_clamps_at_end() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[2]);
-        state.move_selection_down(&store.ordered());
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
     #[test]
     fn move_up_clamps_at_start() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
-        state.move_selection_up(&store.ordered());
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
     #[test]
     fn move_down_sequential() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
-        state.move_selection_down(&store.ordered());
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
-        state.move_selection_down(&store.ordered());
+        state.move_selection_down(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
 
     #[test]
     fn move_up_sequential() {
         let (store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[2]);
-        state.move_selection_up(&store.ordered());
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
-        state.move_selection_up(&store.ordered());
+        state.move_selection_up(&store, 8);
         assert_eq!(state.selected_annotation_id(), Some(ids[0]));
     }
 
@@ -654,11 +645,11 @@ mod tests {
     #[test]
     fn deleting_middle_item_selects_item_that_slides_into_its_slot() {
         let (mut store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[1]);
         store.delete(ids[1]);
 
-        state.reconcile_after_deletion(&store.ordered(), 1);
+        state.reconcile_after_deletion(&store, 1, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[2]));
     }
@@ -666,11 +657,11 @@ mod tests {
     #[test]
     fn deleting_last_item_selects_new_last_item() {
         let (mut store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[2]);
         store.delete(ids[2]);
 
-        state.reconcile_after_deletion(&store.ordered(), 2);
+        state.reconcile_after_deletion(&store, 2, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -678,11 +669,11 @@ mod tests {
     #[test]
     fn deleting_first_item_keeps_selection_at_index_zero() {
         let (mut store, ids) = make_store_with_deletions(3);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
 
-        state.reconcile_after_deletion(&store.ordered(), 0);
+        state.reconcile_after_deletion(&store, 0, 8);
 
         assert_eq!(state.selected_annotation_id(), Some(ids[1]));
     }
@@ -690,11 +681,11 @@ mod tests {
     #[test]
     fn deleting_only_remaining_item_clears_selection() {
         let (mut store, ids) = make_store_with_deletions(1);
-        let mut state = ListState::default();
+        let mut state = AnnotationListState::default();
         state.set_selected_annotation_id(ids[0]);
         store.delete(ids[0]);
 
-        state.reconcile_after_deletion(&store.ordered(), 0);
+        state.reconcile_after_deletion(&store, 0, 8);
 
         assert!(state.selected_annotation_id().is_none());
     }
@@ -702,17 +693,18 @@ mod tests {
     #[test]
     fn empty_store_move_does_nothing() {
         let store = AnnotationStore::new();
-        let mut state = ListState::default();
-        state.move_selection_down(&store.ordered());
+        let mut state = AnnotationListState::default();
+        state.move_selection_down(&store, 8);
         assert!(state.selected_annotation_id().is_none());
-        state.move_selection_up(&store.ordered());
+        state.move_selection_up(&store, 8);
         assert!(state.selected_annotation_id().is_none());
     }
 
     #[test]
     fn ensure_visible_keeps_top_selection_in_view() {
         let (store, ids) = make_store_with_deletions(5);
-        let mut state = ListState {
+        let mut state = AnnotationListState {
+            visible: true,
             selected_id: Some(ids[0]),
             scroll_offset: 2,
         };
@@ -725,7 +717,8 @@ mod tests {
     #[test]
     fn ensure_visible_keeps_bottom_selection_in_view() {
         let (store, ids) = make_store_with_deletions(5);
-        let mut state = ListState {
+        let mut state = AnnotationListState {
+            visible: true,
             selected_id: Some(ids[4]),
             scroll_offset: 0,
         };
@@ -738,7 +731,8 @@ mod tests {
     #[test]
     fn ensure_visible_leaves_middle_selection_visible() {
         let (store, ids) = make_store_with_deletions(5);
-        let mut state = ListState {
+        let mut state = AnnotationListState {
+            visible: true,
             selected_id: Some(ids[2]),
             scroll_offset: 1,
         };
@@ -751,7 +745,8 @@ mod tests {
     #[test]
     fn ensure_visible_resets_scroll_for_empty_list() {
         let store = AnnotationStore::new();
-        let mut state = ListState {
+        let mut state = AnnotationListState {
+            visible: true,
             selected_id: Some(Uuid::new_v4()),
             scroll_offset: 4,
         };
@@ -763,8 +758,8 @@ mod tests {
 
     #[test]
     fn render_empty_state_shows_informative_message() {
-        let mut panel = AnnotationListPanel::new();
-        let output = render_to_lines(36, 10, &mut panel).join("\n");
+        let state = AnnotationListState::new();
+        let output = render_to_lines(36, 10, &state).join("\n");
 
         assert!(
             output.contains("No annotations yet"),
@@ -875,9 +870,9 @@ mod tests {
             String::from("comment preview"),
         ));
         store.add(Annotation::global_comment(String::from("global preview")));
-        let mut panel = AnnotationListPanel::new();
+        let state = AnnotationListState::new();
 
-        let output = render_store_to_lines(36, 6, &mut panel, &store, false).join("\n");
+        let output = render_store_to_lines(36, 6, &state, &store, false).join("\n");
 
         assert!(
             output.contains("L3 comment preview"),
@@ -892,15 +887,22 @@ mod tests {
     #[test]
     fn focused_render_uses_distinct_border_and_selection_styles() {
         let (store, ids) = make_store_with_deletions(2);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
+        let mut state = AnnotationListState::new();
+        state.set_selected_annotation_id(ids[0]);
         let theme = UiTheme::default();
 
         let unfocused_backend = TestBackend::new(36, 6);
         let mut unfocused_terminal = Terminal::new(unfocused_backend).unwrap();
         unfocused_terminal
             .draw(|frame| {
-                panel.render(frame, Rect::new(0, 0, 36, 6), &store, &theme, false);
+                render_annotation_list_panel(
+                    frame,
+                    Rect::new(0, 0, 36, 6),
+                    &state,
+                    &store,
+                    &theme,
+                    false,
+                );
             })
             .unwrap();
         let unfocused = unfocused_terminal.backend().buffer().clone();
@@ -909,7 +911,14 @@ mod tests {
         let mut focused_terminal = Terminal::new(focused_backend).unwrap();
         focused_terminal
             .draw(|frame| {
-                panel.render(frame, Rect::new(0, 0, 36, 6), &store, &theme, true);
+                render_annotation_list_panel(
+                    frame,
+                    Rect::new(0, 0, 36, 6),
+                    &state,
+                    &store,
+                    &theme,
+                    true,
+                );
             })
             .unwrap();
         let focused = focused_terminal.backend().buffer().clone();
@@ -925,18 +934,40 @@ mod tests {
     }
 
     #[test]
-    fn render_scrolls_down_to_keep_selection_visible() {
+    fn visible_content_height_matches_rendered_row_capacity() {
         let (store, ids) = make_store_with_deletions(20);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
+        let mut state = AnnotationListState::new();
+        let panel_area = Rect::new(0, 0, 36, 7);
+        let visible_height = visible_content_height(panel_area);
+        state.set_selected_annotation_id(ids[0]);
 
-        for _ in 0..6 {
-            panel.move_selection_down(&store);
+        for _ in 0..visible_height {
+            state.move_selection_down(&store, visible_height);
         }
 
-        let output = render_store_to_lines(36, 7, &mut panel, &store, false).join("\n");
+        let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
 
-        assert_eq!(panel.list_state.scroll_offset, 2);
+        assert_eq!(visible_height, 5);
+        assert_eq!(state.scroll_offset, 1);
+        assert!(
+            output.contains("L6 del5"),
+            "Expected helper-derived viewport to keep the selected row visible: {output}"
+        );
+    }
+
+    #[test]
+    fn render_scrolls_down_to_keep_selection_visible() {
+        let (store, ids) = make_store_with_deletions(20);
+        let mut state = AnnotationListState::new();
+        state.set_selected_annotation_id(ids[0]);
+
+        for _ in 0..6 {
+            state.move_selection_down(&store, 5);
+        }
+
+        let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
+
+        assert_eq!(state.scroll_offset, 2);
         assert!(
             output.contains("L7 del6"),
             "Expected selected item in view: {output}"
@@ -954,21 +985,21 @@ mod tests {
     #[test]
     fn render_scrolls_back_up_when_selection_moves_up() {
         let (store, ids) = make_store_with_deletions(20);
-        let mut panel = AnnotationListPanel::new();
-        panel.set_selected_annotation_id(ids[0]);
+        let mut state = AnnotationListState::new();
+        state.set_selected_annotation_id(ids[0]);
 
         for _ in 0..8 {
-            panel.move_selection_down(&store);
+            state.move_selection_down(&store, 5);
         }
-        let _ = render_store_to_lines(36, 7, &mut panel, &store, false);
+        let _ = render_store_to_lines(36, 7, &state, &store, false);
 
         for _ in 0..5 {
-            panel.move_selection_up(&store);
+            state.move_selection_up(&store, 5);
         }
 
-        let output = render_store_to_lines(36, 7, &mut panel, &store, false).join("\n");
+        let output = render_store_to_lines(36, 7, &state, &store, false).join("\n");
 
-        assert_eq!(panel.list_state.scroll_offset, 3);
+        assert_eq!(state.scroll_offset, 3);
         assert!(
             output.contains("L4 del3"),
             "Expected moved selection in view: {output}"
@@ -985,19 +1016,22 @@ mod tests {
 
     #[test]
     fn render_scrolling_is_no_op_for_zero_or_one_annotation() {
-        let mut empty_panel = AnnotationListPanel::new();
+        let empty_state = AnnotationListState::new();
         let empty_store = AnnotationStore::new();
-        let _ = render_store_to_lines(36, 7, &mut empty_panel, &empty_store, false);
-        assert_eq!(empty_panel.list_state.scroll_offset, 0);
+        let _ = render_store_to_lines(36, 7, &empty_state, &empty_store, false);
 
         let (store, ids) = make_store_with_deletions(1);
-        let mut single_panel = AnnotationListPanel::new();
-        single_panel.set_selected_annotation_id(ids[0]);
-        single_panel.list_state.scroll_offset = 4;
+        let mut single_state = AnnotationListState {
+            visible: true,
+            selected_id: Some(ids[0]),
+            scroll_offset: 4,
+        };
+        // Trigger ensure_visible via a mutation to clamp the scroll_offset
+        single_state.ensure_selection_initialized(&store, 5);
 
-        let output = render_store_to_lines(36, 7, &mut single_panel, &store, false).join("\n");
+        let output = render_store_to_lines(36, 7, &single_state, &store, false).join("\n");
 
-        assert_eq!(single_panel.list_state.scroll_offset, 0);
+        assert_eq!(single_state.scroll_offset, 0);
         assert!(!output.contains('▲'));
         assert!(!output.contains('▼'));
     }

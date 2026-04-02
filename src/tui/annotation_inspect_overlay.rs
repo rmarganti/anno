@@ -17,6 +17,25 @@ const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
 const FOOTER_HINT: &str = "j/k Select  Up/Down Scroll  Enter Jump  Esc Close";
 
+pub(crate) fn max_scroll_offset(annotation: &Annotation, area_width: u16, area_height: u16) -> u16 {
+    let box_width = ((area_width as usize * 4) / 5)
+        .max(MIN_WIDTH as usize)
+        .min(area_width as usize) as u16;
+    let box_height = ((area_height as usize * 4) / 5)
+        .max(MIN_HEIGHT as usize)
+        .min(area_height as usize) as u16;
+    let inner_width = box_width.saturating_sub(2);
+    let content_height = box_height.saturating_sub(3);
+
+    if inner_width == 0 || content_height == 0 {
+        return 0;
+    }
+
+    let max_offset = content_line_count(annotation, inner_width as usize)
+        .saturating_sub(content_height as usize);
+    u16::try_from(max_offset).unwrap_or(u16::MAX)
+}
+
 /// Modal overlay for read-only inspection of a single annotation.
 #[derive(Debug, Clone)]
 pub struct AnnotationInspectOverlay {
@@ -29,7 +48,7 @@ impl AnnotationInspectOverlay {
     }
 
     /// Render the inspect overlay centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: &mut u16) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: u16) {
         let box_width = ((area.width as usize * 4) / 5)
             .max(MIN_WIDTH as usize)
             .min(area.width as usize) as u16;
@@ -70,9 +89,7 @@ impl AnnotationInspectOverlay {
         let content_lines = self.content_lines(theme, inner.width as usize);
         let visible_height = content_height as usize;
         let max_offset = content_lines.len().saturating_sub(visible_height);
-        *scroll_offset = (*scroll_offset as usize).min(max_offset) as u16;
-
-        let offset = *scroll_offset as usize;
+        let offset = (scroll_offset as usize).min(max_offset);
         let has_lines_above = offset > 0;
         let has_lines_below = offset + visible_height < content_lines.len();
 
@@ -252,6 +269,52 @@ fn push_section(
     }
 }
 
+fn content_line_count(annotation: &Annotation, width: usize) -> usize {
+    let mut count = 0;
+    let mut push_section = |body: &str| {
+        if count != 0 {
+            count += 1;
+        }
+
+        count += 1;
+        let body = if body.is_empty() { "(empty)" } else { body };
+        let indent_width = if width > 2 { 2 } else { 0 };
+        let wrap_width = width.saturating_sub(indent_width).max(1);
+        count += wrap_text(body, wrap_width).len();
+    };
+
+    if let Some(range) = annotation.range {
+        let location = location_label(range);
+        push_section(&location);
+    } else {
+        push_section("Global comment");
+    }
+
+    match annotation.annotation_type {
+        AnnotationType::Deletion => {
+            push_section(&annotation.selected_text);
+        }
+        AnnotationType::Comment => {
+            if !annotation.selected_text.is_empty() {
+                push_section(&annotation.selected_text);
+            }
+            push_section(&annotation.text);
+        }
+        AnnotationType::Replacement => {
+            push_section(&annotation.selected_text);
+            push_section(&annotation.text);
+        }
+        AnnotationType::Insertion => {
+            push_section(&annotation.text);
+        }
+        AnnotationType::GlobalComment => {
+            push_section(&annotation.text);
+        }
+    }
+
+    count
+}
+
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let mut lines = Vec::new();
@@ -311,7 +374,7 @@ mod tests {
         width: u16,
         height: u16,
         overlay: &AnnotationInspectOverlay,
-        scroll_offset: &mut u16,
+        scroll_offset: u16,
     ) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -345,7 +408,7 @@ mod tests {
     }
 
     fn render_to_lines(width: u16, height: u16, overlay: &AnnotationInspectOverlay) -> Vec<String> {
-        render_to_lines_with_offset(width, height, overlay, &mut 0)
+        render_to_lines_with_offset(width, height, overlay, 0)
     }
 
     #[test]
@@ -422,7 +485,7 @@ mod tests {
         ));
 
         let top = render_to_lines(40, 12, &overlay).join("\n");
-        let scrolled = render_to_lines_with_offset(40, 12, &overlay, &mut 4).join("\n");
+        let scrolled = render_to_lines_with_offset(40, 12, &overlay, 4).join("\n");
 
         assert!(top.contains('▼'), "Expected down indicator at top: {top}");
         assert!(
@@ -455,10 +518,8 @@ mod tests {
             "line one\nline two\nline three\nline four\nline five\nline six".to_string(),
         ));
 
-        let mut offset = 999u16;
-        let output = render_to_lines_with_offset(40, 10, &overlay, &mut offset).join("\n");
+        let output = render_to_lines_with_offset(40, 10, &overlay, 999).join("\n");
 
-        assert!(offset < 999, "Expected offset to be clamped");
         assert!(!output.is_empty(), "Expected output after clamping");
     }
 }

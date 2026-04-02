@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::keybinds::help_content::HelpSection;
+use crate::keybinds::help_content::{HelpSection, help_sections};
 use crate::tui::theme::UiTheme;
 
 const MIN_WIDTH: u16 = 36;
@@ -26,6 +26,10 @@ const SECTION_ORDER: &[&str] = &[
 const LEFT_COL_TITLES: &[&str] = &["Global", "Normal Mode", "Insert Mode"];
 const RIGHT_COL_TITLES: &[&str] = &["Visual Mode", "Annotation List", "Command Mode"];
 
+pub fn max_scroll_offset(width: u16, height: u16) -> u16 {
+    HelpOverlay::new(help_sections()).max_scroll_offset(&UiTheme::default(), width, height)
+}
+
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
 pub struct HelpOverlay {
@@ -37,8 +41,27 @@ impl HelpOverlay {
         Self { sections }
     }
 
+    pub fn max_scroll_offset(&self, theme: &UiTheme, width: u16, height: u16) -> u16 {
+        let box_width = ((width as usize * 4) / 5)
+            .max(MIN_WIDTH as usize)
+            .min(width as usize) as u16;
+        let box_height = ((height as usize * 4) / 5)
+            .max(MIN_HEIGHT as usize)
+            .min(height as usize) as u16;
+        let content_width = box_width.saturating_sub(2) as usize;
+        let content_height = box_height.saturating_sub(3) as usize;
+
+        if content_width == 0 || content_height == 0 {
+            return 0;
+        }
+
+        self.content_lines(theme, content_width)
+            .len()
+            .saturating_sub(content_height) as u16
+    }
+
     /// Render the help overlay centered in the given area.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: &mut u16) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &UiTheme, scroll_offset: u16) {
         let box_width = ((area.width as usize * 4) / 5)
             .max(MIN_WIDTH as usize)
             .min(area.width as usize) as u16;
@@ -75,12 +98,8 @@ impl HelpOverlay {
 
         let content_lines = self.content_lines(theme, inner.width as usize);
         let visible_height = content_height as usize;
-
-        // Clamp scroll offset so it never exceeds scrollable range.
-        let max_offset = content_lines.len().saturating_sub(visible_height);
-        *scroll_offset = (*scroll_offset as usize).min(max_offset) as u16;
-
-        let offset = *scroll_offset as usize;
+        let max_offset = self.max_scroll_offset(theme, area.width, area.height) as usize;
+        let offset = (scroll_offset as usize).min(max_offset);
         let has_lines_above = offset > 0;
         let has_lines_below = offset + visible_height < content_lines.len();
 
@@ -217,11 +236,7 @@ mod tests {
     use crate::keybinds::help_content::help_sections;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn render_to_lines_with_offset(
-        width: u16,
-        height: u16,
-        scroll_offset: &mut u16,
-    ) -> Vec<String> {
+    fn render_to_lines_with_offset(width: u16, height: u16, scroll_offset: u16) -> Vec<String> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         let overlay = HelpOverlay::new(help_sections());
@@ -255,7 +270,7 @@ mod tests {
     }
 
     fn render_to_lines(width: u16, height: u16) -> Vec<String> {
-        render_to_lines_with_offset(width, height, &mut 0)
+        render_to_lines_with_offset(width, height, 0)
     }
 
     #[test]
@@ -315,15 +330,13 @@ mod tests {
     #[test]
     fn scroll_offset_changes_visible_content() {
         let at_top = render_to_lines(80, 24).join("\n");
-        let scrolled = render_to_lines_with_offset(80, 24, &mut 3).join("\n");
+        let scrolled = render_to_lines_with_offset(80, 24, 3).join("\n");
         assert_ne!(at_top, scrolled, "Expected different content when scrolled");
     }
 
     #[test]
     fn excessive_scroll_offset_is_clamped() {
-        let mut offset = 9999u16;
-        let output = render_to_lines_with_offset(80, 24, &mut offset).join("\n");
-        assert!(offset < 9999, "Expected scroll offset to be clamped");
+        let output = render_to_lines_with_offset(80, 24, 9999).join("\n");
         assert!(
             !output.is_empty(),
             "Expected content to render after clamping"
@@ -332,8 +345,7 @@ mod tests {
 
     #[test]
     fn scroll_indicators_appear_when_scrolled() {
-        let mut offset = 3u16;
-        let output = render_to_lines_with_offset(24, 8, &mut offset).join("\n");
+        let output = render_to_lines_with_offset(24, 8, 3).join("\n");
         assert!(
             output.contains('▲'),
             "Expected ▲ when scrolled down in: {output}"

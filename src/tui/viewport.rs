@@ -189,7 +189,7 @@ impl Viewport {
             cursor: CursorPosition { row: 0, col: 0 },
             height: 0,
             width: 0,
-            word_wrap: true,
+            word_wrap: false,
             horizontal_offset: 0,
         }
     }

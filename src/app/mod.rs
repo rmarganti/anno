@@ -12,17 +12,18 @@ use ratatui::{
 };
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType};
+use crate::app::app_state::AppState;
 use crate::highlight::syntect::SyntectHighlighter;
 use crate::keybinds::help_content::help_sections;
 use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_inspect_overlay::AnnotationInspectOverlay;
-use crate::tui::annotation_list_panel::PANEL_WIDTH;
+use crate::tui::annotation_list_panel::{self, PANEL_WIDTH};
+use crate::tui::document_view;
 use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
-use app_state::AppState;
 
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
@@ -110,18 +111,20 @@ impl App {
         let show_panel = self.state.is_panel_visible() && panel_available;
 
         // Compute the document area width for dimension checks.
+        let main_area_height = area.height.saturating_sub(1);
         let doc_area_width = if show_panel {
             area.width.saturating_sub(PANEL_WIDTH)
         } else {
             area.width
         };
 
+        self.state.set_overlay_area(area.width, main_area_height);
+
         // Sync viewport dimensions before the size check so is_too_small()
         // reflects the actual terminal size (viewport starts at 0×0).
-        self.state.document_view_mut().update_dimensions(
-            doc_area_width as usize,
-            area.height.saturating_sub(1) as usize,
-        );
+        self.state
+            .document_view_mut()
+            .update_dimensions(doc_area_width as usize, main_area_height as usize);
 
         // Minimum terminal size check.
         if self.state.document_view().is_too_small() {
@@ -133,6 +136,14 @@ impl App {
 
         let [main_area, status_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+        self.state.set_annotation_list_visible_height(
+            annotation_list_panel::visible_content_height(ratatui::layout::Rect::new(
+                0,
+                0,
+                PANEL_WIDTH,
+                main_area.height,
+            )),
+        );
 
         // Split main_area into panel + document when the panel is shown.
         let (panel_area, doc_area) = if show_panel {
@@ -170,15 +181,22 @@ impl App {
         // -- Annotation list panel --
         if let Some(panel_area) = panel_area {
             let is_focused = self.state.mode() == Mode::AnnotationList;
-            self.state
-                .render_annotation_list_panel(frame, panel_area, &self.theme, is_focused);
+            annotation_list_panel::render_annotation_list_panel(
+                frame,
+                panel_area,
+                self.state.annotation_list_panel(),
+                self.state.annotations(),
+                &self.theme,
+                is_focused,
+            );
         }
 
         // -- Main document area --
         let is_visual = self.state.mode() == Mode::Visual;
-        self.state.document_view_mut().render(
+        document_view::render_document_view(
             frame,
             doc_area,
+            self.state.document_view(),
             &self.theme,
             is_visual,
             &annotation_indicators,
@@ -207,7 +225,7 @@ impl App {
         );
 
         // -- Input box overlay --
-        if let Some(ib) = self.state.annotation_controller().input_box() {
+        if let Some(ib) = self.state.input_box() {
             ib.render(frame, main_area, &self.theme);
         }
 
@@ -226,7 +244,7 @@ impl App {
                 frame,
                 main_area,
                 &self.theme,
-                self.state.annotation_inspect_scroll_offset_mut(),
+                self.state.annotation_inspect_scroll_offset(),
             );
         }
 
@@ -236,7 +254,7 @@ impl App {
                 frame,
                 main_area,
                 &self.theme,
-                self.state.help_scroll_offset_mut(),
+                self.state.help_scroll_offset(),
             );
         }
     }
