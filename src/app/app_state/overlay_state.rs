@@ -2,6 +2,7 @@ use crossterm::event::KeyEvent;
 
 use super::core::{ANNOTATION_INSPECT_PAGE_SCROLL_LINES, AppState};
 use crate::keybinds::handler::Action;
+use crate::tui::annotation_inspect_overlay::max_scroll_offset;
 use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
 
 impl AppState {
@@ -144,12 +145,30 @@ impl AppState {
     }
 
     fn scroll_annotation_inspect_down(&mut self, lines: u16) {
-        self.annotation_inspect_scroll_offset =
-            self.annotation_inspect_scroll_offset.saturating_add(lines);
+        self.annotation_inspect_scroll_offset = self
+            .annotation_inspect_scroll_offset
+            .saturating_add(lines)
+            .min(self.annotation_inspect_max_scroll_offset());
     }
 
     fn scroll_annotation_inspect_up(&mut self, lines: u16) {
-        self.annotation_inspect_scroll_offset =
-            self.annotation_inspect_scroll_offset.saturating_sub(lines);
+        self.annotation_inspect_scroll_offset = self
+            .annotation_inspect_scroll_offset
+            .min(self.annotation_inspect_max_scroll_offset())
+            .saturating_sub(lines);
+    }
+
+    pub(super) fn clamp_annotation_inspect_scroll_offset(&mut self) {
+        self.annotation_inspect_scroll_offset = self
+            .annotation_inspect_scroll_offset
+            .min(self.annotation_inspect_max_scroll_offset());
+    }
+
+    fn annotation_inspect_max_scroll_offset(&self) -> u16 {
+        let Some(annotation) = self.selected_annotation() else {
+            return 0;
+        };
+        let (width, height) = self.overlay_area;
+        max_scroll_offset(annotation, width, height)
     }
 }

@@ -70,6 +70,8 @@ pub struct AppState {
     pub(super) help_visible: bool,
     /// Scroll offset for the help overlay content.
     pub(super) help_scroll_offset: u16,
+    /// Dimensions available to centered overlays in the main content area.
+    pub(super) overlay_area: (u16, u16),
     /// Whether the current terminal width can show the annotation list panel.
     pub(super) annotation_panel_available: bool,
 }
@@ -136,6 +138,7 @@ impl AppState {
             annotation_inspect_scroll_offset: 0,
             help_visible: false,
             help_scroll_offset: 0,
+            overlay_area: (80, 23),
             annotation_panel_available: true,
         }
     }
@@ -222,6 +225,11 @@ impl AppState {
 
     pub fn annotation_list_visible_height(&self) -> u16 {
         self.document_view.viewport_height().saturating_sub(2) as u16
+    }
+
+    pub(crate) fn set_overlay_area(&mut self, width: u16, height: u16) {
+        self.overlay_area = (width, height);
+        self.clamp_annotation_inspect_scroll_offset();
     }
 
     pub fn document_view_mut(&mut self) -> &mut DocumentViewState {

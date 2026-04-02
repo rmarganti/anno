@@ -17,6 +17,25 @@ const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
 const FOOTER_HINT: &str = "j/k Select  Up/Down Scroll  Enter Jump  Esc Close";
 
+pub(crate) fn max_scroll_offset(annotation: &Annotation, area_width: u16, area_height: u16) -> u16 {
+    let box_width = ((area_width as usize * 4) / 5)
+        .max(MIN_WIDTH as usize)
+        .min(area_width as usize) as u16;
+    let box_height = ((area_height as usize * 4) / 5)
+        .max(MIN_HEIGHT as usize)
+        .min(area_height as usize) as u16;
+    let inner_width = box_width.saturating_sub(2);
+    let content_height = box_height.saturating_sub(3);
+
+    if inner_width == 0 || content_height == 0 {
+        return 0;
+    }
+
+    let max_offset = content_line_count(annotation, inner_width as usize)
+        .saturating_sub(content_height as usize);
+    u16::try_from(max_offset).unwrap_or(u16::MAX)
+}
+
 /// Modal overlay for read-only inspection of a single annotation.
 #[derive(Debug, Clone)]
 pub struct AnnotationInspectOverlay {
@@ -248,6 +267,52 @@ fn push_section(
     for wrapped in wrap_text(body, wrap_width) {
         lines.push(Line::from(format!("{indent}{wrapped}")));
     }
+}
+
+fn content_line_count(annotation: &Annotation, width: usize) -> usize {
+    let mut count = 0;
+    let mut push_section = |body: &str| {
+        if count != 0 {
+            count += 1;
+        }
+
+        count += 1;
+        let body = if body.is_empty() { "(empty)" } else { body };
+        let indent_width = if width > 2 { 2 } else { 0 };
+        let wrap_width = width.saturating_sub(indent_width).max(1);
+        count += wrap_text(body, wrap_width).len();
+    };
+
+    if let Some(range) = annotation.range {
+        let location = location_label(range);
+        push_section(&location);
+    } else {
+        push_section("Global comment");
+    }
+
+    match annotation.annotation_type {
+        AnnotationType::Deletion => {
+            push_section(&annotation.selected_text);
+        }
+        AnnotationType::Comment => {
+            if !annotation.selected_text.is_empty() {
+                push_section(&annotation.selected_text);
+            }
+            push_section(&annotation.text);
+        }
+        AnnotationType::Replacement => {
+            push_section(&annotation.selected_text);
+            push_section(&annotation.text);
+        }
+        AnnotationType::Insertion => {
+            push_section(&annotation.text);
+        }
+        AnnotationType::GlobalComment => {
+            push_section(&annotation.text);
+        }
+    }
+
+    count
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {

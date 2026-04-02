@@ -12,6 +12,7 @@ pub(crate) struct AppTestHarness {
 impl AppTestHarness {
     pub(crate) fn new(content: &str) -> Self {
         let mut state = AppState::new_plain("[test]".to_string(), content.to_string());
+        state.set_overlay_area(80, 23);
         state.document_view_mut().update_dimensions(80, 24);
 
         Self { state }

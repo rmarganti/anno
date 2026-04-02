@@ -111,18 +111,20 @@ impl App {
         let show_panel = self.state.is_panel_visible() && panel_available;
 
         // Compute the document area width for dimension checks.
+        let main_area_height = area.height.saturating_sub(1);
         let doc_area_width = if show_panel {
             area.width.saturating_sub(PANEL_WIDTH)
         } else {
             area.width
         };
 
+        self.state.set_overlay_area(area.width, main_area_height);
+
         // Sync viewport dimensions before the size check so is_too_small()
         // reflects the actual terminal size (viewport starts at 0×0).
-        self.state.document_view_mut().update_dimensions(
-            doc_area_width as usize,
-            area.height.saturating_sub(1) as usize,
-        );
+        self.state
+            .document_view_mut()
+            .update_dimensions(doc_area_width as usize, main_area_height as usize);
 
         // Minimum terminal size check.
         if self.state.document_view().is_too_small() {

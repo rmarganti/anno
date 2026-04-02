@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::annotation_inspect_overlay::max_scroll_offset;
 
 #[test]
 fn space_opens_annotation_inspect_from_annotation_list() {
@@ -73,6 +74,46 @@ fn annotation_inspect_arrow_keys_scroll_without_changing_selection() {
     assert_eq!(
         harness.state().annotation_inspect_scroll_offset(),
         ANNOTATION_INSPECT_PAGE_SCROLL_LINES
+    );
+}
+
+#[test]
+fn annotation_inspect_scroll_offset_clamps_at_content_end() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+    harness
+        .state_mut()
+        .annotations_mut()
+        .add(Annotation::comment(
+            range(0, 0, 0, 5),
+            "alpha".into(),
+            (0..48)
+                .map(|idx| format!("detail line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+
+    harness.keys("<Tab>k ");
+    let expected_max = max_scroll_offset(
+        harness
+            .state()
+            .selected_annotation()
+            .expect("inspect selection should exist"),
+        80,
+        23,
+    );
+
+    for _ in 0..20 {
+        harness.key(KeyCode::PageDown);
+    }
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        expected_max
+    );
+
+    harness.key(KeyCode::Up);
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        expected_max.saturating_sub(1)
     );
 }
 
