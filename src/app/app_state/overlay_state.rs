@@ -2,8 +2,9 @@ use crossterm::event::KeyEvent;
 
 use super::core::{ANNOTATION_INSPECT_PAGE_SCROLL_LINES, AppState};
 use crate::keybinds::handler::Action;
-use crate::tui::annotation_inspect_overlay::max_scroll_offset;
+use crate::tui::annotation_inspect_overlay::max_scroll_offset as annotation_inspect_max_scroll_offset;
 use crate::tui::confirm_dialog::{ConfirmDialog, ConfirmDialogEvent};
+use crate::tui::help_overlay::max_scroll_offset as help_overlay_max_scroll_offset;
 
 impl AppState {
     pub(super) fn handle_overlay_key(&mut self, key_event: KeyEvent) -> bool {
@@ -58,12 +59,8 @@ impl AppState {
                 self.help_visible = false;
                 self.keybinds.clear_pending();
             }
-            Action::MoveDown => {
-                self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
-            }
-            Action::MoveUp => {
-                self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
-            }
+            Action::MoveDown => self.scroll_help_down(1),
+            Action::MoveUp => self.scroll_help_up(1),
             _ => {}
         }
     }
@@ -144,6 +141,29 @@ impl AppState {
         }
     }
 
+    fn scroll_help_down(&mut self, lines: u16) {
+        self.help_scroll_offset = self
+            .help_scroll_offset
+            .saturating_add(lines)
+            .min(self.help_max_scroll_offset());
+    }
+
+    fn scroll_help_up(&mut self, lines: u16) {
+        self.help_scroll_offset = self
+            .help_scroll_offset
+            .min(self.help_max_scroll_offset())
+            .saturating_sub(lines);
+    }
+
+    pub(super) fn clamp_help_scroll_offset(&mut self) {
+        self.help_scroll_offset = self.help_scroll_offset.min(self.help_max_scroll_offset());
+    }
+
+    fn help_max_scroll_offset(&self) -> u16 {
+        let (width, height) = self.overlay_area;
+        help_overlay_max_scroll_offset(width, height)
+    }
+
     fn scroll_annotation_inspect_down(&mut self, lines: u16) {
         self.annotation_inspect_scroll_offset = self
             .annotation_inspect_scroll_offset
@@ -169,6 +189,6 @@ impl AppState {
             return 0;
         };
         let (width, height) = self.overlay_area;
-        max_scroll_offset(annotation, width, height)
+        annotation_inspect_max_scroll_offset(annotation, width, height)
     }
 }

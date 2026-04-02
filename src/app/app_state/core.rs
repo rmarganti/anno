@@ -229,6 +229,7 @@ impl AppState {
 
     pub(crate) fn set_overlay_area(&mut self, width: u16, height: u16) {
         self.overlay_area = (width, height);
+        self.clamp_help_scroll_offset();
         self.clamp_annotation_inspect_scroll_offset();
     }
 

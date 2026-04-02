@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::annotation_inspect_overlay::max_scroll_offset;
+use crate::tui::help_overlay::max_scroll_offset as help_overlay_max_scroll_offset;
 
 #[test]
 fn space_opens_annotation_inspect_from_annotation_list() {
@@ -337,6 +338,24 @@ fn help_scroll_offset_resets_on_reopen() {
     harness.keys("?");
     harness.assert_help_visible();
     assert_eq!(harness.state().help_scroll_offset(), 0);
+}
+
+#[test]
+fn help_scroll_offset_clamps_at_content_end_and_recovers_immediately() {
+    let mut harness = harness("hello");
+    let expected_max = help_overlay_max_scroll_offset(80, 23);
+
+    harness.keys("?");
+    for _ in 0..200 {
+        harness.key(KeyCode::Down);
+    }
+    assert_eq!(harness.state().help_scroll_offset(), expected_max);
+
+    harness.key(KeyCode::Up);
+    assert_eq!(
+        harness.state().help_scroll_offset(),
+        expected_max.saturating_sub(1)
+    );
 }
 
 #[test]

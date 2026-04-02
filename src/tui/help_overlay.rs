@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::keybinds::help_content::HelpSection;
+use crate::keybinds::help_content::{HelpSection, help_sections};
 use crate::tui::theme::UiTheme;
 
 const MIN_WIDTH: u16 = 36;
@@ -26,6 +26,10 @@ const SECTION_ORDER: &[&str] = &[
 const LEFT_COL_TITLES: &[&str] = &["Global", "Normal Mode", "Insert Mode"];
 const RIGHT_COL_TITLES: &[&str] = &["Visual Mode", "Annotation List", "Command Mode"];
 
+pub fn max_scroll_offset(width: u16, height: u16) -> u16 {
+    HelpOverlay::new(help_sections()).max_scroll_offset(&UiTheme::default(), width, height)
+}
+
 /// Modal help overlay rendered on top of the document view.
 #[derive(Debug, Clone)]
 pub struct HelpOverlay {
@@ -35,6 +39,25 @@ pub struct HelpOverlay {
 impl HelpOverlay {
     pub fn new(sections: Vec<HelpSection>) -> Self {
         Self { sections }
+    }
+
+    pub fn max_scroll_offset(&self, theme: &UiTheme, width: u16, height: u16) -> u16 {
+        let box_width = ((width as usize * 4) / 5)
+            .max(MIN_WIDTH as usize)
+            .min(width as usize) as u16;
+        let box_height = ((height as usize * 4) / 5)
+            .max(MIN_HEIGHT as usize)
+            .min(height as usize) as u16;
+        let content_width = box_width.saturating_sub(2) as usize;
+        let content_height = box_height.saturating_sub(3) as usize;
+
+        if content_width == 0 || content_height == 0 {
+            return 0;
+        }
+
+        self.content_lines(theme, content_width)
+            .len()
+            .saturating_sub(content_height) as u16
     }
 
     /// Render the help overlay centered in the given area.
@@ -75,9 +98,7 @@ impl HelpOverlay {
 
         let content_lines = self.content_lines(theme, inner.width as usize);
         let visible_height = content_height as usize;
-
-        // Clamp scroll offset so it never exceeds scrollable range.
-        let max_offset = content_lines.len().saturating_sub(visible_height);
+        let max_offset = self.max_scroll_offset(theme, area.width, area.height) as usize;
         let offset = (scroll_offset as usize).min(max_offset);
         let has_lines_above = offset > 0;
         let has_lines_below = offset + visible_height < content_lines.len();
