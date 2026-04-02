@@ -8,7 +8,6 @@ use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
 use crate::tui::annotation_controller::AnnotationController;
 use crate::tui::annotation_list_panel::AnnotationListState;
-use crate::tui::command_line::CommandLine;
 use crate::tui::confirm_dialog::ConfirmDialog;
 use crate::tui::document_view::DocumentViewState;
 use crate::tui::renderer;
@@ -28,8 +27,8 @@ pub struct AppState {
     pub(super) keybinds: KeybindHandler,
     /// Annotation storage.
     pub(super) annotations: AnnotationStore,
-    /// Command-line component (handles `:` command input).
-    pub(super) command_line: CommandLine,
+    /// Command-mode input buffer.
+    pub(super) command_buffer: String,
     /// Whether the app should quit.
     pub(super) should_quit: bool,
     /// The exit result to return.
@@ -104,7 +103,7 @@ impl AppState {
             mode: Mode::Normal,
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
-            command_line: CommandLine::new(),
+            command_buffer: String::new(),
             should_quit: false,
             exit_result: None,
             document_view,
@@ -193,7 +192,7 @@ impl AppState {
     }
 
     pub fn command_buffer(&self) -> &str {
-        self.command_line.buffer()
+        &self.command_buffer
     }
 
     pub fn word_wrap(&self) -> bool {

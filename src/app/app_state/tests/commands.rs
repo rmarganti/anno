@@ -56,6 +56,49 @@ fn backspace_on_empty_command_exits_command_mode() {
 }
 
 #[test]
+fn command_chars_append_to_buffer() {
+    let mut harness = harness("hello");
+    harness.keys(":q!").assert_mode(Mode::Command);
+
+    assert_eq!(harness.state().command_buffer(), "q!");
+}
+
+#[test]
+fn command_backspace_removes_last_char() {
+    let mut harness = harness("hello");
+    harness.keys(":q!<BS>").assert_mode(Mode::Command);
+
+    assert_eq!(harness.state().command_buffer(), "q");
+}
+
+#[test]
+fn backspace_on_single_command_char_exits_and_clears_buffer() {
+    let mut harness = harness("hello");
+    harness.keys(":a<BS>").assert_mode(Mode::Normal);
+
+    assert_eq!(harness.state().command_buffer(), "");
+}
+
+#[test]
+fn confirm_unknown_command_exits_and_clears_buffer() {
+    let mut harness = harness("hello");
+    harness
+        .keys(":x<Enter>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
+
+    assert_eq!(harness.state().command_buffer(), "");
+}
+
+#[test]
+fn entering_command_mode_clears_existing_buffer() {
+    let mut harness = harness("hello");
+    harness.keys(":q<Esc>:").assert_mode(Mode::Command);
+
+    assert_eq!(harness.state().command_buffer(), "");
+}
+
+#[test]
 fn ctrl_c_quits_from_normal_mode() {
     harness("hello").keys("<C-c>").assert_should_quit();
 }

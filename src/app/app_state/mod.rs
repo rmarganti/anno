@@ -130,7 +130,7 @@ impl AppState {
         match action {
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
-                self.command_line.clear();
+                self.clear_command_buffer();
             }
             Action::EnterAnnotationListMode => {
                 if self.annotation_list_panel.is_visible() {
@@ -183,9 +183,9 @@ impl AppState {
 
     fn handle_command_mode_action(&mut self, action: Action) -> bool {
         let event = match action {
-            Action::CommandChar(c) => self.command_line.handle_char(c),
-            Action::CommandBackspace => self.command_line.handle_backspace(),
-            Action::CommandConfirm => self.command_line.handle_confirm(),
+            Action::CommandChar(c) => self.handle_command_char(c),
+            Action::CommandBackspace => self.handle_command_backspace(),
+            Action::CommandConfirm => self.handle_command_confirm(),
             _ => return false,
         };
 
