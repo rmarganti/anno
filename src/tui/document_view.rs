@@ -16,9 +16,9 @@ use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 const MAX_DOC_WIDTH: u16 = 120;
 const GUTTER_WIDTH: usize = 1;
 
-/// Manages the document content display: viewport, cursor movement, word wrap,
-/// visual selection, and rendering of the main document area.
-pub struct DocumentView {
+/// Manages the document content display state: viewport, cursor movement,
+/// word wrap, and visual selection.
+pub struct DocumentViewState {
     /// Viewport state (scroll, cursor, dimensions).
     viewport: Viewport,
     /// Display layout mapping document lines → display rows.
@@ -31,7 +31,7 @@ pub struct DocumentView {
     styled_lines: Vec<Vec<StyledSpan>>,
 }
 
-impl DocumentView {
+impl DocumentViewState {
     pub fn new(doc_lines: Vec<String>, styled_lines: Vec<Vec<StyledSpan>>) -> Self {
         let mut viewport = Viewport::new();
         let display_layout = DisplayLayout::build(&doc_lines, 0, false);
@@ -138,79 +138,6 @@ impl DocumentView {
         self.visual_anchor = None;
     }
 
-    /// Render the document area into the frame.
-    /// `is_visual` should be true when in Visual mode (to show selection highlighting).
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        area: ratatui::layout::Rect,
-        theme: &UiTheme,
-        is_visual: bool,
-        annotation_indicators: &[AnnotationIndicator],
-        selected_annotation_range: Option<&TextRange>,
-    ) {
-        frame.render_widget(Block::default().style(theme.document), area);
-
-        // Update viewport dimensions (account for status row handled by caller).
-        let doc_height = area.height as usize;
-        let doc_width = Self::viewport_width(area.width as usize);
-        let old_width = self.viewport.width;
-        self.viewport.set_dimensions(doc_width, doc_height);
-
-        if doc_width != old_width {
-            self.rebuild_display_layout();
-        }
-
-        // Cap the main content width at MAX_DOC_WIDTH columns and center it.
-        let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
-            .flex(Flex::Center)
-            .areas::<1>(area)[0];
-        let [gutter_area, text_area] =
-            Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
-                .areas(main_area);
-
-        let render_slices = self.viewport.visible_render_slices(&self.display_layout);
-
-        let selection = if is_visual {
-            self.visual_anchor.map(|anchor| {
-                let sel = Selection { anchor };
-                sel.range(self.viewport.cursor)
-            })
-        } else {
-            None
-        };
-
-        let annotation_ranges: Vec<TextRange> = annotation_indicators
-            .iter()
-            .map(|indicator| indicator.range)
-            .collect();
-
-        let visible_lines: Vec<Line<'static>> =
-            renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
-                slices: &render_slices,
-                styled_lines: &self.styled_lines,
-                plain_lines: &self.doc_lines,
-                cursor_row: self.viewport.cursor.row,
-                cursor_col: self.viewport.cursor.col,
-                theme,
-                selection,
-                annotation_ranges: &annotation_ranges,
-                selected_annotation_range,
-            });
-
-        let gutter_lines = Self::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
-
-        let gutter = Paragraph::new(gutter_lines)
-            .style(theme.document)
-            .block(Block::default().style(theme.document));
-        frame.render_widget(gutter, gutter_area);
-
-        let doc = Paragraph::new(visible_lines)
-            .style(theme.document)
-            .block(Block::default().style(theme.document));
-        frame.render_widget(doc, text_area);
-    }
-
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
@@ -290,6 +217,70 @@ impl DocumentView {
     }
 }
 
+/// Render the document area into the frame.
+/// `is_visual` should be true when in Visual mode (to show selection highlighting).
+pub fn render_document_view(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    state: &DocumentViewState,
+    theme: &UiTheme,
+    is_visual: bool,
+    annotation_indicators: &[AnnotationIndicator],
+    selected_annotation_range: Option<&TextRange>,
+) {
+    frame.render_widget(Block::default().style(theme.document), area);
+
+    // Cap the main content width at MAX_DOC_WIDTH columns and center it.
+    let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
+        .flex(Flex::Center)
+        .areas::<1>(area)[0];
+    let [gutter_area, text_area] =
+        Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
+            .areas(main_area);
+
+    let render_slices = state.viewport.visible_render_slices(&state.display_layout);
+
+    let selection = if is_visual {
+        state.visual_anchor.map(|anchor| {
+            let sel = Selection { anchor };
+            sel.range(state.viewport.cursor)
+        })
+    } else {
+        None
+    };
+
+    let annotation_ranges: Vec<TextRange> = annotation_indicators
+        .iter()
+        .map(|indicator| indicator.range)
+        .collect();
+
+    let visible_lines: Vec<Line<'static>> =
+        renderer::prepare_visible_lines_from_slices(&renderer::PrepareVisibleLinesParams {
+            slices: &render_slices,
+            styled_lines: &state.styled_lines,
+            plain_lines: &state.doc_lines,
+            cursor_row: state.viewport.cursor.row,
+            cursor_col: state.viewport.cursor.col,
+            theme,
+            selection,
+            annotation_ranges: &annotation_ranges,
+            selected_annotation_range,
+        });
+
+    let gutter_lines =
+        DocumentViewState::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
+
+    let gutter = Paragraph::new(gutter_lines)
+        .style(theme.document)
+        .block(Block::default().style(theme.document));
+    frame.render_widget(gutter, gutter_area);
+
+    let doc = Paragraph::new(visible_lines)
+        .style(theme.document)
+        .block(Block::default().style(theme.document));
+    frame.render_widget(doc, text_area);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,8 +292,8 @@ mod tests {
 
     // ── Helpers ───────────────────────────────────────────────────────
 
-    /// Build a `DocumentView` from plain text lines with no syntax highlighting.
-    fn make_view(lines: &[&str]) -> DocumentView {
+    /// Build a `DocumentViewState` from plain text lines with no syntax highlighting.
+    fn make_view(lines: &[&str]) -> DocumentViewState {
         let doc_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         let styled_lines: Vec<Vec<StyledSpan>> = doc_lines
             .iter()
@@ -314,7 +305,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut view = DocumentView::new(doc_lines, styled_lines);
+        let mut view = DocumentViewState::new(doc_lines, styled_lines);
         // Give it a non-zero size so movement works.
         view.update_dimensions(80, 24);
         view
@@ -345,7 +336,7 @@ mod tests {
     }
 
     fn render_buffer(
-        view: &mut DocumentView,
+        view: &mut DocumentViewState,
         width: u16,
         height: u16,
         annotation_indicators: &[AnnotationIndicator],
@@ -356,7 +347,8 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                view.render(
+                view.update_dimensions(width as usize, height as usize);
+                render_document_view(
                     frame,
                     Rect {
                         x: 0,
@@ -364,6 +356,7 @@ mod tests {
                         width,
                         height,
                     },
+                    view,
                     &theme,
                     false,
                     annotation_indicators,
@@ -541,7 +534,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_marks_every_line_in_single_range() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(0), slice(1), slice(2)],
             &[indicator(AnnotationType::Comment, 0, 2)],
         );
@@ -558,7 +551,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_uses_highest_priority_type_per_row() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(1)],
             &[
                 indicator(AnnotationType::Comment, 1, 1),
@@ -573,7 +566,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_leaves_unannotated_rows_empty() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(0), slice(1), slice(2)],
             &[indicator(AnnotationType::Comment, 1, 1)],
         );
@@ -586,7 +579,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_marks_every_line_in_multiline_range() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(2), slice(3), slice(4)],
             &[indicator(AnnotationType::Replacement, 2, 4)],
         );
@@ -603,7 +596,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_marks_all_wrapped_rows_for_same_doc_line() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(0), slice(0), slice(0)],
             &[indicator(AnnotationType::Insertion, 0, 0)],
         );
@@ -620,7 +613,7 @@ mod tests {
 
     #[test]
     fn compute_gutter_annotation_types_ignores_global_comments() {
-        let gutter_types = DocumentView::compute_gutter_annotation_types(
+        let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(1)],
             &[indicator(AnnotationType::GlobalComment, 1, 1)],
         );
@@ -708,11 +701,11 @@ mod tests {
 
     #[test]
     fn too_small_when_dimensions_zero() {
-        // DocumentView::new() starts at 0×0 before update_dimensions is called.
+        // DocumentViewState::new() starts at 0×0 before update_dimensions is called.
         let mut raw_view = {
             let doc_lines = vec!["hello".to_string()];
             let styled_lines = vec![vec![StyledSpan::plain("hello")]];
-            DocumentView::new(doc_lines, styled_lines)
+            DocumentViewState::new(doc_lines, styled_lines)
         };
         assert!(raw_view.is_too_small());
         raw_view.update_dimensions(80, 24);

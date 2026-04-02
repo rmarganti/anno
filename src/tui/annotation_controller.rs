@@ -1,7 +1,7 @@
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::{Annotation, TextPosition, TextRange};
 use crate::keybinds::mode::Mode;
-use crate::tui::document_view::DocumentView;
+use crate::tui::document_view::DocumentViewState;
 use crate::tui::input_box::{InputBox, InputBoxEvent};
 
 use crossterm::event::KeyEvent;
@@ -65,7 +65,7 @@ impl AnnotationController {
     /// Create a Deletion annotation from the current visual selection.
     pub fn create_deletion(
         &mut self,
-        document_view: &mut DocumentView,
+        document_view: &mut DocumentViewState,
         annotations: &mut AnnotationStore,
     ) -> AnnotationAction {
         if let Some((range, text)) = document_view.take_visual_selection() {
@@ -78,7 +78,7 @@ impl AnnotationController {
     pub fn start_input_for_visual_annotation(
         &mut self,
         kind: &str,
-        document_view: &mut DocumentView,
+        document_view: &mut DocumentViewState,
     ) -> AnnotationAction {
         if let Some((range, selected_text)) = document_view.take_visual_selection() {
             let pending = if kind == "Comment" {
@@ -101,7 +101,7 @@ impl AnnotationController {
     }
 
     /// Begin input for an Insertion annotation at the current cursor position.
-    pub fn start_insertion(&mut self, document_view: &DocumentView) -> AnnotationAction {
+    pub fn start_insertion(&mut self, document_view: &DocumentViewState) -> AnnotationAction {
         let cursor = document_view.cursor();
         let position = TextPosition {
             line: cursor.row,

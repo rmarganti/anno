@@ -19,6 +19,7 @@ use crate::keybinds::mode::Mode;
 use crate::startup::{StartupError, StartupSettings};
 use crate::tui::annotation_inspect_overlay::AnnotationInspectOverlay;
 use crate::tui::annotation_list_panel::{self, PANEL_WIDTH};
+use crate::tui::document_view;
 use crate::tui::help_overlay::HelpOverlay;
 use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
@@ -190,9 +191,10 @@ impl App {
 
         // -- Main document area --
         let is_visual = self.state.mode() == Mode::Visual;
-        self.state.document_view_mut().render(
+        document_view::render_document_view(
             frame,
             doc_area,
+            self.state.document_view(),
             &self.theme,
             is_visual,
             &annotation_indicators,

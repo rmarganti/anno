@@ -10,7 +10,7 @@ use crate::tui::annotation_controller::AnnotationController;
 use crate::tui::annotation_list_panel::AnnotationListState;
 use crate::tui::command_line::CommandLine;
 use crate::tui::confirm_dialog::ConfirmDialog;
-use crate::tui::document_view::DocumentView;
+use crate::tui::document_view::DocumentViewState;
 use crate::tui::renderer;
 use crate::tui::viewport::CursorPosition;
 
@@ -34,8 +34,8 @@ pub struct AppState {
     pub(super) should_quit: bool,
     /// The exit result to return.
     pub(super) exit_result: Option<ExitResult>,
-    /// Document view component (viewport, cursor, rendering).
-    pub(super) document_view: DocumentView,
+    /// Document view state (viewport, cursor, document layout).
+    pub(super) document_view: DocumentViewState,
     /// Annotation creation state machine.
     pub(super) annotation_controller: AnnotationController,
     /// Annotation list sidebar panel state.
@@ -96,7 +96,7 @@ impl AppState {
         doc_lines_result: renderer::DocumentLines,
         export_format: ExportFormat,
     ) -> Self {
-        let document_view = DocumentView::new(doc_lines_result.plain, doc_lines_result.styled);
+        let document_view = DocumentViewState::new(doc_lines_result.plain, doc_lines_result.styled);
 
         Self {
             source_name,
@@ -204,11 +204,11 @@ impl AppState {
         &self.source_name
     }
 
-    pub fn document_view(&self) -> &DocumentView {
+    pub fn document_view(&self) -> &DocumentViewState {
         &self.document_view
     }
 
-    pub fn document_view_mut(&mut self) -> &mut DocumentView {
+    pub fn document_view_mut(&mut self) -> &mut DocumentViewState {
         &mut self.document_view
     }
 
