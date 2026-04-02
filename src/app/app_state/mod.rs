@@ -184,14 +184,13 @@ impl AppState {
     }
 
     fn handle_command_mode_action(&mut self, action: Action) -> bool {
-        let event = match action {
+        match action {
             Action::CommandChar(c) => self.handle_command_char(c),
             Action::CommandBackspace => self.handle_command_backspace(),
             Action::CommandConfirm => self.handle_command_confirm(),
             _ => return false,
-        };
+        }
 
-        self.handle_command_line_event(event);
         true
     }
 
