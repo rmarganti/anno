@@ -20,7 +20,7 @@ impl AppState {
             self.mode = Mode::Normal;
         }
 
-        if !available {
+        if !available && self.annotation_inspect_visible {
             self.close_annotation_inspect();
         }
     }

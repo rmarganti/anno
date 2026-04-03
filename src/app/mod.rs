@@ -4,7 +4,7 @@ use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Layout},
@@ -90,6 +90,7 @@ impl App {
 
             if event::poll(Duration::from_millis(100))?
                 && let Event::Key(key_event) = event::read()?
+                && key_event.kind == KeyEventKind::Press
             {
                 self.state.handle_key(key_event);
             }
