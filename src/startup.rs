@@ -132,6 +132,8 @@ pub struct StartupSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StartupLog {
     pub source: SourceMetadata,
+    pub export_format: ExportFormat,
+    pub title: Option<String>,
     pub theme: ThemeProvenance,
     pub syntax: ResolvedValue<ResolvedSyntax>,
 }
@@ -240,6 +242,8 @@ impl StartupSettings {
     pub fn startup_log(&self, source: &SourceMetadata) -> StartupLog {
         StartupLog {
             source: source.clone(),
+            export_format: self.export_format,
+            title: self.title.clone(),
             theme: self.theme_provenance.clone(),
             syntax: self.syntax.clone(),
         }
@@ -663,13 +667,22 @@ mod tests {
     #[test]
     fn startup_log_serializes_source_theme_and_syntax() {
         with_temp_home(Some(r#"{ "theme": "mocha", "syntax": "rust" }"#), || {
-            let cli = cli_from(&["anno", "demo.md"]);
+            let cli = cli_from(&[
+                "anno",
+                "--export-format",
+                "json",
+                "--title",
+                "Demo",
+                "demo.md",
+            ]);
             let source = file_source("demo.md");
             let startup = StartupSettings::resolve(&cli, &source, "").unwrap();
 
             let json = startup.startup_log_json(&source).unwrap();
 
             assert!(json.contains("\"display_name\":\"demo.md\""));
+            assert!(json.contains("\"export_format\":\"json\""));
+            assert!(json.contains("\"title\":\"Demo\""));
             assert!(json.contains("\"resolved_theme\":\"catppuccin-mocha\""));
             assert!(json.contains("\"syntax_name\":\"Rust\""));
             assert!(json.contains("\"source\":\"config\""));
