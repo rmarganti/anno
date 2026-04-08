@@ -312,30 +312,49 @@ impl KeybindHandler {
     }
 
     fn handle_visual(&mut self, event: KeyEvent) -> Action {
+        if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
             // Movement (extend selection)
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::MoveDown,
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => Action::MoveLeft,
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => Action::MoveRight,
-            (KeyCode::Char('w'), KeyModifiers::NONE) => Action::MoveWordForward,
-            (KeyCode::Char('b'), KeyModifiers::NONE) => Action::MoveWordBackward,
-            (KeyCode::Char('e'), KeyModifiers::NONE) => Action::MoveWordEnd,
-            (KeyCode::Char('0'), KeyModifiers::NONE) => Action::MoveLineStart,
-            (KeyCode::Char('$'), KeyModifiers::NONE) => Action::MoveLineEnd,
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveDown)
+            }
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveUp)
+            }
+            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveLeft)
+            }
+            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveRight)
+            }
+            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
+            (KeyCode::Char('b'), KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveWordBackward)
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
+            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
+            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
 
             // Annotation creation from selection
-            (KeyCode::Char('d'), KeyModifiers::NONE) => Action::CreateDeletion,
-            (KeyCode::Char('c'), KeyModifiers::NONE) => Action::CreateComment,
-            (KeyCode::Char('r'), KeyModifiers::NONE) => Action::CreateReplacement,
+            (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
+            (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
+            (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                self.finish_action(Action::CreateReplacement)
+            }
 
             // Cancel selection
-            (KeyCode::Esc, _) => Action::ExitToNormal,
+            (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
 
             // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
-            _ => Action::None,
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
         }
     }
 
@@ -812,6 +831,28 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Visual, key(KeyCode::Esc)),
             Action::ExitToNormal
+        );
+    }
+
+    #[test]
+    fn visual_counted_motion_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('3')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('j')),
+            repeated(Action::MoveDown, 3)
+        );
+    }
+
+    #[test]
+    fn visual_counted_unsupported_action_is_still_emitted() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('d')),
+            repeated(Action::CreateDeletion, 2)
         );
     }
 

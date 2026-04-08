@@ -111,7 +111,7 @@ impl AppState {
             Action::MoveUp => self.scroll_help_up(1),
             Action::Repeat { action, count } => {
                 for _ in 0..*count {
-                    self.handle_help_overlay_action(action);
+                    self.handle_help_overlay_action(action.as_ref());
                 }
             }
             _ => {}
@@ -145,7 +145,7 @@ impl AppState {
             }
             Action::Repeat { action, count } => {
                 for _ in 0..*count {
-                    self.handle_annotation_inspect_action(action);
+                    self.handle_annotation_inspect_action(action.as_ref());
                 }
             }
             _ => {}

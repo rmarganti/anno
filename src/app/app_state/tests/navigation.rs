@@ -1,4 +1,5 @@
 use super::*;
+use crate::keybinds::handler::Action;
 
 #[test]
 fn next_annotation_jumps_forward() {
@@ -66,4 +67,49 @@ fn prev_annotation_matches_panel_order_for_mixed_annotations() {
 
     assert_eq!(visited, expected);
     assert_eq!(visited, anchored.into_iter().rev().collect::<Vec<_>>());
+}
+
+#[test]
+fn counted_normal_motion_repeats_existing_document_navigation() {
+    harness("alpha\nbeta\ngamma\ndelta\nepsilon")
+        .keys("3j")
+        .assert_cursor(3, 0);
+}
+
+#[test]
+fn counted_visual_motion_repeats_existing_selection_navigation() {
+    let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+
+    harness.keys("v2jld").assert_annotation_count(1);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation
+        .range
+        .expect("visual deletion should have a range");
+    assert_eq!((range.start.line, range.start.column), (0, 0));
+    assert_eq!((range.end.line, range.end.column), (2, 1));
+}
+
+#[test]
+fn counted_wrapped_motion_uses_display_rows() {
+    let mut harness = harness("abcdefghijklmnopqrst");
+    harness
+        .state_mut()
+        .document_view_mut()
+        .update_dimensions(5, 24);
+    harness
+        .state_mut()
+        .document_view_mut()
+        .handle_action(&Action::ToggleWordWrap);
+
+    harness.keys("4j").assert_cursor(0, 16);
+}
+
+#[test]
+fn counted_annotation_navigation_repeats_adjacent_jumps() {
+    let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+    create_three_deletions(&mut harness);
+
+    harness.keys("gg2]a").assert_cursor(2, 2);
+    harness.keys("2[a").assert_cursor(0, 0);
 }

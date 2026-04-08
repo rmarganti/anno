@@ -31,11 +31,59 @@ impl AppState {
     }
 
     fn dispatch_action(&mut self, action: Action) {
+        if let Action::Repeat { action, count } = action {
+            self.dispatch_repeat(*action, count);
+            return;
+        }
+
         if self.handle_annotation_list_action(&action) {
             return;
         }
 
         let _ = self.handle_main_action(action);
+    }
+
+    fn dispatch_repeat(&mut self, action: Action, count: usize) {
+        if self.is_repeatable_navigation_action(&action) {
+            for _ in 0..count {
+                self.dispatch_action(action.clone());
+            }
+            return;
+        }
+
+        self.dispatch_action(action);
+    }
+
+    fn is_repeatable_navigation_action(&self, action: &Action) -> bool {
+        match self.mode {
+            Mode::Normal | Mode::Visual => matches!(
+                action,
+                Action::MoveUp
+                    | Action::MoveDown
+                    | Action::MoveLeft
+                    | Action::MoveRight
+                    | Action::MoveWordForward
+                    | Action::MoveWordBackward
+                    | Action::MoveWordEnd
+                    | Action::MoveLineStart
+                    | Action::MoveLineEnd
+                    | Action::MoveDocumentTop
+                    | Action::MoveDocumentBottom
+                    | Action::HalfPageDown
+                    | Action::HalfPageUp
+                    | Action::FullPageDown
+                    | Action::FullPageUp
+                    | Action::NextAnnotation
+                    | Action::PrevAnnotation
+            ),
+            Mode::AnnotationList => {
+                matches!(
+                    action,
+                    Action::MoveUp | Action::MoveDown | Action::JumpToAnnotation
+                )
+            }
+            Mode::Insert | Mode::Command => false,
+        }
     }
 
     fn handle_annotation_list_action(&mut self, action: &Action) -> bool {
