@@ -170,6 +170,8 @@ anno uses vim-inspired modal editing:
 
 Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `?`, `Esc`, and `q` all close it.
 
+Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, and `10j` repeat the existing navigation action. Bare `0` keeps its usual line-start behavior and only contributes to a count after a leading digit. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
+
 ## Keybindings
 
 ### Global
@@ -181,6 +183,9 @@ Press `?` to toggle the in-app help overlay. It shows the same global bindings, 
 | `:q!`    | Quit without saving output  |
 | `Ctrl-C` | Force quit                  |
 | `W`      | Toggle word wrap            |
+| `count` + supported navigation | Repeat supported navigation (`2j`, `3w`, `4]a`, `10j`) |
+| bare `0` | Move to line start unless extending an existing count |
+| `4d`, `5dd` | Unsupported counted mutation commands |
 | `Tab`    | Toggle annotation panel focus |
 
 ### Normal Mode

@@ -66,3 +66,11 @@ fn escape_during_input_cancels_annotation_creation() {
         .assert_mode(Mode::Normal)
         .assert_annotation_count(0);
 }
+
+#[test]
+fn counted_global_comment_is_rejected() {
+    harness("hello")
+        .keys("2gc")
+        .assert_mode(Mode::Normal)
+        .assert_annotation_count(0);
+}

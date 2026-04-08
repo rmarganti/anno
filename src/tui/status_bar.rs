@@ -49,14 +49,16 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         "[panel hidden: terminal too narrow]".to_string()
     } else {
         match props.mode {
-            Mode::Normal if props.panel_visible => "Tab focus panel  Esc hide  ? help".to_string(),
-            Mode::Normal => "Tab panel  ? help".to_string(),
-            Mode::Visual => "d delete  c comment  r replace  Esc".to_string(),
+            Mode::Normal if props.panel_visible => {
+                "count+nav  Tab focus  Esc hide  ? help".to_string()
+            }
+            Mode::Normal => "count+nav  Tab panel  ? help".to_string(),
+            Mode::Visual => "count+nav  d/c/r annotate  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
             Mode::AnnotationList if props.annotation_inspect_visible => {
-                "j/k sel  Up/Down  Enter  Esc".to_string()
+                "count+nav  Up/Down  Enter  Esc".to_string()
             }
-            Mode::AnnotationList => "Tab unfocus  Space  Enter  Esc hide".to_string(),
+            Mode::AnnotationList => "count+nav  Space  Enter  Esc hide".to_string(),
             Mode::Command => format!(":{}", props.command_buffer),
         }
     };
@@ -251,7 +253,7 @@ mod tests {
         let props = base_props(Mode::Normal);
         let output = render_to_string(&props);
         assert!(
-            output.contains("Tab focus panel  Esc hide  ? help"),
+            output.contains("count+nav  Tab focus  Esc hide  ? help"),
             "Expected normal panel hint in: {output}"
         );
     }
@@ -261,7 +263,7 @@ mod tests {
         let props = base_props(Mode::Visual);
         let output = render_to_string(&props);
         assert!(
-            output.contains("d delete  c comment  r replace  Esc"),
+            output.contains("count+nav  d/c/r annotate  Esc"),
             "Expected visual hint in: {output}"
         );
     }
@@ -271,7 +273,7 @@ mod tests {
         let props = base_props(Mode::AnnotationList);
         let output = render_to_string(&props);
         assert!(
-            output.contains("Tab unfocus  Space  Enter  Esc hide"),
+            output.contains("count+nav  Space  Enter  Esc hide"),
             "Expected annotation list hint in: {output}"
         );
     }
@@ -284,7 +286,7 @@ mod tests {
         };
         let output = render_to_string(&props);
         assert!(
-            output.contains("j/k sel  Up/Down  Enter  Esc"),
+            output.contains("count+nav  Up/Down  Enter  Esc"),
             "Expected inspect hint in: {output}"
         );
         assert!(

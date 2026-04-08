@@ -209,6 +209,25 @@ fn opening_annotation_inspect_clears_pending_delete_sequence() {
 }
 
 #[test]
+fn opening_and_closing_overlays_clear_pending_count_state() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+
+    harness.keys("3?").assert_help_visible();
+    assert!(!harness.state().keybinds().has_pending());
+
+    harness.keys("q").assert_help_hidden();
+    assert!(!harness.state().keybinds().has_pending());
+
+    harness
+        .keys("vld<Tab>2 ")
+        .assert_annotation_inspect_visible();
+    assert!(!harness.state().keybinds().has_pending());
+
+    harness.keys("<Esc>").assert_annotation_inspect_hidden();
+    assert!(!harness.state().keybinds().has_pending());
+}
+
+#[test]
 fn annotation_inspect_j_k_cycle_annotations_without_closing() {
     let mut harness = harness("alpha\nbeta\ngamma");
     create_two_deletions(&mut harness);
@@ -233,6 +252,78 @@ fn annotation_inspect_j_k_cycle_annotations_without_closing() {
 
     assert_ne!(first, second);
     assert_eq!(first, back_to_first);
+}
+
+#[test]
+fn counted_help_scroll_repeats_existing_scroll_behavior() {
+    let mut harness = harness("hello");
+
+    harness.keys("?3j");
+    assert_eq!(harness.state().help_scroll_offset(), 3);
+
+    harness.keys("2k");
+    assert_eq!(harness.state().help_scroll_offset(), 1);
+}
+
+#[test]
+fn counted_annotation_inspect_j_k_repeats_selection_movement() {
+    let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+    create_three_deletions(&mut harness);
+
+    harness.keys("<Tab> ");
+    let first = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    harness.keys("2j").assert_annotation_inspect_visible();
+    let third = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    harness.keys("2k").assert_annotation_inspect_visible();
+    let back_to_first = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    assert_ne!(first, third);
+    assert_eq!(first, back_to_first);
+}
+
+#[test]
+fn counted_annotation_inspect_scroll_repeats_existing_scroll_behavior() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+    harness
+        .state_mut()
+        .annotations_mut()
+        .add(Annotation::comment(
+            range(0, 0, 0, 5),
+            "alpha".into(),
+            (0..48)
+                .map(|idx| format!("detail line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+
+    harness.keys("<Tab> 3");
+    harness.key(KeyCode::Down);
+    assert_eq!(harness.state().annotation_inspect_scroll_offset(), 3);
+
+    harness.keys("2");
+    harness.key(KeyCode::PageDown);
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        3 + 2 * ANNOTATION_INSPECT_PAGE_SCROLL_LINES
+    );
+
+    harness.keys("4");
+    harness.key(KeyCode::Up);
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        2 * ANNOTATION_INSPECT_PAGE_SCROLL_LINES - 1
+    );
 }
 
 #[test]

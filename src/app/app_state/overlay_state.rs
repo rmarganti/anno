@@ -54,15 +54,8 @@ impl AppState {
     }
 
     fn handle_help_overlay_key(&mut self, key_event: KeyEvent) {
-        match self.keybinds.handle_help_overlay(self.mode, key_event) {
-            Action::ToggleHelp => {
-                self.help_visible = false;
-                self.keybinds.clear_pending();
-            }
-            Action::MoveDown => self.scroll_help_down(1),
-            Action::MoveUp => self.scroll_help_up(1),
-            _ => {}
-        }
+        let action = self.keybinds.handle_help_overlay(self.mode, key_event);
+        self.handle_help_overlay_action(&action);
     }
 
     fn handle_confirm_dialog_key(&mut self, key_event: KeyEvent) -> bool {
@@ -104,7 +97,29 @@ impl AppState {
     }
 
     fn handle_annotation_inspect_key(&mut self, key_event: KeyEvent) {
-        match self.keybinds.handle_annotation_inspect(key_event) {
+        let action = self.keybinds.handle_annotation_inspect(key_event);
+        self.handle_annotation_inspect_action(&action);
+    }
+
+    fn handle_help_overlay_action(&mut self, action: &Action) {
+        match action {
+            Action::ToggleHelp => {
+                self.help_visible = false;
+                self.keybinds.clear_pending();
+            }
+            Action::MoveDown => self.scroll_help_down(1),
+            Action::MoveUp => self.scroll_help_up(1),
+            Action::Repeat { action, count } => {
+                for _ in 0..*count {
+                    self.handle_help_overlay_action(action.as_ref());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_annotation_inspect_action(&mut self, action: &Action) {
+        match action {
             Action::MoveDown => {
                 self.annotation_list_panel
                     .move_selection_down(&self.annotations, self.annotation_list_visible_height());
@@ -127,6 +142,11 @@ impl AppState {
             Action::ExitToNormal => self.close_annotation_inspect(),
             Action::ForceQuit => {
                 self.should_quit = true;
+            }
+            Action::Repeat { action, count } => {
+                for _ in 0..*count {
+                    self.handle_annotation_inspect_action(action.as_ref());
+                }
             }
             _ => {}
         }

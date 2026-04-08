@@ -23,6 +23,9 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry(":q!", "Quit without saving output"),
                 entry("Ctrl-C", "Force quit"),
                 entry("W", "Toggle word wrap"),
+                entry("count+nav", "Repeat supported navigation only"),
+                entry("0 / 10j", "0 keeps line-start unless extending a count"),
+                entry("4d / 5dd", "Counted mutation commands are unsupported"),
                 entry("Tab", "Toggle annotation panel focus"),
             ],
         },
@@ -142,6 +145,18 @@ mod tests {
                     HelpEntry {
                         keys: "W",
                         action: "Toggle word wrap"
+                    },
+                    HelpEntry {
+                        keys: "count+nav",
+                        action: "Repeat supported navigation only"
+                    },
+                    HelpEntry {
+                        keys: "0 / 10j",
+                        action: "0 keeps line-start unless extending a count"
+                    },
+                    HelpEntry {
+                        keys: "4d / 5dd",
+                        action: "Counted mutation commands are unsupported"
                     },
                     HelpEntry {
                         keys: "Tab",

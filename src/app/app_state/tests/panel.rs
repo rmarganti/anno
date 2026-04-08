@@ -97,6 +97,43 @@ fn annotation_list_navigation_updates_selection() {
 }
 
 #[test]
+fn counted_annotation_list_navigation_repeats_selection_movement() {
+    let mut harness = harness("alpha\nbeta\ngamma\ndelta");
+    create_three_deletions(&mut harness);
+
+    harness.keys("<Tab>2j");
+    let third = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    harness.keys("2k");
+    let first = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    assert_eq!(third, Some(harness.state().annotations().ordered()[2].id));
+    assert_eq!(first, Some(harness.state().annotations().ordered()[0].id));
+}
+
+#[test]
+fn counted_annotation_list_enter_reuses_selected_jump_behavior() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+    create_two_deletions(&mut harness);
+
+    harness.keys("gg<Tab>j2<Enter>").assert_cursor(1, 1);
+}
+
+#[test]
+fn counted_annotation_list_delete_is_rejected() {
+    harness("alpha\nbeta")
+        .keys("vld<Tab>4dd")
+        .assert_annotation_count(1)
+        .assert_no_confirm_dialog();
+}
+
+#[test]
 fn selected_annotation_range_returns_selected_panel_annotation_range() {
     let mut harness = harness("alpha\nbeta\ngamma");
     create_two_deletions(&mut harness);
