@@ -132,34 +132,73 @@ impl KeybindHandler {
     }
 
     /// Translate a key event while the help overlay is visible.
-    pub fn handle_help_overlay(&mut self, mode: Mode, event: KeyEvent) -> Action {
-        match self.handle(mode, event) {
-            Action::ToggleHelp => Action::ToggleHelp,
-            _ => match event.code {
-                KeyCode::Esc | KeyCode::Char('q') => Action::ToggleHelp,
-                KeyCode::Char('j') | KeyCode::Down => Action::MoveDown,
-                KeyCode::Char('k') | KeyCode::Up => Action::MoveUp,
-                _ => Action::None,
-            },
+    pub fn handle_help_overlay(&mut self, _mode: Mode, event: KeyEvent) -> Action {
+        if matches!(event.code, KeyCode::Char('?'))
+            && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        {
+            self.clear_pending();
+            return Action::ToggleHelp;
+        }
+
+        match (event.code, event.modifiers) {
+            (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                self.clear_pending();
+                Action::ToggleHelp
+            }
+            _ => self.handle_counted_overlay_navigation(event, |handler, event| {
+                match (event.code, event.modifiers) {
+                    (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                        handler.finish_action(Action::MoveDown)
+                    }
+                    (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                        handler.finish_action(Action::MoveUp)
+                    }
+                    _ => Action::None,
+                }
+            }),
         }
     }
 
     /// Translate a key event while the annotation inspect overlay is visible.
     pub fn handle_annotation_inspect(&mut self, event: KeyEvent) -> Action {
         match (event.code, event.modifiers) {
-            (KeyCode::Char('j'), KeyModifiers::NONE) => Action::MoveDown,
-            (KeyCode::Char('k'), KeyModifiers::NONE) => Action::MoveUp,
-            (KeyCode::Down, KeyModifiers::NONE) => Action::ScrollOverlayDown,
-            (KeyCode::Up, KeyModifiers::NONE) => Action::ScrollOverlayUp,
-            (KeyCode::PageDown, KeyModifiers::NONE)
-            | (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::ScrollOverlayPageDown,
-            (KeyCode::PageUp, KeyModifiers::NONE) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                Action::ScrollOverlayPageUp
+            (KeyCode::Enter, _) => {
+                self.clear_pending();
+                Action::JumpToAnnotation
             }
-            (KeyCode::Enter, _) => Action::JumpToAnnotation,
-            (KeyCode::Esc, _) => Action::ExitToNormal,
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
-            _ => Action::None,
+            (KeyCode::Esc, _) => {
+                self.clear_pending();
+                Action::ExitToNormal
+            }
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                self.clear_pending();
+                Action::ForceQuit
+            }
+            _ => self.handle_counted_overlay_navigation(event, |handler, event| {
+                match (event.code, event.modifiers) {
+                    (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                        handler.finish_action(Action::MoveDown)
+                    }
+                    (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                        handler.finish_action(Action::MoveUp)
+                    }
+                    (KeyCode::Down, KeyModifiers::NONE) => {
+                        handler.finish_action(Action::ScrollOverlayDown)
+                    }
+                    (KeyCode::Up, KeyModifiers::NONE) => {
+                        handler.finish_action(Action::ScrollOverlayUp)
+                    }
+                    (KeyCode::PageDown, KeyModifiers::NONE)
+                    | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                        handler.finish_action(Action::ScrollOverlayPageDown)
+                    }
+                    (KeyCode::PageUp, KeyModifiers::NONE)
+                    | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                        handler.finish_action(Action::ScrollOverlayPageUp)
+                    }
+                    _ => Action::None,
+                }
+            }),
         }
     }
 
@@ -387,6 +426,22 @@ impl KeybindHandler {
     fn finish_action(&mut self, action: Action) -> Action {
         let count = self.count.take();
         action.counted(count)
+    }
+
+    fn handle_counted_overlay_navigation(
+        &mut self,
+        event: KeyEvent,
+        action_for_event: impl FnOnce(&mut Self, KeyEvent) -> Action,
+    ) -> Action {
+        if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
+        let action = action_for_event(self, event);
+        if matches!(action, Action::None) {
+            self.clear_pending();
+        }
+        action
     }
 
     fn handle_command(&mut self, event: KeyEvent) -> Action {
@@ -1012,6 +1067,20 @@ mod tests {
     }
 
     #[test]
+    fn help_overlay_counted_j_returns_repeated_move_down() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('3')),
+            Action::None
+        );
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('j')),
+            repeated(Action::MoveDown, 3)
+        );
+    }
+
+    #[test]
     fn help_overlay_k_returns_move_up() {
         let mut h = KeybindHandler::new();
         assert_eq!(
@@ -1027,5 +1096,53 @@ mod tests {
             h.handle_help_overlay(Mode::Normal, key(KeyCode::Up)),
             Action::MoveUp
         );
+    }
+
+    #[test]
+    fn help_overlay_invalid_key_clears_pending_count() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('2')),
+            Action::None
+        );
+        assert!(h.has_pending());
+
+        assert_eq!(
+            h.handle_help_overlay(Mode::Normal, char_key('x')),
+            Action::None
+        );
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn annotation_inspect_counted_navigation_and_scroll() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle_annotation_inspect(char_key('2')), Action::None);
+        assert_eq!(
+            h.handle_annotation_inspect(char_key('j')),
+            repeated(Action::MoveDown, 2)
+        );
+
+        assert_eq!(h.handle_annotation_inspect(char_key('4')), Action::None);
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::PageDown)),
+            repeated(Action::ScrollOverlayPageDown, 4)
+        );
+    }
+
+    #[test]
+    fn annotation_inspect_dismissal_clears_pending_count() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle_annotation_inspect(char_key('2')), Action::None);
+        assert!(h.has_pending());
+
+        assert_eq!(
+            h.handle_annotation_inspect(key(KeyCode::Esc)),
+            Action::ExitToNormal
+        );
+        assert!(!h.has_pending());
     }
 }
