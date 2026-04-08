@@ -69,8 +69,26 @@ pub enum Action {
     // -- Quit --
     ForceQuit,
 
+    // -- Counted actions --
+    Repeat {
+        action: Box<Action>,
+        count: usize,
+    },
+
     // -- No-op --
     None,
+}
+
+impl Action {
+    fn counted(self, count: Option<usize>) -> Self {
+        match count {
+            Some(count) if !matches!(self, Action::None) => Action::Repeat {
+                action: Box::new(self),
+                count,
+            },
+            _ => self,
+        }
+    }
 }
 
 /// Handles key event → action dispatch with support for multi-key sequences.
@@ -80,21 +98,26 @@ pub enum Action {
 /// - AnnotationList: `dd`
 pub struct KeybindHandler {
     pending: Option<KeyCode>,
+    count: Option<usize>,
 }
 
 impl KeybindHandler {
     pub fn new() -> Self {
-        Self { pending: None }
+        Self {
+            pending: None,
+            count: None,
+        }
     }
 
     pub fn clear_pending(&mut self) {
         self.pending = None;
+        self.count = None;
     }
 
     /// Returns `true` if there is a pending partial key sequence.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
-        self.pending.is_some()
+        self.pending.is_some() || self.count.is_some()
     }
 
     /// Translate a key event into an action given the current mode.
@@ -153,6 +176,10 @@ impl KeybindHandler {
             return self.resolve_normal_sequence(first, event.code);
         }
 
+        if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
@@ -169,55 +196,79 @@ impl KeybindHandler {
             }
 
             // Movement
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::MoveDown,
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => Action::MoveLeft,
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => Action::MoveRight,
-            (KeyCode::Char('w'), KeyModifiers::NONE) => Action::MoveWordForward,
-            (KeyCode::Char('b'), KeyModifiers::NONE) => Action::MoveWordBackward,
-            (KeyCode::Char('e'), KeyModifiers::NONE) => Action::MoveWordEnd,
-            (KeyCode::Char('0'), KeyModifiers::NONE) => Action::MoveLineStart,
-            (KeyCode::Char('$'), KeyModifiers::NONE) => Action::MoveLineEnd,
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) => Action::MoveDocumentBottom,
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::HalfPageDown,
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::HalfPageUp,
-            (KeyCode::Char('f'), KeyModifiers::CONTROL) => Action::FullPageDown,
-            (KeyCode::Char('b'), KeyModifiers::CONTROL) => Action::FullPageUp,
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveDown)
+            }
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveUp)
+            }
+            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveLeft)
+            }
+            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveRight)
+            }
+            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
+            (KeyCode::Char('b'), KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveWordBackward)
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
+            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
+            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
+            (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                self.finish_action(Action::MoveDocumentBottom)
+            }
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageDown),
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageUp),
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageDown),
+            (KeyCode::Char('b'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageUp),
 
             // Mode transitions
-            (KeyCode::Char('v'), KeyModifiers::NONE) => Action::EnterVisualMode,
-            (KeyCode::Char('i'), KeyModifiers::NONE) => Action::CreateInsertion,
+            (KeyCode::Char('v'), KeyModifiers::NONE) => self.finish_action(Action::EnterVisualMode),
+            (KeyCode::Char('i'), KeyModifiers::NONE) => self.finish_action(Action::CreateInsertion),
             (KeyCode::Char(':'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                Action::EnterCommandMode
+                self.finish_action(Action::EnterCommandMode)
             }
-            (KeyCode::Tab, KeyModifiers::NONE) => Action::EnterAnnotationListMode,
-            (KeyCode::Esc, KeyModifiers::NONE) => Action::HideAnnotationList,
+            (KeyCode::Tab, KeyModifiers::NONE) => {
+                self.finish_action(Action::EnterAnnotationListMode)
+            }
+            (KeyCode::Esc, KeyModifiers::NONE) => self.finish_action(Action::HideAnnotationList),
 
             // Help
-            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::ToggleHelp,
+            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.finish_action(Action::ToggleHelp)
+            }
 
             // Word wrap toggle
-            (KeyCode::Char('W'), KeyModifiers::SHIFT) => Action::ToggleWordWrap,
+            (KeyCode::Char('W'), KeyModifiers::SHIFT) => self.finish_action(Action::ToggleWordWrap),
 
             // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
-            _ => Action::None,
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
         }
     }
 
     fn resolve_normal_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
         match (first, second) {
             // gg — top of document
-            (KeyCode::Char('g'), KeyCode::Char('g')) => Action::MoveDocumentTop,
+            (KeyCode::Char('g'), KeyCode::Char('g')) => self.finish_action(Action::MoveDocumentTop),
             // gc — global comment
-            (KeyCode::Char('g'), KeyCode::Char('c')) => Action::CreateGlobalComment,
+            (KeyCode::Char('g'), KeyCode::Char('c')) => {
+                self.finish_action(Action::CreateGlobalComment)
+            }
             // ]a — next annotation
-            (KeyCode::Char(']'), KeyCode::Char('a')) => Action::NextAnnotation,
+            (KeyCode::Char(']'), KeyCode::Char('a')) => self.finish_action(Action::NextAnnotation),
             // [a — previous annotation
-            (KeyCode::Char('['), KeyCode::Char('a')) => Action::PrevAnnotation,
+            (KeyCode::Char('['), KeyCode::Char('a')) => self.finish_action(Action::PrevAnnotation),
             // Unrecognized sequence — discard
-            _ => Action::None,
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
         }
     }
 
@@ -268,15 +319,23 @@ impl KeybindHandler {
             return self.resolve_annotation_list_sequence(first, event.code);
         }
 
+        if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::MoveDown,
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::MoveUp,
-            (KeyCode::Enter, _) => Action::JumpToAnnotation,
-            (KeyCode::Tab, _) => Action::EnterAnnotationListMode,
-            (KeyCode::Esc, _) => Action::HideAnnotationList,
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveDown)
+            }
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                self.finish_action(Action::MoveUp)
+            }
+            (KeyCode::Enter, _) => self.finish_action(Action::JumpToAnnotation),
+            (KeyCode::Tab, _) => self.finish_action(Action::EnterAnnotationListMode),
+            (KeyCode::Esc, _) => self.finish_action(Action::HideAnnotationList),
 
             // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::ForceQuit,
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
             // dd starter
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
@@ -284,15 +343,50 @@ impl KeybindHandler {
                 Action::None
             }
 
-            _ => Action::None,
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
         }
     }
 
     fn resolve_annotation_list_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
         match (first, second) {
-            (KeyCode::Char('d'), KeyCode::Char('d')) => Action::DeleteAnnotation,
-            _ => Action::None,
+            (KeyCode::Char('d'), KeyCode::Char('d')) => {
+                self.finish_action(Action::DeleteAnnotation)
+            }
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
         }
+    }
+
+    fn consume_count_prefix(&mut self, event: KeyEvent) -> bool {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
+                self.push_count_digit(c);
+                true
+            }
+            (KeyCode::Char('0'), KeyModifiers::NONE) if self.count.is_some() => {
+                self.push_count_digit('0');
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn push_count_digit(&mut self, digit: char) {
+        let digit = digit
+            .to_digit(10)
+            .expect("count prefixes only accept ASCII digits") as usize;
+        let current = self.count.unwrap_or(0);
+        self.count = Some(current * 10 + digit);
+    }
+
+    fn finish_action(&mut self, action: Action) -> Action {
+        let count = self.count.take();
+        action.counted(count)
     }
 
     fn handle_command(&mut self, event: KeyEvent) -> Action {
@@ -324,6 +418,13 @@ mod tests {
 
     fn char_key(c: char) -> KeyEvent {
         key(KeyCode::Char(c))
+    }
+
+    fn repeated(action: Action, count: usize) -> Action {
+        Action::Repeat {
+            action: Box::new(action),
+            count,
+        }
     }
 
     // ── Normal mode: single keys ──────────────────────────────────
@@ -509,16 +610,109 @@ mod tests {
     }
 
     #[test]
+    fn normal_single_digit_count_wraps_motion() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert!(h.has_pending());
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('j')),
+            repeated(Action::MoveDown, 2)
+        );
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn normal_multi_digit_count_wraps_motion() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('1')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('j')),
+            repeated(Action::MoveDown, 12)
+        );
+    }
+
+    #[test]
+    fn normal_zero_without_count_keeps_line_start_motion() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('0')), Action::MoveLineStart);
+    }
+
+    #[test]
+    fn normal_zero_extends_existing_count() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('1')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('0')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('j')),
+            repeated(Action::MoveDown, 10)
+        );
+    }
+
+    #[test]
+    fn normal_counted_sequence_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('g')),
+            repeated(Action::MoveDocumentTop, 3)
+        );
+    }
+
+    #[test]
+    fn normal_counted_bracket_sequence_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key(']')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('a')),
+            repeated(Action::NextAnnotation, 2)
+        );
+    }
+
+    #[test]
+    fn normal_counted_unsupported_action_is_still_emitted() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('c')),
+            repeated(Action::CreateGlobalComment, 2)
+        );
+    }
+
+    #[test]
+    fn normal_invalid_counted_sequence_discards_parser_state() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert!(h.has_pending());
+
+        assert_eq!(h.handle(Mode::Normal, char_key('x')), Action::None);
+        assert!(!h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
+    }
+
+    #[test]
     fn clear_pending_discards_partial_sequence() {
         let mut h = KeybindHandler::new();
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
         assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
         assert!(h.has_pending());
 
         h.clear_pending();
 
         assert!(!h.has_pending());
-        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
-        assert!(h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
     }
 
     // ── Visual mode ───────────────────────────────────────────────
@@ -623,6 +817,18 @@ mod tests {
         assert_eq!(
             h.handle(Mode::AnnotationList, char_key('d')),
             Action::DeleteAnnotation
+        );
+    }
+
+    #[test]
+    fn annotation_list_counted_dd_deletes() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::AnnotationList, char_key('4')), Action::None);
+        assert_eq!(h.handle(Mode::AnnotationList, char_key('d')), Action::None);
+        assert_eq!(
+            h.handle(Mode::AnnotationList, char_key('d')),
+            repeated(Action::DeleteAnnotation, 4)
         );
     }
 
