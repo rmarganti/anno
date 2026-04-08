@@ -80,12 +80,41 @@ pub enum Action {
 }
 
 impl Action {
+    fn supports_count(&self) -> bool {
+        matches!(
+            self,
+            Action::MoveUp
+                | Action::MoveDown
+                | Action::MoveLeft
+                | Action::MoveRight
+                | Action::MoveWordForward
+                | Action::MoveWordBackward
+                | Action::MoveWordEnd
+                | Action::MoveLineStart
+                | Action::MoveLineEnd
+                | Action::MoveDocumentTop
+                | Action::MoveDocumentBottom
+                | Action::HalfPageDown
+                | Action::HalfPageUp
+                | Action::FullPageDown
+                | Action::FullPageUp
+                | Action::NextAnnotation
+                | Action::PrevAnnotation
+                | Action::JumpToAnnotation
+                | Action::ScrollOverlayUp
+                | Action::ScrollOverlayDown
+                | Action::ScrollOverlayPageUp
+                | Action::ScrollOverlayPageDown
+        )
+    }
+
     fn counted(self, count: Option<usize>) -> Self {
         match count {
-            Some(count) if !matches!(self, Action::None) => Action::Repeat {
+            Some(count) if self.supports_count() => Action::Repeat {
                 action: Box::new(self),
                 count,
             },
+            Some(_) => Action::None,
             _ => self,
         }
     }
@@ -99,6 +128,7 @@ impl Action {
 pub struct KeybindHandler {
     pending: Option<KeyCode>,
     count: Option<usize>,
+    count_overflowed: bool,
 }
 
 impl KeybindHandler {
@@ -106,18 +136,20 @@ impl KeybindHandler {
         Self {
             pending: None,
             count: None,
+            count_overflowed: false,
         }
     }
 
     pub fn clear_pending(&mut self) {
         self.pending = None;
         self.count = None;
+        self.count_overflowed = false;
     }
 
     /// Returns `true` if there is a pending partial key sequence.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_pending(&self) -> bool {
-        self.pending.is_some() || self.count.is_some()
+        self.pending.is_some() || self.count.is_some() || self.count_overflowed
     }
 
     /// Translate a key event into an action given the current mode.
@@ -219,6 +251,11 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if self.count_overflowed {
+            self.clear_pending();
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
@@ -316,6 +353,11 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if self.count_overflowed {
+            self.clear_pending();
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
             // Movement (extend selection)
             (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
@@ -381,6 +423,11 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if self.count_overflowed {
+            self.clear_pending();
+            return Action::None;
+        }
+
         match (event.code, event.modifiers) {
             (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
                 self.finish_action(Action::MoveDown)
@@ -439,7 +486,18 @@ impl KeybindHandler {
             .to_digit(10)
             .expect("count prefixes only accept ASCII digits") as usize;
         let current = self.count.unwrap_or(0);
-        self.count = Some(current * 10 + digit);
+
+        match current
+            .checked_mul(10)
+            .and_then(|count| count.checked_add(digit))
+        {
+            Some(count) => self.count = Some(count),
+            None => {
+                self.pending = None;
+                self.count = None;
+                self.count_overflowed = true;
+            }
+        }
     }
 
     fn finish_action(&mut self, action: Action) -> Action {
@@ -453,6 +511,11 @@ impl KeybindHandler {
         action_for_event: impl FnOnce(&mut Self, KeyEvent) -> Action,
     ) -> Action {
         if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
+        if self.count_overflowed {
+            self.clear_pending();
             return Action::None;
         }
 
@@ -752,15 +815,13 @@ mod tests {
     }
 
     #[test]
-    fn normal_counted_unsupported_action_is_still_emitted() {
+    fn normal_counted_unsupported_action_is_rejected() {
         let mut h = KeybindHandler::new();
 
         assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
         assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
-        assert_eq!(
-            h.handle(Mode::Normal, char_key('c')),
-            repeated(Action::CreateGlobalComment, 2)
-        );
+        assert_eq!(h.handle(Mode::Normal, char_key('c')), Action::None);
+        assert!(!h.has_pending());
     }
 
     #[test]
@@ -846,14 +907,12 @@ mod tests {
     }
 
     #[test]
-    fn visual_counted_unsupported_action_is_still_emitted() {
+    fn visual_counted_unsupported_action_is_rejected() {
         let mut h = KeybindHandler::new();
 
         assert_eq!(h.handle(Mode::Visual, char_key('2')), Action::None);
-        assert_eq!(
-            h.handle(Mode::Visual, char_key('d')),
-            repeated(Action::CreateDeletion, 2)
-        );
+        assert_eq!(h.handle(Mode::Visual, char_key('d')), Action::None);
+        assert!(!h.has_pending());
     }
 
     // ── Insert mode ───────────────────────────────────────────────
@@ -917,15 +976,27 @@ mod tests {
     }
 
     #[test]
-    fn annotation_list_counted_dd_deletes() {
+    fn annotation_list_counted_dd_is_rejected() {
         let mut h = KeybindHandler::new();
 
         assert_eq!(h.handle(Mode::AnnotationList, char_key('4')), Action::None);
         assert_eq!(h.handle(Mode::AnnotationList, char_key('d')), Action::None);
-        assert_eq!(
-            h.handle(Mode::AnnotationList, char_key('d')),
-            repeated(Action::DeleteAnnotation, 4)
-        );
+        assert_eq!(h.handle(Mode::AnnotationList, char_key('d')), Action::None);
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn count_overflow_rejects_followup_action_and_clears_parser_state() {
+        let mut h = KeybindHandler::new();
+
+        for digit in format!("{}0", usize::MAX).chars() {
+            assert_eq!(h.handle(Mode::Normal, char_key(digit)), Action::None);
+        }
+        assert!(h.has_pending());
+
+        assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::None);
+        assert!(!h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
     }
 
     #[test]

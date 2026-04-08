@@ -48,12 +48,17 @@ impl AppState {
             for _ in 0..count {
                 self.dispatch_action(action.clone());
             }
-            return;
         }
-
-        self.dispatch_action(action);
     }
 
+    // Determines whether an `Action::Repeat` should be executed N times given
+    // the current mode.
+    //
+    // Note: `ScrollOverlayUp/Down/PageUp/PageDown` are intentionally absent
+    // here. Although they appear in `Action::supports_count` (so a count prefix
+    // is syntactically valid), counted overlay scrolls are handled upstream in
+    // `handle_counted_overlay_navigation` before `dispatch_repeat` is ever
+    // reached. Adding them here would be a no-op at best and confusing at worst.
     fn is_repeatable_navigation_action(&self, action: &Action) -> bool {
         match self.mode {
             Mode::Normal | Mode::Visual => matches!(

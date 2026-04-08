@@ -68,9 +68,9 @@ fn escape_during_input_cancels_annotation_creation() {
 }
 
 #[test]
-fn counted_global_comment_does_not_create_multiple_annotations() {
+fn counted_global_comment_is_rejected() {
     harness("hello")
-        .keys("2gcoverall<C-s>")
+        .keys("2gc")
         .assert_mode(Mode::Normal)
-        .assert_annotation_count(1);
+        .assert_annotation_count(0);
 }

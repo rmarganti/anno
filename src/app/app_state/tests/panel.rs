@@ -126,11 +126,11 @@ fn counted_annotation_list_enter_reuses_selected_jump_behavior() {
 }
 
 #[test]
-fn counted_annotation_list_delete_does_not_bulk_delete() {
+fn counted_annotation_list_delete_is_rejected() {
     harness("alpha\nbeta")
         .keys("vld<Tab>4dd")
         .assert_annotation_count(1)
-        .assert_has_confirm_dialog();
+        .assert_no_confirm_dialog();
 }
 
 #[test]
