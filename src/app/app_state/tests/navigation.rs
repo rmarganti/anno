@@ -130,6 +130,21 @@ fn counted_repeated_char_search_uses_repeat_count() {
 }
 
 #[test]
+fn counted_char_search_targets_nth_occurrence() {
+    harness("abacadaba").keys("2fa").assert_cursor(0, 4);
+}
+
+#[test]
+fn char_search_is_noop_when_target_is_absent() {
+    harness("abacadaba").keys("fz").assert_cursor(0, 0);
+}
+
+#[test]
+fn char_search_does_not_cross_logical_lines() {
+    harness("ab\nca").keys("lfa").assert_cursor(0, 1);
+}
+
+#[test]
 fn repeated_char_search_is_noop_without_prior_success() {
     let mut harness = harness("abacadaba");
 
@@ -139,6 +154,21 @@ fn repeated_char_search_is_noop_without_prior_success() {
 #[test]
 fn failed_char_search_does_not_replace_remembered_motion() {
     harness("abacadaba").keys("fa$fa0;").assert_cursor(0, 2);
+}
+
+#[test]
+fn bare_zero_keeps_line_start_behavior_outside_char_search_targets() {
+    harness("ab0c").keys("$0").assert_cursor(0, 0);
+}
+
+#[test]
+fn char_search_accepts_digit_and_punctuation_targets() {
+    harness("1a2;3").keys("f2t;").assert_cursor(0, 2);
+}
+
+#[test]
+fn backward_char_search_accepts_digit_targets() {
+    harness("1a2b3").keys("$F2T1").assert_cursor(0, 1);
 }
 
 #[test]

@@ -170,7 +170,7 @@ anno uses vim-inspired modal editing:
 
 Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `?`, `Esc`, and `q` all close it.
 
-Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, and `10j` repeat the existing navigation action. Bare `0` keeps its usual line-start behavior and only contributes to a count after a leading digit. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
+Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction; anno uses `,` instead of `:` for reverse repeat because `:` already enters command mode. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
 
 ## Keybindings
 
@@ -183,8 +183,10 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `:q!`    | Quit without saving output  |
 | `Ctrl-C` | Force quit                  |
 | `W`      | Toggle word wrap            |
-| `count` + supported navigation | Repeat supported navigation (`2j`, `3w`, `4]a`, `10j`) |
+| `count` + supported navigation | Repeat supported navigation (`2j`, `3w`, `4]a`, `2fa`, `10j`) |
 | bare `0` | Move to line start unless extending an existing count |
+| `f/F/t/T` target `0-9` or punctuation | Treat the next character literally instead of as a count |
+| `;` / `,` | Repeat the last successful char search forward / in reverse |
 | `4d`, `5dd` | Unsupported counted mutation commands |
 | `Tab`    | Toggle annotation panel focus |
 
@@ -195,6 +197,8 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `h/j/k/l`   | Move cursor                       |
 | `w/b/e`     | Move by word                      |
 | `0/$`       | Move to line start/end            |
+| `f/F/t/T`   | Move to / before a character on the current line |
+| `;` / `,`   | Repeat the last successful char search / reverse it |
 | `gg/G`      | Move to document top/bottom       |
 | `Ctrl-d/u`  | Move half page down/up            |
 | `Ctrl-f/b`  | Move full page down/up            |
@@ -211,6 +215,8 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `h/j/k/l` | Extend selection               |
 | `w/b/e`   | Extend selection by word       |
 | `0/$`     | Extend selection to line start/end |
+| `f/F/t/T` | Extend selection to / before a character on the current line |
+| `;` / `,` | Repeat the last successful char search / reverse it |
 | `d`       | Create deletion annotation     |
 | `c`       | Create comment annotation      |
 | `r`       | Create replacement annotation  |

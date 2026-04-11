@@ -23,8 +23,19 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry(":q!", "Quit without saving output"),
                 entry("Ctrl-C", "Force quit"),
                 entry("W", "Toggle word wrap"),
-                entry("count+nav", "Repeat supported navigation only"),
+                entry(
+                    "count+nav",
+                    "Repeat supported navigation including char search",
+                ),
                 entry("0 / 10j", "0 keeps line-start unless extending a count"),
+                entry(
+                    "f0 / t;",
+                    "Char-search targets treat digits and punctuation literally",
+                ),
+                entry(
+                    "; / ,",
+                    "Repeat the last successful char search / reverse it",
+                ),
                 entry("4d / 5dd", "Counted mutation commands are unsupported"),
                 entry("Tab", "Toggle annotation panel focus"),
             ],
@@ -35,6 +46,14 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("h/j/k/l", "Move cursor"),
                 entry("w/b/e", "Move by word"),
                 entry("0/$", "Move to line start/end"),
+                entry(
+                    "f/F/t/T",
+                    "Move to / before a character on the current line",
+                ),
+                entry(
+                    "; / ,",
+                    "Repeat the last successful char search / reverse it",
+                ),
                 entry("gg/G", "Move to document top/bottom"),
                 entry("Ctrl-d/u", "Move half page down/up"),
                 entry("Ctrl-f/b", "Move full page down/up"),
@@ -51,6 +70,14 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("h/j/k/l", "Extend selection"),
                 entry("w/b/e", "Extend selection by word"),
                 entry("0/$", "Extend selection to line start/end"),
+                entry(
+                    "f/F/t/T",
+                    "Extend selection to / before a character on the current line",
+                ),
+                entry(
+                    "; / ,",
+                    "Repeat the last successful char search / reverse it",
+                ),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -148,11 +175,19 @@ mod tests {
                     },
                     HelpEntry {
                         keys: "count+nav",
-                        action: "Repeat supported navigation only"
+                        action: "Repeat supported navigation including char search"
                     },
                     HelpEntry {
                         keys: "0 / 10j",
                         action: "0 keeps line-start unless extending a count"
+                    },
+                    HelpEntry {
+                        keys: "f0 / t;",
+                        action: "Char-search targets treat digits and punctuation literally"
+                    },
+                    HelpEntry {
+                        keys: "; / ,",
+                        action: "Repeat the last successful char search / reverse it"
                     },
                     HelpEntry {
                         keys: "4d / 5dd",
@@ -177,6 +212,16 @@ mod tests {
             &sections[1],
             "0/$",
             "Move to line start/end"
+        ));
+        assert!(contains_entry(
+            &sections[1],
+            "f/F/t/T",
+            "Move to / before a character on the current line"
+        ));
+        assert!(contains_entry(
+            &sections[1],
+            "; / ,",
+            "Repeat the last successful char search / reverse it"
         ));
         assert!(contains_entry(
             &sections[1],
@@ -211,6 +256,16 @@ mod tests {
         ));
         assert!(contains_entry(&sections[1], "Esc", "Hide annotation panel"));
 
+        assert!(contains_entry(
+            &sections[2],
+            "f/F/t/T",
+            "Extend selection to / before a character on the current line"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "; / ,",
+            "Repeat the last successful char search / reverse it"
+        ));
         assert!(contains_entry(
             &sections[2],
             "d",
