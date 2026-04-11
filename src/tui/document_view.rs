@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
-use crate::keybinds::handler::Action;
+use crate::keybinds::handler::{Action, CharSearchDirection};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
@@ -15,6 +15,13 @@ use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
 const GUTTER_WIDTH: usize = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CharSearchState {
+    target: char,
+    direction: CharSearchDirection,
+    until: bool,
+}
 
 /// Manages the document content display state: viewport, cursor movement,
 /// word wrap, and visual selection.
@@ -25,6 +32,8 @@ pub struct DocumentViewState {
     display_layout: DisplayLayout,
     /// Anchor position when in Visual mode.
     visual_anchor: Option<CursorPosition>,
+    /// Last successful f/F/t/T search, used by ; and , repeat motions.
+    last_char_search: Option<CharSearchState>,
     /// Plain-text document lines.
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
@@ -41,6 +50,7 @@ impl DocumentViewState {
             viewport,
             display_layout,
             visual_anchor: None,
+            last_char_search: None,
             doc_lines,
             styled_lines,
         }
@@ -85,19 +95,29 @@ impl DocumentViewState {
                 until,
                 count,
             } => {
-                let line = self
-                    .doc_lines
-                    .get(self.viewport.cursor.row)
-                    .map(String::as_str)
-                    .unwrap_or("");
-                self.viewport.move_to_char(
-                    line,
-                    &self.display_layout,
-                    *target,
-                    *direction,
-                    *until,
-                    *count,
-                );
+                let state = CharSearchState {
+                    target: *target,
+                    direction: *direction,
+                    until: *until,
+                };
+                let moved = self.execute_char_search(state, *count);
+                if moved {
+                    self.last_char_search = Some(state);
+                }
+            }
+            Action::RepeatLastCharSearch { direction, count } => {
+                let Some(search) = self.last_char_search else {
+                    return true;
+                };
+
+                let repeated = CharSearchState {
+                    direction: match direction {
+                        CharSearchDirection::Forward => search.direction,
+                        CharSearchDirection::Backward => search.direction.reversed(),
+                    },
+                    ..search
+                };
+                self.execute_char_search(repeated, *count);
             }
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
             Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
@@ -118,6 +138,22 @@ impl DocumentViewState {
             _ => return false,
         }
         true
+    }
+
+    fn execute_char_search(&mut self, search: CharSearchState, count: usize) -> bool {
+        let line = self
+            .doc_lines
+            .get(self.viewport.cursor.row)
+            .map(String::as_str)
+            .unwrap_or("");
+        self.viewport.move_to_char(
+            line,
+            &self.display_layout,
+            search.target,
+            search.direction,
+            search.until,
+            count,
+        )
     }
 
     /// Extract the current visual selection as a `TextRange` and selected text.

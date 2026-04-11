@@ -267,10 +267,10 @@ impl Viewport {
         direction: CharSearchDirection,
         until: bool,
         count: usize,
-    ) {
+    ) -> bool {
         let chars: Vec<char> = line.chars().collect();
         if chars.is_empty() {
-            return;
+            return false;
         }
 
         let occurrence = count.max(1);
@@ -293,7 +293,7 @@ impl Viewport {
         };
 
         let Some(found_col) = found else {
-            return;
+            return false;
         };
 
         self.cursor.col = match (direction, until) {
@@ -305,6 +305,7 @@ impl Viewport {
         self.clamp_col(layout);
         self.ensure_cursor_visible(layout);
         self.ensure_horizontal_visible();
+        true
     }
 
     pub fn move_word_forward(&mut self, lines: &[&str], layout: &DisplayLayout) {

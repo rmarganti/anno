@@ -10,6 +10,15 @@ pub enum CharSearchDirection {
     Backward,
 }
 
+impl CharSearchDirection {
+    pub(crate) fn reversed(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -33,6 +42,10 @@ pub enum Action {
         target: char,
         direction: CharSearchDirection,
         until: bool,
+        count: usize,
+    },
+    RepeatLastCharSearch {
+        direction: CharSearchDirection,
         count: usize,
     },
 
@@ -321,6 +334,12 @@ impl KeybindHandler {
                 });
                 Action::None
             }
+            (KeyCode::Char(';'), KeyModifiers::NONE) => {
+                self.finish_char_search_repeat(CharSearchDirection::Forward)
+            }
+            (KeyCode::Char(','), KeyModifiers::NONE) => {
+                self.finish_char_search_repeat(CharSearchDirection::Backward)
+            }
 
             // Movement
             (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
@@ -441,6 +460,12 @@ impl KeybindHandler {
                     until: true,
                 });
                 Action::None
+            }
+            (KeyCode::Char(';'), KeyModifiers::NONE) => {
+                self.finish_char_search_repeat(CharSearchDirection::Forward)
+            }
+            (KeyCode::Char(','), KeyModifiers::NONE) => {
+                self.finish_char_search_repeat(CharSearchDirection::Backward)
             }
 
             // Annotation creation from selection
@@ -632,6 +657,11 @@ impl KeybindHandler {
         }
     }
 
+    fn finish_char_search_repeat(&mut self, direction: CharSearchDirection) -> Action {
+        let count = self.count.take().unwrap_or(1);
+        Action::RepeatLastCharSearch { direction, count }
+    }
+
     fn resolve_char_search(
         &mut self,
         direction: CharSearchDirection,
@@ -718,6 +748,10 @@ mod tests {
             until,
             count,
         }
+    }
+
+    fn repeated_char_search(direction: CharSearchDirection, count: usize) -> Action {
+        Action::RepeatLastCharSearch { direction, count }
     }
 
     // ── Normal mode: single keys ──────────────────────────────────
@@ -953,6 +987,26 @@ mod tests {
     }
 
     #[test]
+    fn normal_char_search_repeat_keys_emit_repeat_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            repeated_char_search(CharSearchDirection::Forward, 1)
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(',')),
+            repeated_char_search(CharSearchDirection::Backward, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            repeated_char_search(CharSearchDirection::Forward, 2)
+        );
+    }
+
+    #[test]
     fn normal_invalid_char_search_target_discards_parser_state() {
         let mut h = KeybindHandler::new();
 
@@ -1157,6 +1211,26 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Visual, char_key('0')),
             char_search('0', CharSearchDirection::Backward, true, 2)
+        );
+    }
+
+    #[test]
+    fn visual_char_search_repeat_keys_emit_repeat_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(';')),
+            repeated_char_search(CharSearchDirection::Forward, 1)
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(',')),
+            repeated_char_search(CharSearchDirection::Backward, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Visual, char_key('3')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(',')),
+            repeated_char_search(CharSearchDirection::Backward, 3)
         );
     }
 
