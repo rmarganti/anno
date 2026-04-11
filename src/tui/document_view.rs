@@ -79,6 +79,26 @@ impl DocumentViewState {
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
+            Action::MoveToChar {
+                target,
+                direction,
+                until,
+                count,
+            } => {
+                let line = self
+                    .doc_lines
+                    .get(self.viewport.cursor.row)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                self.viewport.move_to_char(
+                    line,
+                    &self.display_layout,
+                    *target,
+                    *direction,
+                    *until,
+                    *count,
+                );
+            }
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
             Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
             Action::HalfPageDown => self.viewport.half_page_down(&self.display_layout),
@@ -286,7 +306,7 @@ mod tests {
     use super::*;
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
-    use crate::keybinds::handler::Action;
+    use crate::keybinds::handler::{Action, CharSearchDirection};
     use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
@@ -459,6 +479,43 @@ mod tests {
         let consumed = view.handle_action(&Action::MoveDocumentTop);
         assert!(consumed);
         assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn move_to_char_searches_within_logical_line_when_wrapped() {
+        let mut view = make_view(&["abcd efgh ijkl mnop"]);
+        view.handle_action(&Action::ToggleWordWrap);
+        view.update_dimensions(8, 24);
+
+        let consumed = view.handle_action(&Action::MoveToChar {
+            target: 'm',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        });
+
+        assert!(consumed);
+        assert_eq!(view.cursor(), pos(0, 15));
+    }
+
+    #[test]
+    fn move_to_char_in_visual_mode_extends_selection() {
+        let mut view = make_view(&["alpha beta gamma"]);
+
+        assert!(view.handle_action(&Action::EnterVisualMode));
+        assert!(view.handle_action(&Action::MoveToChar {
+            target: 'b',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        }));
+
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.start.column, 0);
+        assert_eq!(range.end.line, 0);
+        assert_eq!(range.end.column, 6);
+        assert_eq!(text, "alpha b");
     }
 
     #[test]

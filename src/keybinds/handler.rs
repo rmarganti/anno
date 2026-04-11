@@ -3,6 +3,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::mode::Mode;
 
 /// Actions that can be dispatched from key events.
+#[allow(dead_code)] // Wired into the parser by a follow-up keybind bead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CharSearchDirection {
+    Forward,
+    Backward,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -21,6 +28,13 @@ pub enum Action {
     HalfPageUp,
     FullPageDown,
     FullPageUp,
+    #[allow(dead_code)] // Constructed once the keybind parser starts emitting char-search motions.
+    MoveToChar {
+        target: char,
+        direction: CharSearchDirection,
+        until: bool,
+        count: usize,
+    },
 
     // -- Mode transitions --
     EnterVisualMode,
