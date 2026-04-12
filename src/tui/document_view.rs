@@ -7,14 +7,21 @@ use ratatui::{
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
-use crate::keybinds::handler::Action;
+use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
-use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
+use crate::tui::viewport::{CharSearch, CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
 const GUTTER_WIDTH: usize = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CharSearchState {
+    target: char,
+    direction: CharSearchDirection,
+    until: bool,
+}
 
 /// Manages the document content display state: viewport, cursor movement,
 /// word wrap, and visual selection.
@@ -25,6 +32,8 @@ pub struct DocumentViewState {
     display_layout: DisplayLayout,
     /// Anchor position when in Visual mode.
     visual_anchor: Option<CursorPosition>,
+    /// Last successful f/F/t/T search, used by ; and , repeat motions.
+    last_char_search: Option<CharSearchState>,
     /// Plain-text document lines.
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
@@ -41,6 +50,7 @@ impl DocumentViewState {
             viewport,
             display_layout,
             visual_anchor: None,
+            last_char_search: None,
             doc_lines,
             styled_lines,
         }
@@ -79,6 +89,36 @@ impl DocumentViewState {
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
+            Action::MoveToChar {
+                target,
+                direction,
+                until,
+                count,
+            } => {
+                let state = CharSearchState {
+                    target: *target,
+                    direction: *direction,
+                    until: *until,
+                };
+                let moved = self.execute_char_search(state, *count, false);
+                if moved {
+                    self.last_char_search = Some(state);
+                }
+            }
+            Action::RepeatLastCharSearch { direction, count } => {
+                let Some(search) = self.last_char_search else {
+                    return true;
+                };
+
+                let repeated = CharSearchState {
+                    direction: match direction {
+                        RepeatDirection::Same => search.direction,
+                        RepeatDirection::Opposite => search.direction.reversed(),
+                    },
+                    ..search
+                };
+                self.execute_char_search(repeated, *count, true);
+            }
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
             Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
             Action::HalfPageDown => self.viewport.half_page_down(&self.display_layout),
@@ -98,6 +138,30 @@ impl DocumentViewState {
             _ => return false,
         }
         true
+    }
+
+    fn execute_char_search(
+        &mut self,
+        search: CharSearchState,
+        count: usize,
+        is_repeat: bool,
+    ) -> bool {
+        let line = self
+            .doc_lines
+            .get(self.viewport.cursor.row)
+            .map(String::as_str)
+            .unwrap_or("");
+        self.viewport.move_to_char(
+            line,
+            &self.display_layout,
+            CharSearch {
+                target: search.target,
+                direction: search.direction,
+                until: search.until,
+                is_repeat,
+            },
+            count,
+        )
     }
 
     /// Extract the current visual selection as a `TextRange` and selected text.
@@ -286,7 +350,7 @@ mod tests {
     use super::*;
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
-    use crate::keybinds::handler::Action;
+    use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
     use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
@@ -459,6 +523,68 @@ mod tests {
         let consumed = view.handle_action(&Action::MoveDocumentTop);
         assert!(consumed);
         assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn move_to_char_searches_within_logical_line_when_wrapped() {
+        let mut view = make_view(&["abcd efgh ijkl mnop"]);
+        view.handle_action(&Action::ToggleWordWrap);
+        view.update_dimensions(8, 24);
+
+        let consumed = view.handle_action(&Action::MoveToChar {
+            target: 'm',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        });
+
+        assert!(consumed);
+        assert_eq!(view.cursor(), pos(0, 15));
+    }
+
+    #[test]
+    fn move_to_char_in_visual_mode_extends_selection() {
+        let mut view = make_view(&["alpha beta gamma"]);
+
+        assert!(view.handle_action(&Action::EnterVisualMode));
+        assert!(view.handle_action(&Action::MoveToChar {
+            target: 'b',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        }));
+
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.start.column, 0);
+        assert_eq!(range.end.line, 0);
+        assert_eq!(range.end.column, 6);
+        assert_eq!(text, "alpha b");
+    }
+
+    #[test]
+    fn repeat_last_char_search_uses_same_or_opposite_direction() {
+        let mut view = make_view(&["abcabc"]);
+
+        assert!(view.handle_action(&Action::MoveToChar {
+            target: 'c',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 2));
+
+        assert!(view.handle_action(&Action::RepeatLastCharSearch {
+            direction: RepeatDirection::Same,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 5));
+
+        assert!(view.handle_action(&Action::RepeatLastCharSearch {
+            direction: RepeatDirection::Opposite,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 2));
     }
 
     #[test]

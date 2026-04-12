@@ -13,3 +13,6 @@ ralph.sh
 # Used by harness plugins
 node_modules
 package-lock.json
+
+# bv (beads viewer) local config and caches
+.bv/

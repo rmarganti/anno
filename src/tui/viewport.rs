@@ -4,6 +4,16 @@
 /// on screen. Each parsed [`Block`] expands into one or more document lines (e.g. a
 /// multi-line paragraph or code block). The mapping from blocks to document lines is
 /// provided externally via [`DisplayLayout`].
+use crate::keybinds::handler::CharSearchDirection;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharSearch {
+    pub target: char,
+    pub direction: CharSearchDirection,
+    pub until: bool,
+    pub is_repeat: bool,
+}
+
 /// Cursor position in the document (0-indexed row and column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorPosition {
@@ -255,6 +265,54 @@ impl Viewport {
         self.cursor.col = self.current_line_max_col(layout);
         self.ensure_cursor_visible(layout);
         self.ensure_horizontal_visible();
+    }
+
+    pub fn move_to_char(
+        &mut self,
+        line: &str,
+        layout: &DisplayLayout,
+        search: CharSearch,
+        count: usize,
+    ) -> bool {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            return false;
+        }
+
+        let occurrence = count.max(1);
+        let current_col = self.cursor.col.min(chars.len().saturating_sub(1));
+        let skip = usize::from(search.until && search.is_repeat);
+        let found = match search.direction {
+            CharSearchDirection::Forward => chars
+                .iter()
+                .enumerate()
+                .skip(current_col.saturating_add(1 + skip))
+                .filter(|(_, ch)| **ch == search.target)
+                .nth(occurrence - 1)
+                .map(|(idx, _)| idx),
+            CharSearchDirection::Backward => chars[..current_col.saturating_sub(skip)]
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, ch)| **ch == search.target)
+                .nth(occurrence - 1)
+                .map(|(idx, _)| idx),
+        };
+
+        let Some(found_col) = found else {
+            return false;
+        };
+
+        self.cursor.col = match (search.direction, search.until) {
+            (CharSearchDirection::Forward, false) => found_col,
+            (CharSearchDirection::Forward, true) => found_col.saturating_sub(1),
+            (CharSearchDirection::Backward, false) => found_col,
+            (CharSearchDirection::Backward, true) => found_col.saturating_add(1),
+        };
+        self.clamp_col(layout);
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+        true
     }
 
     pub fn move_word_forward(&mut self, lines: &[&str], layout: &DisplayLayout) {
@@ -544,6 +602,7 @@ impl Viewport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keybinds::handler::CharSearchDirection;
 
     /// Build a layout for `n` lines of `line_len` characters each (no wrap).
     fn make_lines(n: usize, line_len: usize) -> (Vec<String>, DisplayLayout) {
@@ -787,6 +846,178 @@ mod tests {
         v.move_word_backward(&lines, &layout);
         assert_eq!(v.cursor.row, 0);
         assert_eq!(v.cursor.col, 4); // end of "hello"
+    }
+
+    #[test]
+    fn char_search_forward_lands_on_nth_match() {
+        let lines = vec!["alpha beta gamma a".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: false,
+                is_repeat: false,
+            },
+            2,
+        );
+
+        assert_eq!(v.cursor.col, 9);
+    }
+
+    #[test]
+    fn char_search_backward_lands_on_match() {
+        let lines = vec!["alpha beta gamma".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+        v.cursor.col = 14;
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: false,
+                is_repeat: false,
+            },
+            1,
+        );
+
+        assert_eq!(v.cursor.col, 12);
+    }
+
+    #[test]
+    fn char_search_until_stops_adjacent_to_target() {
+        let lines = vec!["alpha beta gamma".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'b',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 5);
+
+        v.cursor.col = 10;
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'b',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 7);
+    }
+
+    #[test]
+    fn char_search_failed_match_leaves_cursor_unchanged() {
+        let lines = vec!["alpha".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+        v.cursor.col = 2;
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'z',
+                direction: CharSearchDirection::Forward,
+                until: false,
+                is_repeat: false,
+            },
+            1,
+        );
+
+        assert_eq!(v.cursor, CursorPosition { row: 0, col: 2 });
+    }
+
+    #[test]
+    fn repeated_forward_until_skips_adjacent_target() {
+        let lines = vec!["abacadaba".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 1);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: true,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 3);
+    }
+
+    #[test]
+    fn repeated_backward_until_skips_adjacent_target() {
+        let lines = vec!["abacadaba".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+        v.cursor.col = 8;
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 7);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: true,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 5);
     }
 
     // ── Empty document ────────────────────────────────────────────

@@ -3,6 +3,27 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::mode::Mode;
 
 /// Actions that can be dispatched from key events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CharSearchDirection {
+    Forward,
+    Backward,
+}
+
+impl CharSearchDirection {
+    pub(crate) fn reversed(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatDirection {
+    Same,
+    Opposite,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -21,6 +42,16 @@ pub enum Action {
     HalfPageUp,
     FullPageDown,
     FullPageUp,
+    MoveToChar {
+        target: char,
+        direction: CharSearchDirection,
+        until: bool,
+        count: usize,
+    },
+    RepeatLastCharSearch {
+        direction: RepeatDirection,
+        count: usize,
+    },
 
     // -- Mode transitions --
     EnterVisualMode,
@@ -125,8 +156,17 @@ impl Action {
 /// Multi-key sequences supported:
 /// - Normal: `gg`, `gc`, `]a`, `[a`
 /// - AnnotationList: `dd`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingInput {
+    FixedSequence(KeyCode),
+    CharSearch {
+        direction: CharSearchDirection,
+        until: bool,
+    },
+}
+
 pub struct KeybindHandler {
-    pending: Option<KeyCode>,
+    pending: Option<PendingInput>,
     count: Option<usize>,
     count_overflowed: bool,
 }
@@ -243,8 +283,8 @@ impl KeybindHandler {
         }
 
         // Resolve pending multi-key sequences first.
-        if let Some(first) = self.pending.take() {
-            return self.resolve_normal_sequence(first, event.code);
+        if let Some(pending) = self.pending.take() {
+            return self.resolve_normal_input(pending, event);
         }
 
         if self.consume_count_prefix(event) {
@@ -256,18 +296,22 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if let Some(action) = self.try_handle_char_search(event) {
+            return action;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
-                self.pending = Some(KeyCode::Char('g'));
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
                 Action::None
             }
             (KeyCode::Char(']'), KeyModifiers::NONE) => {
-                self.pending = Some(KeyCode::Char(']'));
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char(']')));
                 Action::None
             }
             (KeyCode::Char('['), KeyModifiers::NONE) => {
-                self.pending = Some(KeyCode::Char('['));
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('[')));
                 Action::None
             }
 
@@ -328,27 +372,11 @@ impl KeybindHandler {
         }
     }
 
-    fn resolve_normal_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
-        match (first, second) {
-            // gg — top of document
-            (KeyCode::Char('g'), KeyCode::Char('g')) => self.finish_action(Action::MoveDocumentTop),
-            // gc — global comment
-            (KeyCode::Char('g'), KeyCode::Char('c')) => {
-                self.finish_action(Action::CreateGlobalComment)
-            }
-            // ]a — next annotation
-            (KeyCode::Char(']'), KeyCode::Char('a')) => self.finish_action(Action::NextAnnotation),
-            // [a — previous annotation
-            (KeyCode::Char('['), KeyCode::Char('a')) => self.finish_action(Action::PrevAnnotation),
-            // Unrecognized sequence — discard
-            _ => {
-                self.clear_pending();
-                Action::None
-            }
-        }
-    }
-
     fn handle_visual(&mut self, event: KeyEvent) -> Action {
+        if let Some(pending) = self.pending.take() {
+            return self.resolve_visual_input(pending, event);
+        }
+
         if self.consume_count_prefix(event) {
             return Action::None;
         }
@@ -356,6 +384,10 @@ impl KeybindHandler {
         if self.count_overflowed {
             self.clear_pending();
             return Action::None;
+        }
+
+        if let Some(action) = self.try_handle_char_search(event) {
+            return action;
         }
 
         match (event.code, event.modifiers) {
@@ -400,6 +432,89 @@ impl KeybindHandler {
         }
     }
 
+    fn resolve_normal_input(&mut self, pending: PendingInput, event: KeyEvent) -> Action {
+        match pending {
+            PendingInput::FixedSequence(first) => {
+                self.resolve_fixed_normal_sequence(first, event.code)
+            }
+            PendingInput::CharSearch { direction, until } => {
+                self.resolve_char_search(direction, until, event)
+            }
+        }
+    }
+
+    fn resolve_visual_input(&mut self, pending: PendingInput, event: KeyEvent) -> Action {
+        match pending {
+            PendingInput::CharSearch { direction, until } => {
+                self.resolve_char_search(direction, until, event)
+            }
+            PendingInput::FixedSequence(_) => {
+                self.clear_pending();
+                Action::None
+            }
+        }
+    }
+
+    fn resolve_fixed_normal_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
+        match (first, second) {
+            // gg — top of document
+            (KeyCode::Char('g'), KeyCode::Char('g')) => self.finish_action(Action::MoveDocumentTop),
+            // gc — global comment
+            (KeyCode::Char('g'), KeyCode::Char('c')) => {
+                self.finish_action(Action::CreateGlobalComment)
+            }
+            // ]a — next annotation
+            (KeyCode::Char(']'), KeyCode::Char('a')) => self.finish_action(Action::NextAnnotation),
+            // [a — previous annotation
+            (KeyCode::Char('['), KeyCode::Char('a')) => self.finish_action(Action::PrevAnnotation),
+            // Unrecognized sequence — discard
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
+        }
+    }
+
+    fn try_handle_char_search(&mut self, event: KeyEvent) -> Option<Action> {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('f'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Forward,
+                    until: false,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Backward,
+                    until: false,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Forward,
+                    until: true,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('T'), KeyModifiers::SHIFT) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Backward,
+                    until: true,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char(';'), KeyModifiers::NONE) => {
+                Some(self.finish_char_search_repeat(RepeatDirection::Same))
+            }
+            (KeyCode::Char(','), KeyModifiers::NONE) => {
+                Some(self.finish_char_search_repeat(RepeatDirection::Opposite))
+            }
+            _ => None,
+        }
+    }
+
     fn handle_insert(&mut self, event: KeyEvent) -> Action {
         if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
             Action::ForceQuit
@@ -415,8 +530,8 @@ impl KeybindHandler {
         }
 
         // Resolve pending multi-key sequences (dd).
-        if let Some(first) = self.pending.take() {
-            return self.resolve_annotation_list_sequence(first, event.code);
+        if let Some(pending) = self.pending.take() {
+            return self.resolve_annotation_list_input(pending, event.code);
         }
 
         if self.consume_count_prefix(event) {
@@ -444,7 +559,7 @@ impl KeybindHandler {
 
             // dd starter
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
-                self.pending = Some(KeyCode::Char('d'));
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('d')));
                 Action::None
             }
 
@@ -455,12 +570,18 @@ impl KeybindHandler {
         }
     }
 
-    fn resolve_annotation_list_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
-        match (first, second) {
-            (KeyCode::Char('d'), KeyCode::Char('d')) => {
-                self.finish_action(Action::DeleteAnnotation)
-            }
-            _ => {
+    fn resolve_annotation_list_input(&mut self, pending: PendingInput, second: KeyCode) -> Action {
+        match pending {
+            PendingInput::FixedSequence(first) => match (first, second) {
+                (KeyCode::Char('d'), KeyCode::Char('d')) => {
+                    self.finish_action(Action::DeleteAnnotation)
+                }
+                _ => {
+                    self.clear_pending();
+                    Action::None
+                }
+            },
+            PendingInput::CharSearch { .. } => {
                 self.clear_pending();
                 Action::None
             }
@@ -503,6 +624,41 @@ impl KeybindHandler {
     fn finish_action(&mut self, action: Action) -> Action {
         let count = self.count.take();
         action.counted(count)
+    }
+
+    fn finish_char_search(
+        &mut self,
+        target: char,
+        direction: CharSearchDirection,
+        until: bool,
+    ) -> Action {
+        let count = self.count.take().unwrap_or(1);
+        Action::MoveToChar {
+            target,
+            direction,
+            until,
+            count,
+        }
+    }
+
+    fn finish_char_search_repeat(&mut self, direction: RepeatDirection) -> Action {
+        let count = self.count.take().unwrap_or(1);
+        Action::RepeatLastCharSearch { direction, count }
+    }
+
+    fn resolve_char_search(
+        &mut self,
+        direction: CharSearchDirection,
+        until: bool,
+        event: KeyEvent,
+    ) -> Action {
+        match event.code {
+            KeyCode::Char(target) => self.finish_char_search(target, direction, until),
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
+        }
     }
 
     fn handle_counted_overlay_navigation(
@@ -562,6 +718,24 @@ mod tests {
             action: Box::new(action),
             count,
         }
+    }
+
+    fn char_search(
+        target: char,
+        direction: CharSearchDirection,
+        until: bool,
+        count: usize,
+    ) -> Action {
+        Action::MoveToChar {
+            target,
+            direction,
+            until,
+            count,
+        }
+    }
+
+    fn repeated_char_search(direction: RepeatDirection, count: usize) -> Action {
+        Action::RepeatLastCharSearch { direction, count }
     }
 
     // ── Normal mode: single keys ──────────────────────────────────
@@ -736,6 +910,100 @@ mod tests {
     }
 
     #[test]
+    fn normal_char_search_sequences_emit_dedicated_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('f')), Action::None);
+        assert!(h.has_pending());
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('a')),
+            char_search('a', CharSearchDirection::Forward, false, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('t')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            char_search(';', CharSearchDirection::Forward, true, 1)
+        );
+
+        assert_eq!(
+            h.handle(
+                Mode::Normal,
+                key_mod(KeyCode::Char('F'), KeyModifiers::SHIFT)
+            ),
+            Action::None
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('b')),
+            char_search('b', CharSearchDirection::Backward, false, 1)
+        );
+
+        assert_eq!(
+            h.handle(
+                Mode::Normal,
+                key_mod(KeyCode::Char('T'), KeyModifiers::SHIFT)
+            ),
+            Action::None
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('c')),
+            char_search('c', CharSearchDirection::Backward, true, 1)
+        );
+        assert!(!h.has_pending());
+    }
+
+    #[test]
+    fn normal_char_search_targets_bypass_count_parsing() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('f')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('0')),
+            char_search('0', CharSearchDirection::Forward, false, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('t')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            char_search(';', CharSearchDirection::Forward, true, 2)
+        );
+    }
+
+    #[test]
+    fn normal_char_search_repeat_keys_emit_repeat_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            repeated_char_search(RepeatDirection::Same, 1)
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(',')),
+            repeated_char_search(RepeatDirection::Opposite, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key(';')),
+            repeated_char_search(RepeatDirection::Same, 2)
+        );
+    }
+
+    #[test]
+    fn normal_invalid_char_search_target_discards_parser_state() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('f')), Action::None);
+        assert!(h.has_pending());
+
+        assert_eq!(h.handle(Mode::Normal, key(KeyCode::Esc)), Action::None);
+        assert!(!h.has_pending());
+        assert_eq!(h.handle(Mode::Normal, char_key('j')), Action::MoveDown);
+    }
+
+    #[test]
     fn normal_invalid_sequence_discards() {
         let mut h = KeybindHandler::new();
         assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
@@ -903,6 +1171,50 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Visual, char_key('j')),
             repeated(Action::MoveDown, 3)
+        );
+    }
+
+    #[test]
+    fn visual_char_search_sequences_emit_dedicated_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('f')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('x')),
+            char_search('x', CharSearchDirection::Forward, false, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Visual, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('T'), KeyModifiers::SHIFT)
+            ),
+            Action::None
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('0')),
+            char_search('0', CharSearchDirection::Backward, true, 2)
+        );
+    }
+
+    #[test]
+    fn visual_char_search_repeat_keys_emit_repeat_actions() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(';')),
+            repeated_char_search(RepeatDirection::Same, 1)
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(',')),
+            repeated_char_search(RepeatDirection::Opposite, 1)
+        );
+
+        assert_eq!(h.handle(Mode::Visual, char_key('3')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key(',')),
+            repeated_char_search(RepeatDirection::Opposite, 3)
         );
     }
 

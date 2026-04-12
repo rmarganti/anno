@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn omits_scroll_indicators_when_help_fits() {
-        let output = render_to_lines(120, 72).join("\n");
+        let output = render_to_lines(120, 96).join("\n");
         assert!(
             !output.contains('▼'),
             "Did not expect ▼ indicator in: {output}"
