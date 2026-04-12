@@ -170,7 +170,7 @@ anno uses vim-inspired modal editing:
 
 Press `?` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `?`, `Esc`, and `q` all close it.
 
-Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction; anno uses `,` instead of `:` for reverse repeat because `:` already enters command mode. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
+Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
 
 ## Keybindings
 
