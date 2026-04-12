@@ -60,6 +60,8 @@ impl AppState {
     // is syntactically valid), counted overlay scrolls are handled upstream in
     // `handle_counted_overlay_navigation` before `dispatch_repeat` is ever
     // reached. Adding them here would be a no-op at best and confusing at worst.
+    // `SearchNext/SearchPrev` are handled here because their counted repeats are
+    // issued from Normal/Visual mode before dispatching into the search actions.
     fn is_repeatable_navigation_action(&self, action: &Action) -> bool {
         match self.mode {
             Mode::Normal | Mode::Visual => matches!(
@@ -81,6 +83,8 @@ impl AppState {
                     | Action::FullPageUp
                     | Action::NextAnnotation
                     | Action::PrevAnnotation
+                    | Action::SearchNext
+                    | Action::SearchPrev
             ),
             Mode::AnnotationList => {
                 matches!(

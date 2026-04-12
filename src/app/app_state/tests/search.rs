@@ -1,3 +1,5 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
 use super::*;
 use crate::keybinds::handler::SearchDirection;
 
@@ -117,5 +119,21 @@ fn search_prev_reverses_last_search_direction() {
     assert_eq!(
         state.last_search_direction_for_test(),
         SearchDirection::Backward
+    );
+}
+
+#[test]
+fn counted_search_repeats_dispatch_from_normal_mode() {
+    let mut state = AppState::new_plain("[stdin]".to_string(), "first".to_string());
+    state.enter_search_mode(SearchDirection::Forward);
+    state.handle_search_char('f');
+    state.handle_search_confirm();
+
+    state.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    state.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::NONE));
+
+    assert_eq!(
+        state.last_search_direction_for_test(),
+        SearchDirection::Forward
     );
 }
