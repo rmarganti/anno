@@ -220,7 +220,7 @@ impl DocumentViewState {
 
     fn search_forward(&self, pattern: &str, start: CursorPosition) -> Option<(usize, usize)> {
         let total_lines = self.doc_lines.len();
-        for line_offset in 0..total_lines {
+        for line_offset in 0..=total_lines {
             let row = (start.row + line_offset) % total_lines;
             let line = self.doc_lines[row].as_str();
             let line_len = line.chars().count();
@@ -242,7 +242,7 @@ impl DocumentViewState {
 
     fn search_backward(&self, pattern: &str, start: CursorPosition) -> Option<(usize, usize)> {
         let total_lines = self.doc_lines.len();
-        for line_offset in 0..total_lines {
+        for line_offset in 0..=total_lines {
             let row = (start.row + total_lines - (line_offset % total_lines)) % total_lines;
             let line = self.doc_lines[row].as_str();
             let line_len = line.chars().count();

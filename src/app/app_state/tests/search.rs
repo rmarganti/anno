@@ -162,6 +162,13 @@ fn forward_search_wraps_around_document() {
 }
 
 #[test]
+fn forward_search_wraps_to_match_earlier_on_starting_line() {
+    harness("beta alpha beta")
+        .keys("$/beta<Enter>")
+        .assert_cursor(0, 0);
+}
+
+#[test]
 fn forward_search_with_no_match_leaves_cursor_unchanged() {
     harness("alpha\nbeta")
         .keys("jll/missing<Enter>")
@@ -180,6 +187,13 @@ fn backward_search_wraps_around_document() {
     harness("alpha\nbeta\ngamma")
         .keys("gg?beta<Enter>")
         .assert_cursor(1, 0);
+}
+
+#[test]
+fn backward_search_wraps_to_match_later_on_starting_line() {
+    harness("beta alpha beta")
+        .keys("gg?beta<Enter>")
+        .assert_cursor(0, 11);
 }
 
 #[test]
