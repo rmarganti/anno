@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn renders_key_descriptions() {
-        let output = render_to_lines(80, 24).join("\n");
+        let output = render_to_lines(80, 40).join("\n");
         assert!(
             output.contains("Toggle help"),
             "Expected key description in: {output}"

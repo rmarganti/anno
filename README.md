@@ -163,14 +163,15 @@ anno uses vim-inspired modal editing:
 | **Normal**          | Navigate the document            | Startup default | —         |
 | **Visual**          | Select text for annotations      | `v`            | `Esc`     |
 | **Insert**          | Enter annotation text            | Annotation flow | `Ctrl-S` or `Esc` |
+| **Search**          | Enter a `/` or `?` search pattern | `/` or `?`     | `Enter` or `Esc` |
 | **Annotation List** | Browse existing annotations      | `Tab`          | `Esc`     |
 | **Command**         | Run quit commands                | `:`            | `Esc`     |
 
 ## Help Overlay
 
-Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `H`, `Esc`, and `q` all close it.
+Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `H`, `Esc`, and `q` all close it. `?` is available for backward search now that help moved off that key.
 
-Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
+Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Text search uses simple substring matching. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
 
 ## Keybindings
 
@@ -187,6 +188,8 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | bare `0` | Move to line start unless extending an existing count |
 | `f/F/t/T` target `0-9` or punctuation | Treat the next character literally instead of as a count |
 | `;` / `,` | Repeat the last successful char search forward / in reverse |
+| `/` / `?` | Enter forward / backward search mode |
+| `n` / `N` | Repeat the last search / reverse its direction |
 | `4d`, `5dd` | Unsupported counted mutation commands |
 | `Tab`    | Toggle annotation panel focus |
 
@@ -199,6 +202,10 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `0/$`       | Move to line start/end            |
 | `f/F/t/T`   | Move to / before a character on the current line |
 | `;` / `,`   | Repeat the last successful char search / reverse it |
+| `/`         | Search forward                    |
+| `?`         | Search backward                   |
+| `n`         | Repeat search                     |
+| `N`         | Repeat search in the opposite direction |
 | `gg/G`      | Move to document top/bottom       |
 | `Ctrl-d/u`  | Move half page down/up            |
 | `Ctrl-f/b`  | Move full page down/up            |
@@ -217,6 +224,10 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `0/$`     | Extend selection to line start/end |
 | `f/F/t/T` | Extend selection to / before a character on the current line |
 | `;` / `,` | Repeat the last successful char search / reverse it |
+| `/`       | Search forward and extend selection to match |
+| `?`       | Search backward and extend selection to match |
+| `n`       | Repeat search and extend selection to match |
+| `N`       | Repeat search in the opposite direction and extend selection to match |
 | `d`       | Create deletion annotation     |
 | `c`       | Create comment annotation      |
 | `r`       | Create replacement annotation  |
@@ -228,6 +239,13 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | -------- | -------------- |
 | `Ctrl-S` | Confirm input  |
 | `Esc`    | Cancel input   |
+
+### Search Mode
+
+| Key      | Action         |
+| -------- | -------------- |
+| `Enter`  | Confirm search |
+| `Esc`    | Cancel search  |
 
 ### Annotation List
 
