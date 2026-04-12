@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
-use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
+use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection, SearchDirection};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
@@ -195,6 +195,115 @@ impl DocumentViewState {
             .saturating_sub(1);
         self.viewport.cursor.col = col.min(max_col);
         self.viewport.ensure_cursor_visible(&self.display_layout);
+    }
+
+    /// Search for the next/previous occurrence of `pattern` and jump to its start.
+    /// Returns `true` when a match is found.
+    pub fn search_text(&mut self, pattern: &str, direction: SearchDirection) -> bool {
+        if pattern.is_empty() || self.doc_lines.is_empty() {
+            return false;
+        }
+
+        let start = self.viewport.cursor;
+        let found = match direction {
+            SearchDirection::Forward => self.search_forward(pattern, start),
+            SearchDirection::Backward => self.search_backward(pattern, start),
+        };
+
+        if let Some((row, col)) = found {
+            self.set_cursor(row, col);
+            return true;
+        }
+
+        false
+    }
+
+    fn search_forward(&self, pattern: &str, start: CursorPosition) -> Option<(usize, usize)> {
+        let total_lines = self.doc_lines.len();
+        for line_offset in 0..total_lines {
+            let row = (start.row + line_offset) % total_lines;
+            let line = self.doc_lines[row].as_str();
+            let line_len = line.chars().count();
+            let (start_col, end_col) = if line_offset == 0 {
+                (start.col.saturating_add(1), line_len)
+            } else if row == start.row {
+                (0, start.col)
+            } else {
+                (0, line_len)
+            };
+
+            if let Some(col) = Self::find_forward_in_line(line, pattern, start_col, end_col) {
+                return Some((row, col));
+            }
+        }
+
+        None
+    }
+
+    fn search_backward(&self, pattern: &str, start: CursorPosition) -> Option<(usize, usize)> {
+        let total_lines = self.doc_lines.len();
+        for line_offset in 0..total_lines {
+            let row = (start.row + total_lines - (line_offset % total_lines)) % total_lines;
+            let line = self.doc_lines[row].as_str();
+            let line_len = line.chars().count();
+            let (start_col, end_col) = if line_offset == 0 {
+                (0, start.col)
+            } else if row == start.row {
+                (start.col.saturating_add(1), line_len)
+            } else {
+                (0, line_len)
+            };
+
+            if let Some(col) = Self::find_backward_in_line(line, pattern, start_col, end_col) {
+                return Some((row, col));
+            }
+        }
+
+        None
+    }
+
+    fn find_forward_in_line(
+        line: &str,
+        pattern: &str,
+        start_col: usize,
+        end_col: usize,
+    ) -> Option<usize> {
+        if start_col > end_col {
+            return None;
+        }
+
+        let start_byte = Self::char_to_byte_idx(line, start_col)?;
+        let end_byte = Self::char_to_byte_idx(line, end_col)?;
+        let haystack = line.get(start_byte..end_byte)?;
+        let match_byte = haystack.find(pattern)?;
+
+        Some(line[..start_byte + match_byte].chars().count())
+    }
+
+    fn find_backward_in_line(
+        line: &str,
+        pattern: &str,
+        start_col: usize,
+        end_col: usize,
+    ) -> Option<usize> {
+        if start_col > end_col {
+            return None;
+        }
+
+        let start_byte = Self::char_to_byte_idx(line, start_col)?;
+        let end_byte = Self::char_to_byte_idx(line, end_col)?;
+        let haystack = line.get(start_byte..end_byte)?;
+        let match_byte = haystack.rfind(pattern)?;
+
+        Some(line[..start_byte + match_byte].chars().count())
+    }
+
+    fn char_to_byte_idx(line: &str, char_idx: usize) -> Option<usize> {
+        if char_idx == line.chars().count() {
+            return Some(line.len());
+        }
+
+        line.char_indices().nth(char_idx).map(|(idx, _)| idx)
     }
 
     /// Clear the visual anchor (e.g. when exiting Visual mode).

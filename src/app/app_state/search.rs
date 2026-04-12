@@ -3,6 +3,20 @@ use crate::keybinds::handler::SearchDirection;
 use crate::keybinds::mode::Mode;
 
 impl AppState {
+    fn execute_search(&mut self, pattern: &str, direction: SearchDirection) -> bool {
+        self.document_view.search_text(pattern, direction)
+    }
+
+    fn repeat_search(&mut self, direction: SearchDirection) {
+        let Some(pattern) = self.last_search_pattern.clone() else {
+            return;
+        };
+
+        self.execute_search(&pattern, direction);
+    }
+}
+
+impl AppState {
     pub(super) fn clear_search_buffer(&mut self) {
         self.search_buffer.clear();
     }
@@ -21,6 +35,9 @@ impl AppState {
     pub(super) fn handle_search_confirm(&mut self) {
         if !self.search_buffer.is_empty() {
             self.last_search_pattern = Some(self.search_buffer.clone());
+            let pattern = self.search_buffer.clone();
+            let direction = self.last_search_direction;
+            self.execute_search(&pattern, direction);
         }
 
         self.clear_search_buffer();
@@ -28,16 +45,11 @@ impl AppState {
     }
 
     pub(super) fn handle_search_next(&mut self) {
-        if self.last_search_pattern.is_some() {
-            // Search execution is wired in a follow-up bead; this foundation bead
-            // only persists enough state for repeats to be possible.
-        }
+        self.repeat_search(self.last_search_direction);
     }
 
     pub(super) fn handle_search_prev(&mut self) {
-        if self.last_search_pattern.is_some() {
-            self.last_search_direction = self.last_search_direction.reversed();
-        }
+        self.repeat_search(self.last_search_direction.reversed());
     }
 
     pub(super) fn enter_search_mode(&mut self, direction: SearchDirection) {
