@@ -299,11 +299,10 @@ impl DocumentViewState {
     }
 
     fn char_to_byte_idx(line: &str, char_idx: usize) -> Option<usize> {
-        if char_idx == line.chars().count() {
-            return Some(line.len());
-        }
-
-        line.char_indices().nth(char_idx).map(|(idx, _)| idx)
+        line.char_indices()
+            .map(|(idx, _)| idx)
+            .chain(std::iter::once(line.len()))
+            .nth(char_idx)
     }
 
     /// Clear the visual anchor (e.g. when exiting Visual mode).
@@ -561,6 +560,21 @@ mod tests {
     fn initial_word_wrap_disabled() {
         let view = make_view(&["hello"]);
         assert!(!view.word_wrap());
+    }
+
+    #[test]
+    fn char_to_byte_idx_handles_unicode_and_end_of_line() {
+        let line = "aé🙂z";
+
+        assert_eq!(DocumentViewState::char_to_byte_idx(line, 0), Some(0));
+        assert_eq!(DocumentViewState::char_to_byte_idx(line, 1), Some(1));
+        assert_eq!(DocumentViewState::char_to_byte_idx(line, 2), Some(3));
+        assert_eq!(DocumentViewState::char_to_byte_idx(line, 3), Some(7));
+        assert_eq!(
+            DocumentViewState::char_to_byte_idx(line, 4),
+            Some(line.len())
+        );
+        assert_eq!(DocumentViewState::char_to_byte_idx(line, 5), None);
     }
 
     // ── Movement ──────────────────────────────────────────────────────
