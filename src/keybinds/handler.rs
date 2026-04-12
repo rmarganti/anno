@@ -292,6 +292,10 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if let Some(action) = self.try_handle_char_search(event) {
+            return action;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
@@ -305,40 +309,6 @@ impl KeybindHandler {
             (KeyCode::Char('['), KeyModifiers::NONE) => {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('[')));
                 Action::None
-            }
-            (KeyCode::Char('f'), KeyModifiers::NONE) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Forward,
-                    until: false,
-                });
-                Action::None
-            }
-            (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Backward,
-                    until: false,
-                });
-                Action::None
-            }
-            (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Forward,
-                    until: true,
-                });
-                Action::None
-            }
-            (KeyCode::Char('T'), KeyModifiers::SHIFT) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Backward,
-                    until: true,
-                });
-                Action::None
-            }
-            (KeyCode::Char(';'), KeyModifiers::NONE) => {
-                self.finish_char_search_repeat(CharSearchDirection::Forward)
-            }
-            (KeyCode::Char(','), KeyModifiers::NONE) => {
-                self.finish_char_search_repeat(CharSearchDirection::Backward)
             }
 
             // Movement
@@ -412,6 +382,10 @@ impl KeybindHandler {
             return Action::None;
         }
 
+        if let Some(action) = self.try_handle_char_search(event) {
+            return action;
+        }
+
         match (event.code, event.modifiers) {
             // Movement (extend selection)
             (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
@@ -433,40 +407,6 @@ impl KeybindHandler {
             (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
             (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
             (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
-            (KeyCode::Char('f'), KeyModifiers::NONE) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Forward,
-                    until: false,
-                });
-                Action::None
-            }
-            (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Backward,
-                    until: false,
-                });
-                Action::None
-            }
-            (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Forward,
-                    until: true,
-                });
-                Action::None
-            }
-            (KeyCode::Char('T'), KeyModifiers::SHIFT) => {
-                self.pending = Some(PendingInput::CharSearch {
-                    direction: CharSearchDirection::Backward,
-                    until: true,
-                });
-                Action::None
-            }
-            (KeyCode::Char(';'), KeyModifiers::NONE) => {
-                self.finish_char_search_repeat(CharSearchDirection::Forward)
-            }
-            (KeyCode::Char(','), KeyModifiers::NONE) => {
-                self.finish_char_search_repeat(CharSearchDirection::Backward)
-            }
 
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
@@ -528,6 +468,46 @@ impl KeybindHandler {
                 self.clear_pending();
                 Action::None
             }
+        }
+    }
+
+    fn try_handle_char_search(&mut self, event: KeyEvent) -> Option<Action> {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('f'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Forward,
+                    until: false,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Backward,
+                    until: false,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Forward,
+                    until: true,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char('T'), KeyModifiers::SHIFT) => {
+                self.pending = Some(PendingInput::CharSearch {
+                    direction: CharSearchDirection::Backward,
+                    until: true,
+                });
+                Some(Action::None)
+            }
+            (KeyCode::Char(';'), KeyModifiers::NONE) => {
+                Some(self.finish_char_search_repeat(CharSearchDirection::Forward))
+            }
+            (KeyCode::Char(','), KeyModifiers::NONE) => {
+                Some(self.finish_char_search_repeat(CharSearchDirection::Backward))
+            }
+            _ => None,
         }
     }
 
