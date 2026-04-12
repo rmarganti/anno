@@ -31,6 +31,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         Mode::Insert => " INSERT ",
         Mode::AnnotationList => " ANNOTATIONS ",
         Mode::Command => " COMMAND ",
+        Mode::Search => " SEARCH ",
     };
 
     let cursor_pos = format!("{}:{}", props.cursor_row + 1, props.cursor_col + 1);
@@ -60,6 +61,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
             }
             Mode::AnnotationList => "count+nav  Space  Enter  Esc hide".to_string(),
             Mode::Command => format!(":{}", props.command_buffer),
+            Mode::Search => "/".to_string(),
         }
     };
     status_spans.push(Span::raw(hint));

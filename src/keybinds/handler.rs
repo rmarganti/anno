@@ -18,12 +18,30 @@ impl CharSearchDirection {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
+}
+
+impl SearchDirection {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn reversed(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepeatDirection {
     Same,
     Opposite,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -56,6 +74,9 @@ pub enum Action {
     // -- Mode transitions --
     EnterVisualMode,
     EnterCommandMode,
+    EnterSearchMode {
+        direction: SearchDirection,
+    },
     EnterAnnotationListMode,
     ExitToNormal,
 
@@ -86,6 +107,13 @@ pub enum Action {
     CommandChar(char),
     CommandBackspace,
     CommandConfirm,
+
+    // -- Search mode --
+    SearchChar(char),
+    SearchBackspace,
+    SearchConfirm,
+    SearchNext,
+    SearchPrev,
 
     // -- Input mode --
     /// Forward the raw key event to the input box for handling.
@@ -200,6 +228,7 @@ impl KeybindHandler {
             Mode::Insert => self.handle_insert(event),
             Mode::AnnotationList => self.handle_annotation_list(event),
             Mode::Command => self.handle_command(event),
+            Mode::Search => self.handle_search(event),
         }
     }
 
@@ -695,6 +724,10 @@ impl KeybindHandler {
             _ => Action::None,
         }
     }
+
+    fn handle_search(&mut self, _event: KeyEvent) -> Action {
+        Action::None
+    }
 }
 
 #[cfg(test)]
@@ -736,6 +769,36 @@ mod tests {
 
     fn repeated_char_search(direction: RepeatDirection, count: usize) -> Action {
         Action::RepeatLastCharSearch { direction, count }
+    }
+
+    #[test]
+    fn search_direction_reversed_flips_direction() {
+        assert_eq!(
+            SearchDirection::Forward.reversed(),
+            SearchDirection::Backward
+        );
+        assert_eq!(
+            SearchDirection::Backward.reversed(),
+            SearchDirection::Forward
+        );
+    }
+
+    #[test]
+    fn search_mode_foundation_types_are_constructible() {
+        assert_eq!(Mode::Search, Mode::Search);
+        assert_eq!(
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            },
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            }
+        );
+        assert_eq!(Action::SearchChar('x'), Action::SearchChar('x'));
+        assert_eq!(Action::SearchBackspace, Action::SearchBackspace);
+        assert_eq!(Action::SearchConfirm, Action::SearchConfirm);
+        assert_eq!(Action::SearchNext, Action::SearchNext);
+        assert_eq!(Action::SearchPrev, Action::SearchPrev);
     }
 
     // ── Normal mode: single keys ──────────────────────────────────

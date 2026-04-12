@@ -87,7 +87,7 @@ impl AppState {
                     Action::MoveUp | Action::MoveDown | Action::JumpToAnnotation
                 )
             }
-            Mode::Insert | Mode::Command => false,
+            Mode::Insert | Mode::Command | Mode::Search => false,
         }
     }
 
