@@ -331,6 +331,10 @@ impl KeybindHandler {
             return action;
         }
 
+        if let Some(action) = self.handle_shared_navigation_key(event) {
+            return action;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
@@ -346,26 +350,7 @@ impl KeybindHandler {
                 Action::None
             }
 
-            // Movement
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveDown)
-            }
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveUp)
-            }
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveLeft)
-            }
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveRight)
-            }
-            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
-            (KeyCode::Char('b'), KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveWordBackward)
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
-            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
-            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
+            // Normal-only navigation
             (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
                 self.finish_action(Action::MoveDocumentBottom)
             }
@@ -384,20 +369,6 @@ impl KeybindHandler {
                 self.finish_action(Action::EnterAnnotationListMode)
             }
             (KeyCode::Esc, KeyModifiers::NONE) => self.finish_action(Action::HideAnnotationList),
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                self.finish_action(Action::EnterSearchMode {
-                    direction: SearchDirection::Forward,
-                })
-            }
-            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                self.finish_action(Action::EnterSearchMode {
-                    direction: SearchDirection::Backward,
-                })
-            }
-            (KeyCode::Char('n'), KeyModifiers::NONE) => self.finish_action(Action::SearchNext),
-            (KeyCode::Char('N'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                self.finish_action(Action::SearchPrev)
-            }
 
             // Help
             (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
@@ -406,9 +377,6 @@ impl KeybindHandler {
 
             // Word wrap toggle
             (KeyCode::Char('W'), KeyModifiers::SHIFT) => self.finish_action(Action::ToggleWordWrap),
-
-            // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
             _ => {
                 self.clear_pending();
@@ -435,42 +403,11 @@ impl KeybindHandler {
             return action;
         }
 
-        match (event.code, event.modifiers) {
-            // Movement (extend selection)
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveDown)
-            }
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveUp)
-            }
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveLeft)
-            }
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveRight)
-            }
-            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
-            (KeyCode::Char('b'), KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveWordBackward)
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
-            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
-            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                self.finish_action(Action::EnterSearchMode {
-                    direction: SearchDirection::Forward,
-                })
-            }
-            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                self.finish_action(Action::EnterSearchMode {
-                    direction: SearchDirection::Backward,
-                })
-            }
-            (KeyCode::Char('n'), KeyModifiers::NONE) => self.finish_action(Action::SearchNext),
-            (KeyCode::Char('N'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                self.finish_action(Action::SearchPrev)
-            }
+        if let Some(action) = self.handle_shared_navigation_key(event) {
+            return action;
+        }
 
+        match (event.code, event.modifiers) {
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -480,9 +417,6 @@ impl KeybindHandler {
 
             // Cancel selection
             (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
-
-            // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
             _ => {
                 self.clear_pending();
@@ -569,6 +503,58 @@ impl KeybindHandler {
             }
             (KeyCode::Char(','), KeyModifiers::NONE) => {
                 Some(self.finish_char_search_repeat(RepeatDirection::Opposite))
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_shared_navigation_key(&mut self, event: KeyEvent) -> Option<Action> {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveDown))
+            }
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveUp))
+            }
+            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLeft))
+            }
+            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveRight))
+            }
+            (KeyCode::Char('w'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordForward))
+            }
+            (KeyCode::Char('b'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordBackward))
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordEnd))
+            }
+            (KeyCode::Char('0'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLineStart))
+            }
+            (KeyCode::Char('$'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLineEnd))
+            }
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::EnterSearchMode {
+                    direction: SearchDirection::Forward,
+                }))
+            }
+            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::EnterSearchMode {
+                    direction: SearchDirection::Backward,
+                }))
+            }
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::SearchNext))
+            }
+            (KeyCode::Char('N'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::SearchPrev))
+            }
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                Some(self.finish_action(Action::ForceQuit))
             }
             _ => None,
         }
