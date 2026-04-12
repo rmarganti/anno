@@ -135,6 +135,21 @@ fn repeated_forward_until_skips_adjacent_target() {
 }
 
 #[test]
+fn reverse_repeated_backward_until_skips_adjacent_target() {
+    harness("aXaYaZaQa").keys("6lTa,").assert_cursor(0, 7);
+}
+
+#[test]
+fn counted_repeated_forward_until_uses_repeat_count() {
+    harness("abacadaba").keys("ta2;").assert_cursor(0, 5);
+}
+
+#[test]
+fn counted_repeated_backward_until_uses_repeat_count() {
+    harness("abacadaba").keys("$Ta2;").assert_cursor(0, 3);
+}
+
+#[test]
 fn repeated_backward_until_skips_adjacent_target() {
     harness("abacadaba").keys("$Ta;").assert_cursor(0, 5);
 }
