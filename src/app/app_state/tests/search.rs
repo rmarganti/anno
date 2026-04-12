@@ -29,6 +29,18 @@ fn enter_search_mode_sets_mode_direction_and_clears_buffer() {
 }
 
 #[test]
+fn entering_search_from_visual_restores_visual_mode_on_exit() {
+    let mut state = AppState::new_plain("[stdin]".to_string(), "first".to_string());
+    state.set_mode_for_test(Mode::Visual);
+
+    state.enter_search_mode(SearchDirection::Forward);
+    state.handle_search_char('f');
+    state.handle_search_confirm();
+
+    assert_eq!(state.mode(), Mode::Visual);
+}
+
+#[test]
 fn search_chars_append_to_buffer() {
     let mut state = AppState::new_plain("[stdin]".to_string(), "first".to_string());
     state.enter_search_mode(SearchDirection::Forward);
@@ -62,6 +74,19 @@ fn search_backspace_on_empty_buffer_exits_search_mode() {
     state.handle_search_backspace();
 
     assert_eq!(state.mode(), Mode::Normal);
+    assert_eq!(state.search_buffer(), "");
+}
+
+#[test]
+fn search_backspace_on_empty_buffer_restores_visual_mode() {
+    let mut state = AppState::new_plain("[stdin]".to_string(), "first".to_string());
+    state.set_mode_for_test(Mode::Visual);
+    state.enter_search_mode(SearchDirection::Forward);
+    state.handle_search_char('f');
+
+    state.handle_search_backspace();
+
+    assert_eq!(state.mode(), Mode::Visual);
     assert_eq!(state.search_buffer(), "");
 }
 
@@ -190,4 +215,25 @@ fn search_skips_match_starting_at_cursor_position() {
     harness("cat dog cat")
         .keys("/cat<Enter>")
         .assert_cursor(0, 8);
+}
+
+#[test]
+fn visual_search_confirm_preserves_visual_mode_and_selection() {
+    let mut harness = harness("alpha beta gamma beta");
+
+    harness.keys("v/beta<Enter>d").assert_annotation_count(1);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation
+        .range
+        .expect("visual deletion should have a range");
+    assert_eq!((range.start.line, range.start.column), (0, 0));
+    assert_eq!((range.end.line, range.end.column), (0, 6));
+}
+
+#[test]
+fn visual_search_escape_preserves_visual_mode() {
+    harness("alpha beta")
+        .keys("v/beta<Esc>")
+        .assert_mode(Mode::Visual);
 }

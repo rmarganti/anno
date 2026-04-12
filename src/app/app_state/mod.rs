@@ -230,9 +230,13 @@ impl AppState {
                 self.toggle_help_overlay();
             }
             Action::ExitToNormal => {
-                self.mode = Mode::Normal;
-                self.document_view.clear_visual();
-                self.cancel_pending_annotation();
+                if self.mode == Mode::Search {
+                    self.exit_search_mode();
+                } else {
+                    self.mode = Mode::Normal;
+                    self.document_view.clear_visual();
+                    self.cancel_pending_annotation();
+                }
             }
             _ => return false,
         }

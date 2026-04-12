@@ -21,6 +21,11 @@ impl AppState {
         self.search_buffer.clear();
     }
 
+    pub(super) fn exit_search_mode(&mut self) {
+        self.clear_search_buffer();
+        self.mode = self.search_return_mode;
+    }
+
     pub(super) fn handle_search_char(&mut self, c: char) {
         self.search_buffer.push(c);
     }
@@ -28,7 +33,7 @@ impl AppState {
     pub(super) fn handle_search_backspace(&mut self) {
         self.search_buffer.pop();
         if self.search_buffer.is_empty() {
-            self.mode = Mode::Normal;
+            self.exit_search_mode();
         }
     }
 
@@ -40,8 +45,7 @@ impl AppState {
             self.execute_search(&pattern, direction);
         }
 
-        self.clear_search_buffer();
-        self.mode = Mode::Normal;
+        self.exit_search_mode();
     }
 
     pub(super) fn handle_search_next(&mut self) {
@@ -53,6 +57,7 @@ impl AppState {
     }
 
     pub(super) fn enter_search_mode(&mut self, direction: SearchDirection) {
+        self.search_return_mode = self.mode;
         self.mode = Mode::Search;
         self.last_search_direction = direction;
         self.clear_search_buffer();

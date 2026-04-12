@@ -54,6 +54,8 @@ pub struct AppState {
     pub(super) last_search_pattern: Option<String>,
     /// Direction of the active or last confirmed search.
     pub(super) last_search_direction: SearchDirection,
+    /// Mode to restore when search mode exits.
+    pub(super) search_return_mode: Mode,
     /// Whether the app should quit.
     pub(super) should_quit: bool,
     /// The exit result to return.
@@ -138,6 +140,7 @@ impl AppState {
             search_buffer: String::new(),
             last_search_pattern: None,
             last_search_direction: SearchDirection::Forward,
+            search_return_mode: Mode::Normal,
             should_quit: false,
             exit_result: None,
             document_view,
