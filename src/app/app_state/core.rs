@@ -3,7 +3,7 @@ use crate::annotation::types::{Annotation, TextPosition, TextRange};
 use crate::app::ExitResult;
 #[cfg(any(test, doctest))]
 use crate::highlight::StyledSpan;
-use crate::keybinds::handler::KeybindHandler;
+use crate::keybinds::handler::{KeybindHandler, SearchDirection};
 use crate::keybinds::mode::Mode;
 use crate::startup::ExportFormat;
 use crate::tui::annotation_list_panel::{AnnotationListState, PANEL_WIDTH};
@@ -48,6 +48,14 @@ pub struct AppState {
     pub(super) annotations: AnnotationStore,
     /// Command-mode input buffer.
     pub(super) command_buffer: String,
+    /// Search-mode input buffer.
+    pub(super) search_buffer: String,
+    /// Last confirmed search pattern for repeat searches.
+    pub(super) last_search_pattern: Option<String>,
+    /// Direction of the active or last confirmed search.
+    pub(super) last_search_direction: SearchDirection,
+    /// Mode to restore when search mode exits.
+    pub(super) search_return_mode: Mode,
     /// Whether the app should quit.
     pub(super) should_quit: bool,
     /// The exit result to return.
@@ -129,6 +137,10 @@ impl AppState {
             keybinds: KeybindHandler::new(),
             annotations: AnnotationStore::new(),
             command_buffer: String::new(),
+            search_buffer: String::new(),
+            last_search_pattern: None,
+            last_search_direction: SearchDirection::Forward,
+            search_return_mode: Mode::Normal,
             should_quit: false,
             exit_result: None,
             document_view,
@@ -217,6 +229,20 @@ impl AppState {
         &self.command_buffer
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn search_buffer(&self) -> &str {
+        &self.search_buffer
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn last_search_pattern(&self) -> Option<&str> {
+        self.last_search_pattern.as_deref()
+    }
+
+    pub fn search_direction(&self) -> SearchDirection {
+        self.last_search_direction
+    }
+
     pub fn word_wrap(&self) -> bool {
         self.document_view.word_wrap()
     }
@@ -278,5 +304,10 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn set_mode_for_test(&mut self, mode: Mode) {
         self.mode = mode;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_search_direction_for_test(&self) -> SearchDirection {
+        self.last_search_direction
     }
 }

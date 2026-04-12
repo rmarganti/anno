@@ -18,12 +18,30 @@ impl CharSearchDirection {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
+}
+
+impl SearchDirection {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn reversed(self) -> Self {
+        match self {
+            Self::Forward => Self::Backward,
+            Self::Backward => Self::Forward,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepeatDirection {
     Same,
     Opposite,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -56,6 +74,9 @@ pub enum Action {
     // -- Mode transitions --
     EnterVisualMode,
     EnterCommandMode,
+    EnterSearchMode {
+        direction: SearchDirection,
+    },
     EnterAnnotationListMode,
     ExitToNormal,
 
@@ -86,6 +107,13 @@ pub enum Action {
     CommandChar(char),
     CommandBackspace,
     CommandConfirm,
+
+    // -- Search mode --
+    SearchChar(char),
+    SearchBackspace,
+    SearchConfirm,
+    SearchNext,
+    SearchPrev,
 
     // -- Input mode --
     /// Forward the raw key event to the input box for handling.
@@ -136,6 +164,8 @@ impl Action {
                 | Action::ScrollOverlayDown
                 | Action::ScrollOverlayPageUp
                 | Action::ScrollOverlayPageDown
+                | Action::SearchNext
+                | Action::SearchPrev
         )
     }
 
@@ -200,12 +230,13 @@ impl KeybindHandler {
             Mode::Insert => self.handle_insert(event),
             Mode::AnnotationList => self.handle_annotation_list(event),
             Mode::Command => self.handle_command(event),
+            Mode::Search => self.handle_search(event),
         }
     }
 
     /// Translate a key event while the help overlay is visible.
     pub fn handle_help_overlay(&mut self, _mode: Mode, event: KeyEvent) -> Action {
-        if matches!(event.code, KeyCode::Char('?'))
+        if matches!(event.code, KeyCode::Char('H'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             self.clear_pending();
@@ -275,7 +306,7 @@ impl KeybindHandler {
     }
 
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
-        if matches!(event.code, KeyCode::Char('?'))
+        if matches!(event.code, KeyCode::Char('H'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             self.clear_pending();
@@ -300,6 +331,10 @@ impl KeybindHandler {
             return action;
         }
 
+        if let Some(action) = self.handle_shared_navigation_key(event) {
+            return action;
+        }
+
         match (event.code, event.modifiers) {
             // Multi-key sequence starters
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
@@ -315,26 +350,7 @@ impl KeybindHandler {
                 Action::None
             }
 
-            // Movement
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveDown)
-            }
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveUp)
-            }
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveLeft)
-            }
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveRight)
-            }
-            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
-            (KeyCode::Char('b'), KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveWordBackward)
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
-            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
-            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
+            // Normal-only navigation
             (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
                 self.finish_action(Action::MoveDocumentBottom)
             }
@@ -355,15 +371,12 @@ impl KeybindHandler {
             (KeyCode::Esc, KeyModifiers::NONE) => self.finish_action(Action::HideAnnotationList),
 
             // Help
-            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+            (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.finish_action(Action::ToggleHelp)
             }
 
             // Word wrap toggle
             (KeyCode::Char('W'), KeyModifiers::SHIFT) => self.finish_action(Action::ToggleWordWrap),
-
-            // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
             _ => {
                 self.clear_pending();
@@ -390,28 +403,11 @@ impl KeybindHandler {
             return action;
         }
 
-        match (event.code, event.modifiers) {
-            // Movement (extend selection)
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveDown)
-            }
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveUp)
-            }
-            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveLeft)
-            }
-            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveRight)
-            }
-            (KeyCode::Char('w'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordForward),
-            (KeyCode::Char('b'), KeyModifiers::NONE) => {
-                self.finish_action(Action::MoveWordBackward)
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => self.finish_action(Action::MoveWordEnd),
-            (KeyCode::Char('0'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineStart),
-            (KeyCode::Char('$'), KeyModifiers::NONE) => self.finish_action(Action::MoveLineEnd),
+        if let Some(action) = self.handle_shared_navigation_key(event) {
+            return action;
+        }
 
+        match (event.code, event.modifiers) {
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -421,9 +417,6 @@ impl KeybindHandler {
 
             // Cancel selection
             (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
-
-            // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
 
             _ => {
                 self.clear_pending();
@@ -510,6 +503,58 @@ impl KeybindHandler {
             }
             (KeyCode::Char(','), KeyModifiers::NONE) => {
                 Some(self.finish_char_search_repeat(RepeatDirection::Opposite))
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_shared_navigation_key(&mut self, event: KeyEvent) -> Option<Action> {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveDown))
+            }
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveUp))
+            }
+            (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLeft))
+            }
+            (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveRight))
+            }
+            (KeyCode::Char('w'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordForward))
+            }
+            (KeyCode::Char('b'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordBackward))
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveWordEnd))
+            }
+            (KeyCode::Char('0'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLineStart))
+            }
+            (KeyCode::Char('$'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::MoveLineEnd))
+            }
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::EnterSearchMode {
+                    direction: SearchDirection::Forward,
+                }))
+            }
+            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::EnterSearchMode {
+                    direction: SearchDirection::Backward,
+                }))
+            }
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                Some(self.finish_action(Action::SearchNext))
+            }
+            (KeyCode::Char('N'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::SearchPrev))
+            }
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                Some(self.finish_action(Action::ForceQuit))
             }
             _ => None,
         }
@@ -695,6 +740,20 @@ impl KeybindHandler {
             _ => Action::None,
         }
     }
+
+    fn handle_search(&mut self, event: KeyEvent) -> Action {
+        if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
+            return Action::ForceQuit;
+        }
+
+        match event.code {
+            KeyCode::Esc => Action::ExitToNormal,
+            KeyCode::Enter => Action::SearchConfirm,
+            KeyCode::Backspace => Action::SearchBackspace,
+            KeyCode::Char(c) => Action::SearchChar(c),
+            _ => Action::None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -736,6 +795,36 @@ mod tests {
 
     fn repeated_char_search(direction: RepeatDirection, count: usize) -> Action {
         Action::RepeatLastCharSearch { direction, count }
+    }
+
+    #[test]
+    fn search_direction_reversed_flips_direction() {
+        assert_eq!(
+            SearchDirection::Forward.reversed(),
+            SearchDirection::Backward
+        );
+        assert_eq!(
+            SearchDirection::Backward.reversed(),
+            SearchDirection::Forward
+        );
+    }
+
+    #[test]
+    fn search_mode_foundation_types_are_constructible() {
+        assert_eq!(Mode::Search, Mode::Search);
+        assert_eq!(
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            },
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            }
+        );
+        assert_eq!(Action::SearchChar('x'), Action::SearchChar('x'));
+        assert_eq!(Action::SearchBackspace, Action::SearchBackspace);
+        assert_eq!(Action::SearchConfirm, Action::SearchConfirm);
+        assert_eq!(Action::SearchNext, Action::SearchNext);
+        assert_eq!(Action::SearchPrev, Action::SearchPrev);
     }
 
     // ── Normal mode: single keys ──────────────────────────────────
@@ -829,7 +918,7 @@ mod tests {
     #[test]
     fn normal_help_toggle() {
         let mut h = KeybindHandler::new();
-        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert_eq!(h.handle(Mode::Normal, char_key('H')), Action::ToggleHelp);
     }
 
     #[test]
@@ -838,7 +927,7 @@ mod tests {
 
         assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
         assert!(h.has_pending());
-        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert_eq!(h.handle(Mode::Normal, char_key('H')), Action::ToggleHelp);
         assert!(!h.has_pending());
     }
 
@@ -847,7 +936,7 @@ mod tests {
         let mut h = KeybindHandler::new();
 
         assert_eq!(
-            h.handle_help_overlay(Mode::Normal, char_key('?')),
+            h.handle_help_overlay(Mode::Normal, char_key('H')),
             Action::ToggleHelp
         );
     }
@@ -1406,6 +1495,85 @@ mod tests {
         assert_eq!(
             h.handle(Mode::Command, key(KeyCode::Esc)),
             Action::ExitToNormal
+        );
+    }
+
+    #[test]
+    fn normal_search_bindings() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('/')),
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            }
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('?')),
+            Action::EnterSearchMode {
+                direction: SearchDirection::Backward,
+            }
+        );
+        assert_eq!(h.handle(Mode::Normal, char_key('n')), Action::SearchNext);
+        assert_eq!(h.handle(Mode::Normal, char_key('N')), Action::SearchPrev);
+    }
+
+    #[test]
+    fn visual_search_bindings() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('/')),
+            Action::EnterSearchMode {
+                direction: SearchDirection::Forward,
+            }
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('?')),
+            Action::EnterSearchMode {
+                direction: SearchDirection::Backward,
+            }
+        );
+        assert_eq!(h.handle(Mode::Visual, char_key('n')), Action::SearchNext);
+        assert_eq!(h.handle(Mode::Visual, char_key('N')), Action::SearchPrev);
+    }
+
+    #[test]
+    fn search_mode_input() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(
+            h.handle(Mode::Search, char_key('q')),
+            Action::SearchChar('q')
+        );
+        assert_eq!(
+            h.handle(Mode::Search, key(KeyCode::Backspace)),
+            Action::SearchBackspace
+        );
+        assert_eq!(
+            h.handle(Mode::Search, key(KeyCode::Enter)),
+            Action::SearchConfirm
+        );
+        assert_eq!(
+            h.handle(Mode::Search, key(KeyCode::Esc)),
+            Action::ExitToNormal
+        );
+    }
+
+    #[test]
+    fn normal_counted_search_repeat_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('n')),
+            repeated(Action::SearchNext, 3)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('N')),
+            repeated(Action::SearchPrev, 2)
         );
     }
 

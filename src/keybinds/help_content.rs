@@ -18,7 +18,7 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection {
             title: "Global",
             entries: vec![
-                entry("?", "Toggle help"),
+                entry("H", "Toggle help"),
                 entry(":q", "Quit"),
                 entry(":q!", "Quit without saving output"),
                 entry("Ctrl-C", "Force quit"),
@@ -36,6 +36,8 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "; / ,",
                     "Repeat the last successful char search / reverse it",
                 ),
+                entry("/ / ?", "Search forward / backward"),
+                entry("n / N", "Repeat search / reverse direction"),
                 entry("4d / 5dd", "Counted mutation commands are unsupported"),
                 entry("Tab", "Toggle annotation panel focus"),
             ],
@@ -54,6 +56,10 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "; / ,",
                     "Repeat the last successful char search / reverse it",
                 ),
+                entry("/", "Search forward"),
+                entry("?", "Search backward"),
+                entry("n", "Repeat search"),
+                entry("N", "Repeat search in the opposite direction"),
                 entry("gg/G", "Move to document top/bottom"),
                 entry("Ctrl-d/u", "Move half page down/up"),
                 entry("Ctrl-f/b", "Move full page down/up"),
@@ -78,6 +84,13 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "; / ,",
                     "Repeat the last successful char search / reverse it",
                 ),
+                entry("/", "Search forward and extend selection to match"),
+                entry("?", "Search backward and extend selection to match"),
+                entry("n", "Repeat search and extend selection to match"),
+                entry(
+                    "N",
+                    "Repeat search in the opposite direction and extend selection to match",
+                ),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -89,6 +102,13 @@ pub fn help_sections() -> Vec<HelpSection> {
             entries: vec![
                 entry("Ctrl-S", "Confirm input"),
                 entry("Esc", "Cancel input"),
+            ],
+        },
+        HelpSection {
+            title: "Search Mode",
+            entries: vec![
+                entry("Enter", "Confirm search"),
+                entry("Esc", "Cancel search"),
             ],
         },
         HelpSection {
@@ -138,6 +158,7 @@ mod tests {
                 "Normal Mode",
                 "Visual Mode",
                 "Insert Mode",
+                "Search Mode",
                 "Annotation List",
                 "Command Mode",
             ]
@@ -154,7 +175,7 @@ mod tests {
                 title: "Global",
                 entries: vec![
                     HelpEntry {
-                        keys: "?",
+                        keys: "H",
                         action: "Toggle help"
                     },
                     HelpEntry {
@@ -190,6 +211,14 @@ mod tests {
                         action: "Repeat the last successful char search / reverse it"
                     },
                     HelpEntry {
+                        keys: "/ / ?",
+                        action: "Search forward / backward"
+                    },
+                    HelpEntry {
+                        keys: "n / N",
+                        action: "Repeat search / reverse direction"
+                    },
+                    HelpEntry {
                         keys: "4d / 5dd",
                         action: "Counted mutation commands are unsupported"
                     },
@@ -222,6 +251,14 @@ mod tests {
             &sections[1],
             "; / ,",
             "Repeat the last successful char search / reverse it"
+        ));
+        assert!(contains_entry(&sections[1], "/", "Search forward"));
+        assert!(contains_entry(&sections[1], "?", "Search backward"));
+        assert!(contains_entry(&sections[1], "n", "Repeat search"));
+        assert!(contains_entry(
+            &sections[1],
+            "N",
+            "Repeat search in the opposite direction"
         ));
         assert!(contains_entry(
             &sections[1],
@@ -268,6 +305,26 @@ mod tests {
         ));
         assert!(contains_entry(
             &sections[2],
+            "/",
+            "Search forward and extend selection to match"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "?",
+            "Search backward and extend selection to match"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "n",
+            "Repeat search and extend selection to match"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "N",
+            "Repeat search in the opposite direction and extend selection to match"
+        ));
+        assert!(contains_entry(
+            &sections[2],
             "d",
             "Create deletion annotation"
         ));
@@ -286,47 +343,50 @@ mod tests {
         assert!(contains_entry(&sections[3], "Ctrl-S", "Confirm input"));
         assert!(contains_entry(&sections[3], "Esc", "Cancel input"));
 
-        assert!(contains_entry(&sections[4], "j/k", "Move selection"));
+        assert!(contains_entry(&sections[4], "Enter", "Confirm search"));
+        assert!(contains_entry(&sections[4], "Esc", "Cancel search"));
+
+        assert!(contains_entry(&sections[5], "j/k", "Move selection"));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "Space",
             "Inspect selected annotation"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "Up/Down",
             "Scroll inspect text"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "PgUp/PgDn",
             "Page inspect text"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "Ctrl-u/d",
             "Page inspect text"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "Enter",
             "Jump to selected annotation"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "Tab",
             "Unfocus annotation panel"
         ));
         assert!(contains_entry(
-            &sections[4],
+            &sections[5],
             "dd",
             "Delete selected annotation"
         ));
-        assert!(contains_entry(&sections[4], "Esc", "Hide annotation panel"));
+        assert!(contains_entry(&sections[5], "Esc", "Hide annotation panel"));
 
-        assert!(contains_entry(&sections[5], ":q", "Quit"));
-        assert!(contains_entry(&sections[5], ":q!", "Force quit"));
-        assert!(contains_entry(&sections[5], "Esc", "Cancel command"));
+        assert!(contains_entry(&sections[6], ":q", "Quit"));
+        assert!(contains_entry(&sections[6], ":q!", "Force quit"));
+        assert!(contains_entry(&sections[6], "Esc", "Cancel command"));
     }
 
     fn contains_entry(section: &HelpSection, keys: &str, action: &str) -> bool {

@@ -1,4 +1,5 @@
 /// The current input mode of the application.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
     #[default]
@@ -11,4 +12,6 @@ pub enum Mode {
     AnnotationList,
     /// Command-line input mode, entered with `:`.
     Command,
+    /// Search input mode for `/` and `?` pattern search.
+    Search,
 }
