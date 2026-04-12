@@ -126,6 +126,27 @@ fn search_confirm_with_empty_buffer_preserves_last_pattern() {
 }
 
 #[test]
+fn empty_search_confirm_repeats_last_search_in_current_direction() {
+    harness("x target one\nx target two\nx target three")
+        .keys("/target<Enter>?<Enter>")
+        .assert_cursor(2, 2);
+}
+
+#[test]
+fn empty_forward_search_confirm_repeats_last_search_forward() {
+    harness("x target one\nx target two\nx target three")
+        .keys("/target<Enter>/<Enter>")
+        .assert_cursor(1, 2);
+}
+
+#[test]
+fn empty_search_confirm_without_last_pattern_leaves_cursor_unchanged() {
+    harness("alpha\nbeta")
+        .keys("j/?<Enter>")
+        .assert_cursor(1, 0);
+}
+
+#[test]
 fn search_prev_uses_opposite_direction_without_changing_stored_direction() {
     let mut harness = harness("x target here\nx target there\nx target everywhere");
 

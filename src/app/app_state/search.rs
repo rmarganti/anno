@@ -43,6 +43,8 @@ impl AppState {
             let pattern = self.search_buffer.clone();
             let direction = self.last_search_direction;
             self.execute_search(&pattern, direction);
+        } else {
+            self.repeat_search(self.last_search_direction);
         }
 
         self.exit_search_mode();
