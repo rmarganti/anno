@@ -236,6 +236,10 @@ impl AppState {
         self.last_search_pattern.as_deref()
     }
 
+    pub fn search_direction(&self) -> SearchDirection {
+        self.last_search_direction
+    }
+
     pub fn word_wrap(&self) -> bool {
         self.document_view.word_wrap()
     }

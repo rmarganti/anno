@@ -221,6 +221,8 @@ impl App {
                 cursor_col: cursor.col,
                 word_wrap: self.state.word_wrap(),
                 command_buffer: self.state.command_buffer(),
+                search_buffer: self.state.search_buffer(),
+                search_direction: Some(self.state.search_direction()),
                 panel_hidden_due_to_width: self.state.is_panel_hidden_due_to_width(),
             },
         );

@@ -5,7 +5,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::keybinds::mode::Mode;
+use crate::keybinds::{handler::SearchDirection, mode::Mode};
 use crate::tui::theme::UiTheme;
 
 /// Data needed to render the status bar.
@@ -20,6 +20,8 @@ pub struct StatusBarProps<'a> {
     pub cursor_col: usize,
     pub word_wrap: bool,
     pub command_buffer: &'a str,
+    pub search_buffer: &'a str,
+    pub search_direction: Option<SearchDirection>,
     pub panel_hidden_due_to_width: bool,
 }
 
@@ -61,7 +63,13 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
             }
             Mode::AnnotationList => "count+nav  Space  Enter  Esc hide".to_string(),
             Mode::Command => format!(":{}", props.command_buffer),
-            Mode::Search => "/".to_string(),
+            Mode::Search => {
+                let prefix = match props.search_direction.unwrap_or(SearchDirection::Forward) {
+                    SearchDirection::Forward => '/',
+                    SearchDirection::Backward => '?',
+                };
+                format!("{prefix}{}", props.search_buffer)
+            }
         }
     };
     status_spans.push(Span::raw(hint));
@@ -116,6 +124,8 @@ mod tests {
             cursor_col: 0,
             word_wrap: false,
             command_buffer: "",
+            search_buffer: "",
+            search_direction: None,
             panel_hidden_due_to_width: false,
         }
     }
@@ -158,6 +168,13 @@ mod tests {
         let props = base_props(Mode::Command);
         let output = render_to_string(&props);
         assert!(output.contains("COMMAND"), "Expected COMMAND in: {output}");
+    }
+
+    #[test]
+    fn search_mode_label() {
+        let props = base_props(Mode::Search);
+        let output = render_to_string(&props);
+        assert!(output.contains("SEARCH"), "Expected SEARCH in: {output}");
     }
 
     // ── Annotation count ──────────────────────────────────────────────
@@ -305,6 +322,34 @@ mod tests {
         };
         let output = render_to_string(&props);
         assert!(output.contains(":q!"), "Expected ':q!' in: {output}");
+    }
+
+    #[test]
+    fn search_mode_shows_forward_search_buffer() {
+        let props = StatusBarProps {
+            search_buffer: "pattern",
+            search_direction: Some(SearchDirection::Forward),
+            ..base_props(Mode::Search)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("/pattern"),
+            "Expected '/pattern' in: {output}"
+        );
+    }
+
+    #[test]
+    fn search_mode_shows_backward_search_buffer() {
+        let props = StatusBarProps {
+            search_buffer: "pattern",
+            search_direction: Some(SearchDirection::Backward),
+            ..base_props(Mode::Search)
+        };
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("?pattern"),
+            "Expected '?pattern' in: {output}"
+        );
     }
 
     #[test]
