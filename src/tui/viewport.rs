@@ -6,6 +6,14 @@
 /// provided externally via [`DisplayLayout`].
 use crate::keybinds::handler::CharSearchDirection;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharSearch {
+    pub target: char,
+    pub direction: CharSearchDirection,
+    pub until: bool,
+    pub is_repeat: bool,
+}
+
 /// Cursor position in the document (0-indexed row and column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorPosition {
@@ -263,9 +271,7 @@ impl Viewport {
         &mut self,
         line: &str,
         layout: &DisplayLayout,
-        target: char,
-        direction: CharSearchDirection,
-        until: bool,
+        search: CharSearch,
         count: usize,
     ) -> bool {
         let chars: Vec<char> = line.chars().collect();
@@ -275,19 +281,20 @@ impl Viewport {
 
         let occurrence = count.max(1);
         let current_col = self.cursor.col.min(chars.len().saturating_sub(1));
-        let found = match direction {
+        let skip = usize::from(search.until && search.is_repeat);
+        let found = match search.direction {
             CharSearchDirection::Forward => chars
                 .iter()
                 .enumerate()
-                .skip(current_col.saturating_add(1))
-                .filter(|(_, ch)| **ch == target)
+                .skip(current_col.saturating_add(1 + skip))
+                .filter(|(_, ch)| **ch == search.target)
                 .nth(occurrence - 1)
                 .map(|(idx, _)| idx),
-            CharSearchDirection::Backward => chars[..current_col]
+            CharSearchDirection::Backward => chars[..current_col.saturating_sub(skip)]
                 .iter()
                 .enumerate()
                 .rev()
-                .filter(|(_, ch)| **ch == target)
+                .filter(|(_, ch)| **ch == search.target)
                 .nth(occurrence - 1)
                 .map(|(idx, _)| idx),
         };
@@ -296,7 +303,7 @@ impl Viewport {
             return false;
         };
 
-        self.cursor.col = match (direction, until) {
+        self.cursor.col = match (search.direction, search.until) {
             (CharSearchDirection::Forward, false) => found_col,
             (CharSearchDirection::Forward, true) => found_col.saturating_sub(1),
             (CharSearchDirection::Backward, false) => found_col,
@@ -851,9 +858,12 @@ mod tests {
         v.move_to_char(
             &lines[0],
             &layout,
-            'a',
-            CharSearchDirection::Forward,
-            false,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: false,
+                is_repeat: false,
+            },
             2,
         );
 
@@ -871,9 +881,12 @@ mod tests {
         v.move_to_char(
             &lines[0],
             &layout,
-            'a',
-            CharSearchDirection::Backward,
-            false,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: false,
+                is_repeat: false,
+            },
             1,
         );
 
@@ -890,9 +903,12 @@ mod tests {
         v.move_to_char(
             &lines[0],
             &layout,
-            'b',
-            CharSearchDirection::Forward,
-            true,
+            CharSearch {
+                target: 'b',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: false,
+            },
             1,
         );
         assert_eq!(v.cursor.col, 5);
@@ -901,9 +917,12 @@ mod tests {
         v.move_to_char(
             &lines[0],
             &layout,
-            'b',
-            CharSearchDirection::Backward,
-            true,
+            CharSearch {
+                target: 'b',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: false,
+            },
             1,
         );
         assert_eq!(v.cursor.col, 7);
@@ -920,13 +939,85 @@ mod tests {
         v.move_to_char(
             &lines[0],
             &layout,
-            'z',
-            CharSearchDirection::Forward,
-            false,
+            CharSearch {
+                target: 'z',
+                direction: CharSearchDirection::Forward,
+                until: false,
+                is_repeat: false,
+            },
             1,
         );
 
         assert_eq!(v.cursor, CursorPosition { row: 0, col: 2 });
+    }
+
+    #[test]
+    fn repeated_forward_until_skips_adjacent_target() {
+        let lines = vec!["abacadaba".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 1);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Forward,
+                until: true,
+                is_repeat: true,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 3);
+    }
+
+    #[test]
+    fn repeated_backward_until_skips_adjacent_target() {
+        let lines = vec!["abacadaba".to_string()];
+        let layout = DisplayLayout::build(&lines, 80, false);
+        let mut v = Viewport::new();
+        v.set_dimensions(80, 10);
+        v.cursor.col = 8;
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: false,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 7);
+
+        v.move_to_char(
+            &lines[0],
+            &layout,
+            CharSearch {
+                target: 'a',
+                direction: CharSearchDirection::Backward,
+                until: true,
+                is_repeat: true,
+            },
+            1,
+        );
+        assert_eq!(v.cursor.col, 5);
     }
 
     // ── Empty document ────────────────────────────────────────────

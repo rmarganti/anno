@@ -130,6 +130,16 @@ fn counted_repeated_char_search_uses_repeat_count() {
 }
 
 #[test]
+fn repeated_forward_until_skips_adjacent_target() {
+    harness("abacadaba").keys("ta;").assert_cursor(0, 3);
+}
+
+#[test]
+fn repeated_backward_until_skips_adjacent_target() {
+    harness("abacadaba").keys("$Ta;").assert_cursor(0, 5);
+}
+
+#[test]
 fn counted_char_search_targets_nth_occurrence() {
     harness("abacadaba").keys("2fa").assert_cursor(0, 4);
 }

@@ -11,7 +11,7 @@ use crate::keybinds::handler::{Action, CharSearchDirection};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
-use crate::tui::viewport::{CursorPosition, DisplayLayout, Viewport};
+use crate::tui::viewport::{CharSearch, CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
 const GUTTER_WIDTH: usize = 1;
@@ -100,7 +100,7 @@ impl DocumentViewState {
                     direction: *direction,
                     until: *until,
                 };
-                let moved = self.execute_char_search(state, *count);
+                let moved = self.execute_char_search(state, *count, false);
                 if moved {
                     self.last_char_search = Some(state);
                 }
@@ -117,7 +117,7 @@ impl DocumentViewState {
                     },
                     ..search
                 };
-                self.execute_char_search(repeated, *count);
+                self.execute_char_search(repeated, *count, true);
             }
             Action::MoveDocumentTop => self.viewport.move_document_top(&self.display_layout),
             Action::MoveDocumentBottom => self.viewport.move_document_bottom(&self.display_layout),
@@ -140,7 +140,12 @@ impl DocumentViewState {
         true
     }
 
-    fn execute_char_search(&mut self, search: CharSearchState, count: usize) -> bool {
+    fn execute_char_search(
+        &mut self,
+        search: CharSearchState,
+        count: usize,
+        is_repeat: bool,
+    ) -> bool {
         let line = self
             .doc_lines
             .get(self.viewport.cursor.row)
@@ -149,9 +154,12 @@ impl DocumentViewState {
         self.viewport.move_to_char(
             line,
             &self.display_layout,
-            search.target,
-            search.direction,
-            search.until,
+            CharSearch {
+                target: search.target,
+                direction: search.direction,
+                until: search.until,
+                is_repeat,
+            },
             count,
         )
     }
