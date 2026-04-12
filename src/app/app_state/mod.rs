@@ -3,6 +3,7 @@ mod commands;
 mod core;
 mod overlay_state;
 mod panel_state;
+mod search;
 
 #[cfg(test)]
 mod test_harness;
@@ -156,6 +157,7 @@ impl AppState {
     fn handle_non_document_action(&mut self, action: Action) -> bool {
         match action {
             Action::EnterCommandMode
+            | Action::EnterSearchMode { .. }
             | Action::EnterAnnotationListMode
             | Action::HideAnnotationList
             | Action::ToggleHelp
@@ -166,6 +168,11 @@ impl AppState {
             Action::CommandChar(_) | Action::CommandBackspace | Action::CommandConfirm => {
                 self.handle_command_mode_action(action)
             }
+            Action::SearchChar(_)
+            | Action::SearchBackspace
+            | Action::SearchConfirm
+            | Action::SearchNext
+            | Action::SearchPrev => self.handle_search_mode_action(action),
             Action::CreateDeletion | Action::CreateComment | Action::CreateReplacement => {
                 self.handle_visual_annotation_action(action)
             }
@@ -186,6 +193,9 @@ impl AppState {
             Action::EnterCommandMode => {
                 self.mode = Mode::Command;
                 self.clear_command_buffer();
+            }
+            Action::EnterSearchMode { direction } => {
+                self.enter_search_mode(direction);
             }
             Action::EnterAnnotationListMode => {
                 if self.annotation_list_panel.is_visible() {
@@ -241,6 +251,19 @@ impl AppState {
             Action::CommandChar(c) => self.handle_command_char(c),
             Action::CommandBackspace => self.handle_command_backspace(),
             Action::CommandConfirm => self.handle_command_confirm(),
+            _ => return false,
+        }
+
+        true
+    }
+
+    fn handle_search_mode_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::SearchChar(c) => self.handle_search_char(c),
+            Action::SearchBackspace => self.handle_search_backspace(),
+            Action::SearchConfirm => self.handle_search_confirm(),
+            Action::SearchNext => self.handle_search_next(),
+            Action::SearchPrev => self.handle_search_prev(),
             _ => return false,
         }
 
