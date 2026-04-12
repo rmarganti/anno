@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
-use crate::keybinds::handler::{Action, CharSearchDirection};
+use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
@@ -112,8 +112,8 @@ impl DocumentViewState {
 
                 let repeated = CharSearchState {
                     direction: match direction {
-                        CharSearchDirection::Forward => search.direction,
-                        CharSearchDirection::Backward => search.direction.reversed(),
+                        RepeatDirection::Same => search.direction,
+                        RepeatDirection::Opposite => search.direction.reversed(),
                     },
                     ..search
                 };
@@ -350,7 +350,7 @@ mod tests {
     use super::*;
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
-    use crate::keybinds::handler::{Action, CharSearchDirection};
+    use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
     use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
@@ -560,6 +560,31 @@ mod tests {
         assert_eq!(range.end.line, 0);
         assert_eq!(range.end.column, 6);
         assert_eq!(text, "alpha b");
+    }
+
+    #[test]
+    fn repeat_last_char_search_uses_same_or_opposite_direction() {
+        let mut view = make_view(&["abcabc"]);
+
+        assert!(view.handle_action(&Action::MoveToChar {
+            target: 'c',
+            direction: CharSearchDirection::Forward,
+            until: false,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 2));
+
+        assert!(view.handle_action(&Action::RepeatLastCharSearch {
+            direction: RepeatDirection::Same,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 5));
+
+        assert!(view.handle_action(&Action::RepeatLastCharSearch {
+            direction: RepeatDirection::Opposite,
+            count: 1,
+        }));
+        assert_eq!(view.cursor(), pos(0, 2));
     }
 
     #[test]

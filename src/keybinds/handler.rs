@@ -19,6 +19,12 @@ impl CharSearchDirection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatDirection {
+    Same,
+    Opposite,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // -- Movement --
@@ -45,7 +51,7 @@ pub enum Action {
         count: usize,
     },
     RepeatLastCharSearch {
-        direction: CharSearchDirection,
+        direction: RepeatDirection,
         count: usize,
     },
 
@@ -502,10 +508,10 @@ impl KeybindHandler {
                 Some(Action::None)
             }
             (KeyCode::Char(';'), KeyModifiers::NONE) => {
-                Some(self.finish_char_search_repeat(CharSearchDirection::Forward))
+                Some(self.finish_char_search_repeat(RepeatDirection::Same))
             }
             (KeyCode::Char(','), KeyModifiers::NONE) => {
-                Some(self.finish_char_search_repeat(CharSearchDirection::Backward))
+                Some(self.finish_char_search_repeat(RepeatDirection::Opposite))
             }
             _ => None,
         }
@@ -637,7 +643,7 @@ impl KeybindHandler {
         }
     }
 
-    fn finish_char_search_repeat(&mut self, direction: CharSearchDirection) -> Action {
+    fn finish_char_search_repeat(&mut self, direction: RepeatDirection) -> Action {
         let count = self.count.take().unwrap_or(1);
         Action::RepeatLastCharSearch { direction, count }
     }
@@ -730,7 +736,7 @@ mod tests {
         }
     }
 
-    fn repeated_char_search(direction: CharSearchDirection, count: usize) -> Action {
+    fn repeated_char_search(direction: RepeatDirection, count: usize) -> Action {
         Action::RepeatLastCharSearch { direction, count }
     }
 
@@ -972,17 +978,17 @@ mod tests {
 
         assert_eq!(
             h.handle(Mode::Normal, char_key(';')),
-            repeated_char_search(CharSearchDirection::Forward, 1)
+            repeated_char_search(RepeatDirection::Same, 1)
         );
         assert_eq!(
             h.handle(Mode::Normal, char_key(',')),
-            repeated_char_search(CharSearchDirection::Backward, 1)
+            repeated_char_search(RepeatDirection::Opposite, 1)
         );
 
         assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
         assert_eq!(
             h.handle(Mode::Normal, char_key(';')),
-            repeated_char_search(CharSearchDirection::Forward, 2)
+            repeated_char_search(RepeatDirection::Same, 2)
         );
     }
 
@@ -1200,17 +1206,17 @@ mod tests {
 
         assert_eq!(
             h.handle(Mode::Visual, char_key(';')),
-            repeated_char_search(CharSearchDirection::Forward, 1)
+            repeated_char_search(RepeatDirection::Same, 1)
         );
         assert_eq!(
             h.handle(Mode::Visual, char_key(',')),
-            repeated_char_search(CharSearchDirection::Backward, 1)
+            repeated_char_search(RepeatDirection::Opposite, 1)
         );
 
         assert_eq!(h.handle(Mode::Visual, char_key('3')), Action::None);
         assert_eq!(
             h.handle(Mode::Visual, char_key(',')),
-            repeated_char_search(CharSearchDirection::Backward, 3)
+            repeated_char_search(RepeatDirection::Opposite, 3)
         );
     }
 
