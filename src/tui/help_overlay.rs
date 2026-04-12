@@ -12,7 +12,7 @@ const MIN_WIDTH: u16 = 36;
 const MIN_HEIGHT: u16 = 8;
 const MIN_TWO_COL_WIDTH: u16 = 110;
 const COL_GAP: u16 = 3;
-const DISMISS_HINT: &str = "Press ? or Esc to close";
+const DISMISS_HINT: &str = "Press H or Esc to close";
 
 const SECTION_ORDER: &[&str] = &[
     "Global",

@@ -234,7 +234,7 @@ impl KeybindHandler {
 
     /// Translate a key event while the help overlay is visible.
     pub fn handle_help_overlay(&mut self, _mode: Mode, event: KeyEvent) -> Action {
-        if matches!(event.code, KeyCode::Char('?'))
+        if matches!(event.code, KeyCode::Char('H'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             self.clear_pending();
@@ -304,7 +304,7 @@ impl KeybindHandler {
     }
 
     fn handle_normal(&mut self, event: KeyEvent) -> Action {
-        if matches!(event.code, KeyCode::Char('?'))
+        if matches!(event.code, KeyCode::Char('H'))
             && matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             self.clear_pending();
@@ -384,7 +384,7 @@ impl KeybindHandler {
             (KeyCode::Esc, KeyModifiers::NONE) => self.finish_action(Action::HideAnnotationList),
 
             // Help
-            (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+            (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.finish_action(Action::ToggleHelp)
             }
 
@@ -892,7 +892,7 @@ mod tests {
     #[test]
     fn normal_help_toggle() {
         let mut h = KeybindHandler::new();
-        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert_eq!(h.handle(Mode::Normal, char_key('H')), Action::ToggleHelp);
     }
 
     #[test]
@@ -901,7 +901,7 @@ mod tests {
 
         assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
         assert!(h.has_pending());
-        assert_eq!(h.handle(Mode::Normal, char_key('?')), Action::ToggleHelp);
+        assert_eq!(h.handle(Mode::Normal, char_key('H')), Action::ToggleHelp);
         assert!(!h.has_pending());
     }
 
@@ -910,7 +910,7 @@ mod tests {
         let mut h = KeybindHandler::new();
 
         assert_eq!(
-            h.handle_help_overlay(Mode::Normal, char_key('?')),
+            h.handle_help_overlay(Mode::Normal, char_key('H')),
             Action::ToggleHelp
         );
     }

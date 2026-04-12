@@ -18,7 +18,7 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection {
             title: "Global",
             entries: vec![
-                entry("?", "Toggle help"),
+                entry("H", "Toggle help"),
                 entry(":q", "Quit"),
                 entry(":q!", "Quit without saving output"),
                 entry("Ctrl-C", "Force quit"),
@@ -154,7 +154,7 @@ mod tests {
                 title: "Global",
                 entries: vec![
                     HelpEntry {
-                        keys: "?",
+                        keys: "H",
                         action: "Toggle help"
                     },
                     HelpEntry {

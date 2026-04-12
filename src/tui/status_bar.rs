@@ -53,9 +53,9 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
     } else {
         match props.mode {
             Mode::Normal if props.panel_visible => {
-                "count+nav  Tab focus  Esc hide  ? help".to_string()
+                "count+nav  Tab focus  Esc hide  H help".to_string()
             }
-            Mode::Normal => "count+nav  Tab panel  ? help".to_string(),
+            Mode::Normal => "count+nav  Tab panel  H help".to_string(),
             Mode::Visual => "count+nav  d/c/r annotate  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
             Mode::AnnotationList if props.annotation_inspect_visible => {
@@ -272,7 +272,7 @@ mod tests {
         let props = base_props(Mode::Normal);
         let output = render_to_string(&props);
         assert!(
-            output.contains("count+nav  Tab focus  Esc hide  ? help"),
+            output.contains("count+nav  Tab focus  Esc hide  H help"),
             "Expected normal panel hint in: {output}"
         );
     }
@@ -365,7 +365,7 @@ mod tests {
             "Expected narrow terminal hint in: {output}"
         );
         assert!(
-            !output.contains("? help"),
+            !output.contains("H help"),
             "Did not expect default help hint in: {output}"
         );
     }

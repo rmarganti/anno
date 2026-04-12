@@ -119,14 +119,14 @@ fn annotation_inspect_scroll_offset_clamps_at_content_end() {
 }
 
 #[test]
-fn question_mark_toggles_help_on_from_normal_mode() {
-    harness("hello").keys("?").assert_help_visible();
+fn shift_h_toggles_help_on_from_normal_mode() {
+    harness("hello").keys("H").assert_help_visible();
 }
 
 #[test]
 fn configured_help_shortcut_toggles_help_off_when_already_visible() {
     harness("hello")
-        .keys("??")
+        .keys("HH")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 }
@@ -134,7 +134,7 @@ fn configured_help_shortcut_toggles_help_off_when_already_visible() {
 #[test]
 fn escape_dismisses_help() {
     harness("hello")
-        .keys("?<Esc>")
+        .keys("H<Esc>")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 }
@@ -142,7 +142,7 @@ fn escape_dismisses_help() {
 #[test]
 fn q_dismisses_help() {
     harness("hello")
-        .keys("?q")
+        .keys("Hq")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 }
@@ -151,7 +151,7 @@ fn q_dismisses_help() {
 fn other_keys_are_consumed_while_help_is_visible() {
     let mut harness = harness("hello");
     harness
-        .keys("?j")
+        .keys("Hj")
         .assert_help_visible()
         .assert_cursor(0, 0)
         .assert_mode(Mode::Normal)
@@ -178,7 +178,7 @@ fn help_toggle_clears_pending_key_sequence() {
     harness.keys("jg").assert_cursor(1, 0);
     assert!(harness.state().keybinds().has_pending());
 
-    harness.keys("?").assert_help_visible();
+    harness.keys("H").assert_help_visible();
     assert!(!harness.state().keybinds().has_pending());
 
     harness.keys("q").assert_help_hidden();
@@ -212,7 +212,7 @@ fn opening_annotation_inspect_clears_pending_delete_sequence() {
 fn opening_and_closing_overlays_clear_pending_count_state() {
     let mut harness = harness("alpha\nbeta\ngamma");
 
-    harness.keys("3?").assert_help_visible();
+    harness.keys("3H").assert_help_visible();
     assert!(!harness.state().keybinds().has_pending());
 
     harness.keys("q").assert_help_hidden();
@@ -258,7 +258,7 @@ fn annotation_inspect_j_k_cycle_annotations_without_closing() {
 fn counted_help_scroll_repeats_existing_scroll_behavior() {
     let mut harness = harness("hello");
 
-    harness.keys("?3j");
+    harness.keys("H3j");
     assert_eq!(harness.state().help_scroll_offset(), 3);
 
     harness.keys("2k");
@@ -403,7 +403,7 @@ fn narrow_terminal_does_not_offer_annotation_inspect_entry() {
 #[test]
 fn j_k_adjust_help_scroll_offset() {
     let mut harness = harness("hello");
-    harness.keys("?jjj");
+    harness.keys("Hjjj");
     assert_eq!(harness.state().help_scroll_offset(), 3);
 
     harness.keys("k");
@@ -413,20 +413,20 @@ fn j_k_adjust_help_scroll_offset() {
 #[test]
 fn help_scroll_offset_saturates_at_zero() {
     let mut harness = harness("hello");
-    harness.keys("?kk");
+    harness.keys("Hkk");
     assert_eq!(harness.state().help_scroll_offset(), 0);
 }
 
 #[test]
 fn help_scroll_offset_resets_on_reopen() {
     let mut harness = harness("hello");
-    harness.keys("?jjj");
+    harness.keys("Hjjj");
     assert_eq!(harness.state().help_scroll_offset(), 3);
 
-    harness.keys("?");
+    harness.keys("H");
     harness.assert_help_hidden();
 
-    harness.keys("?");
+    harness.keys("H");
     harness.assert_help_visible();
     assert_eq!(harness.state().help_scroll_offset(), 0);
 }
@@ -436,7 +436,7 @@ fn help_scroll_offset_clamps_at_content_end_and_recovers_immediately() {
     let mut harness = harness("hello");
     let expected_max = help_overlay_max_scroll_offset(80, 23);
 
-    harness.keys("?");
+    harness.keys("H");
     for _ in 0..200 {
         harness.key(KeyCode::Down);
     }
@@ -452,17 +452,17 @@ fn help_scroll_offset_clamps_at_content_end_and_recovers_immediately() {
 #[test]
 fn dismiss_keys_work_regardless_of_scroll_position() {
     harness("hello")
-        .keys("?jjj<Esc>")
+        .keys("Hjjj<Esc>")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 
     harness("hello")
-        .keys("?jjjq")
+        .keys("Hjjjq")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 
     harness("hello")
-        .keys("?jjj?")
+        .keys("HjjjH")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
 }
