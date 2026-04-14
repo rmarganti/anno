@@ -213,28 +213,20 @@ impl Viewport {
     // ── Movement ──────────────────────────────────────────────────
 
     pub fn move_up(&mut self, layout: &DisplayLayout) {
-        let (disp_row, local_col) = layout.display_pos_of_doc_pos(self.cursor);
-        if disp_row > 0 {
-            let target = disp_row - 1;
-            let dr = &layout.rows[target];
-            let slice_len = dr.end_col.saturating_sub(dr.start_col);
-            let clamped_local = local_col.min(slice_len.saturating_sub(1));
-            self.cursor = layout.doc_pos_of_display_pos(target, clamped_local);
+        if self.cursor.row > 0 {
+            self.cursor.row -= 1;
             self.clamp_col(layout);
             self.ensure_cursor_visible(layout);
+            self.ensure_horizontal_visible();
         }
     }
 
     pub fn move_down(&mut self, layout: &DisplayLayout) {
-        let (disp_row, local_col) = layout.display_pos_of_doc_pos(self.cursor);
-        if disp_row + 1 < layout.total_display_rows() {
-            let target = disp_row + 1;
-            let dr = &layout.rows[target];
-            let slice_len = dr.end_col.saturating_sub(dr.start_col);
-            let clamped_local = local_col.min(slice_len.saturating_sub(1));
-            self.cursor = layout.doc_pos_of_display_pos(target, clamped_local);
+        if self.cursor.row + 1 < layout.total_doc_lines() {
+            self.cursor.row += 1;
             self.clamp_col(layout);
             self.ensure_cursor_visible(layout);
+            self.ensure_horizontal_visible();
         }
     }
 
