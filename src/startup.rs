@@ -63,17 +63,12 @@ pub enum ThemeMode {
     Dark,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LineNumberMode {
+    #[default]
     Relative,
     Absolute,
-}
-
-impl Default for LineNumberMode {
-    fn default() -> Self {
-        Self::Relative
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
