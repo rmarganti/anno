@@ -14,7 +14,8 @@ use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CharSearch, CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
-const GUTTER_WIDTH: usize = 1;
+const ANNOTATION_GUTTER_WIDTH: usize = 1;
+const GUTTER_SEPARATOR_WIDTH: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CharSearchState {
@@ -313,7 +314,7 @@ impl DocumentViewState {
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
-        let width = Self::viewport_width(width);
+        let width = Self::text_width(width, self.total_doc_lines());
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(width, height);
         if width != old_width {
@@ -334,17 +335,37 @@ impl DocumentViewState {
         );
     }
 
-    fn viewport_width(width: usize) -> usize {
-        width
-            .saturating_sub(GUTTER_WIDTH)
-            .min(MAX_DOC_WIDTH as usize)
+    fn total_doc_lines(&self) -> usize {
+        self.doc_lines.len().max(1)
+    }
+
+    fn line_number_gutter_width(total_doc_lines: usize) -> usize {
+        total_doc_lines.max(1).to_string().len()
+    }
+
+    fn gutter_width(total_doc_lines: usize) -> usize {
+        ANNOTATION_GUTTER_WIDTH
+            + Self::line_number_gutter_width(total_doc_lines)
+            + GUTTER_SEPARATOR_WIDTH
+    }
+
+    fn main_area_width(width: usize) -> usize {
+        width.min(MAX_DOC_WIDTH as usize)
+    }
+
+    fn text_width(width: usize, total_doc_lines: usize) -> usize {
+        Self::main_area_width(width).saturating_sub(Self::gutter_width(total_doc_lines))
     }
 
     fn prepare_gutter_lines(
         render_slices: &[crate::tui::viewport::RenderSlice],
         annotation_indicators: &[AnnotationIndicator],
+        total_doc_lines: usize,
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
+        let line_number_width = Self::line_number_gutter_width(total_doc_lines);
+        let separator = " ".to_string();
+
         Self::compute_gutter_annotation_types(render_slices, annotation_indicators)
             .into_iter()
             .map(|annotation_type| {
@@ -358,7 +379,12 @@ impl DocumentViewState {
                         )
                     })
                     .unwrap_or_else(|| Span::styled(" ", theme.document));
-                Line::from(symbol)
+
+                Line::from(vec![
+                    symbol,
+                    Span::styled(" ".repeat(line_number_width), theme.document),
+                    Span::styled(separator.clone(), theme.document),
+                ])
             })
             .collect()
     }
@@ -406,9 +432,9 @@ pub fn render_document_view(
     let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
         .flex(Flex::Center)
         .areas::<1>(area)[0];
+    let gutter_width = DocumentViewState::gutter_width(state.total_doc_lines()) as u16;
     let [gutter_area, text_area] =
-        Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
-            .areas(main_area);
+        Layout::horizontal([Constraint::Length(gutter_width), Constraint::Min(0)]).areas(main_area);
 
     let render_slices = state.viewport.visible_render_slices(&state.display_layout);
 
@@ -439,8 +465,12 @@ pub fn render_document_view(
             selected_annotation_range,
         });
 
-    let gutter_lines =
-        DocumentViewState::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
+    let gutter_lines = DocumentViewState::prepare_gutter_lines(
+        &render_slices,
+        annotation_indicators,
+        state.total_doc_lines(),
+        theme,
+    );
 
     let gutter = Paragraph::new(gutter_lines)
         .style(theme.document)
@@ -968,13 +998,60 @@ mod tests {
     }
 
     #[test]
-    fn update_dimensions_reserves_one_column_for_gutter() {
+    fn gutter_width_includes_annotation_strip_line_numbers_and_separator() {
+        assert_eq!(DocumentViewState::gutter_width(0), 3);
+        assert_eq!(DocumentViewState::gutter_width(9), 3);
+        assert_eq!(DocumentViewState::gutter_width(10), 4);
+        assert_eq!(DocumentViewState::gutter_width(100), 5);
+    }
+
+    #[test]
+    fn update_dimensions_caps_text_width_after_gutter_budget() {
+        let mut view = make_view(&[&"x".repeat(200)]);
+
+        view.update_dimensions(160, 5);
+
+        assert_eq!(view.viewport.width, 117);
+    }
+
+    #[test]
+    fn update_dimensions_wraps_to_rendered_text_width_after_gutter() {
+        let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        view.update_dimensions(10, 5);
+
+        assert_eq!(view.viewport.width, 7);
+        assert_eq!(view.display_layout.rows.len(), 2);
+        assert_eq!(view.display_layout.rows[0].start_col, 0);
+        assert_eq!(view.display_layout.rows[0].end_col, 7);
+        assert_eq!(view.display_layout.rows[1].start_col, 7);
+        assert_eq!(view.display_layout.rows[1].end_col, 10);
+    }
+
+    #[test]
+    fn render_keeps_annotation_strip_at_far_left_with_composed_gutter() {
+        let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(&mut view, 10, 5, &[]);
+
+        assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((3, 0)).unwrap().symbol(), "a");
+        assert_eq!(buffer.cell((9, 0)).unwrap().symbol(), "g");
+        assert_eq!(buffer.cell((3, 1)).unwrap().symbol(), "h");
+    }
+
+    #[test]
+    fn update_dimensions_reserves_composed_gutter_width() {
         let mut view = make_view(&["hello"]);
 
-        view.update_dimensions(41, 5);
+        view.update_dimensions(43, 5);
         assert!(!view.is_too_small());
 
-        view.update_dimensions(40, 5);
+        view.update_dimensions(42, 5);
         assert!(view.is_too_small());
     }
 }

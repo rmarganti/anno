@@ -102,7 +102,7 @@ fn counted_wrapped_motion_uses_display_rows() {
         .document_view_mut()
         .handle_action(&Action::ToggleWordWrap);
 
-    harness.keys("4j").assert_cursor(0, 16);
+    harness.keys("4j").assert_cursor(0, 8);
 }
 
 #[test]
