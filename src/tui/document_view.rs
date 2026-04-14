@@ -374,7 +374,7 @@ impl DocumentViewState {
         annotation_indicators: &[AnnotationIndicator],
         total_doc_lines: usize,
         cursor_row: usize,
-        _line_number_mode: LineNumberMode,
+        line_number_mode: LineNumberMode,
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
         let line_number_width = Self::line_number_gutter_width(total_doc_lines);
@@ -382,15 +382,26 @@ impl DocumentViewState {
 
         render_slices
             .iter()
+            .enumerate()
             .zip(Self::compute_gutter_annotation_types(
                 render_slices,
                 annotation_indicators,
             ))
-            .map(|(slice, annotation_type)| {
+            .map(|((index, slice), annotation_type)| {
                 let line_number_style = if slice.doc_row == cursor_row {
                     theme.current_line_number
                 } else {
                     theme.line_number
+                };
+                let line_number = if Self::shows_line_number(render_slices, index, slice) {
+                    Self::format_line_number(
+                        slice.doc_row,
+                        cursor_row,
+                        line_number_mode,
+                        line_number_width,
+                    )
+                } else {
+                    " ".repeat(line_number_width)
                 };
                 let symbol = annotation_type
                     .map(|annotation_type| {
@@ -405,11 +416,39 @@ impl DocumentViewState {
 
                 Line::from(vec![
                     symbol,
-                    Span::styled(" ".repeat(line_number_width), line_number_style),
+                    Span::styled(line_number, line_number_style),
                     Span::styled(separator.clone(), line_number_style),
                 ])
             })
             .collect()
+    }
+
+    fn shows_line_number(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        index: usize,
+        slice: &crate::tui::viewport::RenderSlice,
+    ) -> bool {
+        slice.start_col == 0 || index == 0 || render_slices[index - 1].doc_row != slice.doc_row
+    }
+
+    fn format_line_number(
+        doc_row: usize,
+        cursor_row: usize,
+        line_number_mode: LineNumberMode,
+        width: usize,
+    ) -> String {
+        let line_number = match line_number_mode {
+            LineNumberMode::Absolute => doc_row + 1,
+            LineNumberMode::Relative => {
+                if doc_row == cursor_row {
+                    doc_row + 1
+                } else {
+                    doc_row.abs_diff(cursor_row)
+                }
+            }
+        };
+
+        format!("{line_number:>width$}")
     }
 
     fn compute_gutter_annotation_types(
@@ -522,6 +561,10 @@ mod tests {
 
     /// Build a `DocumentViewState` from plain text lines with no syntax highlighting.
     fn make_view(lines: &[&str]) -> DocumentViewState {
+        make_view_with_mode(lines, LineNumberMode::Relative)
+    }
+
+    fn make_view_with_mode(lines: &[&str], line_number_mode: LineNumberMode) -> DocumentViewState {
         let doc_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         let styled_lines: Vec<Vec<StyledSpan>> = doc_lines
             .iter()
@@ -533,7 +576,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut view = DocumentViewState::new(doc_lines, styled_lines, LineNumberMode::Relative);
+        let mut view = DocumentViewState::new(doc_lines, styled_lines, line_number_mode);
         // Give it a non-zero size so movement works.
         view.update_dimensions(80, 24);
         view
@@ -602,6 +645,12 @@ mod tests {
             start_col: 0,
             end_col: 1,
         }
+    }
+
+    fn buffer_line(buffer: &ratatui::buffer::Buffer, y: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buffer.cell((x, y)).unwrap().symbol())
+            .collect()
     }
 
     // ── Initial state ─────────────────────────────────────────────────
@@ -835,6 +884,92 @@ mod tests {
         assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), "▌");
         assert_eq!(buffer.cell((0, 1)).unwrap().symbol(), "▌");
         assert_eq!(buffer.cell((0, 2)).unwrap().symbol(), "▌");
+    }
+
+    #[test]
+    fn render_absolute_line_numbers_are_human_readable_and_right_aligned() {
+        let mut view = make_view_with_mode(&["first", "second", "third"], LineNumberMode::Absolute);
+
+        let buffer = render_buffer(&mut view, 80, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 f");
+        assert_eq!(&buffer_line(&buffer, 1, 4), " 2 s");
+        assert_eq!(&buffer_line(&buffer, 2, 4), " 3 t");
+    }
+
+    #[test]
+    fn render_relative_line_numbers_show_current_line_absolute() {
+        let mut view = make_view_with_mode(&["first", "second", "third"], LineNumberMode::Relative);
+        view.set_cursor(1, 0);
+
+        let buffer = render_buffer(&mut view, 80, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 f");
+        assert_eq!(&buffer_line(&buffer, 1, 4), " 2 s");
+        assert_eq!(&buffer_line(&buffer, 2, 4), " 1 t");
+    }
+
+    #[test]
+    fn render_wrapped_continuation_rows_leave_line_number_cells_blank() {
+        let mut view = make_view_with_mode(&["abcdefghij"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(&mut view, 10, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 a");
+        assert_eq!(&buffer_line(&buffer, 1, 4), "   h");
+    }
+
+    #[test]
+    fn render_mid_wrapped_line_shows_number_on_first_visible_slice() {
+        let mut view =
+            make_view_with_mode(&["abcdefghijklmnopqrstuvwxyz"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
+        view.update_dimensions(10, 1);
+        view.set_cursor(0, 7);
+
+        let buffer = render_buffer(&mut view, 10, 1, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 h");
+    }
+
+    #[test]
+    fn render_empty_document_row_uses_line_number_one() {
+        let mut view = make_view_with_mode(&[""], LineNumberMode::Absolute);
+
+        let buffer = render_buffer(&mut view, 10, 3, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 3), " 1 ");
+    }
+
+    #[test]
+    fn render_current_line_number_uses_emphasis_style_in_both_modes() {
+        let theme = UiTheme::default();
+
+        let mut absolute_view = make_view_with_mode(&["first", "second"], LineNumberMode::Absolute);
+        absolute_view.set_cursor(1, 0);
+        let absolute_buffer = render_buffer(&mut absolute_view, 80, 5, &[]);
+
+        let mut relative_view = make_view_with_mode(&["first", "second"], LineNumberMode::Relative);
+        relative_view.set_cursor(1, 0);
+        let relative_buffer = render_buffer(&mut relative_view, 80, 5, &[]);
+
+        assert_eq!(
+            absolute_buffer.cell((1, 1)).unwrap().style().fg,
+            theme.current_line_number.fg
+        );
+        assert_eq!(
+            relative_buffer.cell((1, 1)).unwrap().style().fg,
+            theme.current_line_number.fg
+        );
+        assert_eq!(
+            absolute_buffer.cell((1, 0)).unwrap().style().fg,
+            theme.line_number.fg
+        );
+        assert_eq!(
+            relative_buffer.cell((1, 0)).unwrap().style().fg,
+            theme.line_number.fg
+        );
     }
 
     #[test]
@@ -1074,10 +1209,11 @@ mod tests {
         let buffer = render_buffer(&mut view, 10, 5, &[]);
 
         assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), " ");
-        assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), "1");
         assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
         assert_eq!(buffer.cell((3, 0)).unwrap().symbol(), "a");
         assert_eq!(buffer.cell((9, 0)).unwrap().symbol(), "g");
+        assert_eq!(buffer.cell((1, 1)).unwrap().symbol(), " ");
         assert_eq!(buffer.cell((3, 1)).unwrap().symbol(), "h");
     }
 
