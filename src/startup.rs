@@ -63,6 +63,19 @@ pub enum ThemeMode {
     Dark,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineNumberMode {
+    Relative,
+    Absolute,
+}
+
+impl Default for LineNumberMode {
+    fn default() -> Self {
+        Self::Relative
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettingSource {
@@ -122,6 +135,7 @@ pub struct StartupSettings {
     pub export_format: ExportFormat,
     pub title: Option<String>,
     pub document_background: DocumentBackground,
+    pub line_number_mode: LineNumberMode,
     pub theme_mode: ResolvedValue<ThemeMode>,
     pub theme: ResolvedValue<ResolvedThemeAsset>,
     pub theme_provenance: ThemeProvenance,
@@ -192,6 +206,8 @@ struct SettingsFile {
     theme: Option<String>,
     #[serde(default)]
     background: DocumentBackground,
+    #[serde(default, alias = "lineNumbers", alias = "line-numbers")]
+    line_numbers: LineNumberMode,
     #[serde(default, alias = "themeMode", alias = "theme-mode")]
     theme_mode: Option<ThemeMode>,
     #[serde(default)]
@@ -231,6 +247,7 @@ impl StartupSettings {
             export_format: cli.export_format,
             title: cli.title.clone().or(config.title),
             document_background: config.background,
+            line_number_mode: config.line_numbers,
             theme_mode,
             theme: theme.resolved,
             theme_provenance: theme.provenance,
@@ -509,6 +526,7 @@ mod tests {
             Some(
                 r##"{
                     "theme": "latte",
+                    "line_numbers": "absolute",
                     "theme_mode": "light",
                     "syntax": "python",
                     "app_theme": {
@@ -530,6 +548,7 @@ mod tests {
 
                 let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 
+                assert_eq!(startup.line_number_mode, LineNumberMode::Absolute);
                 assert_eq!(startup.theme_mode.value, ThemeMode::Dark);
                 assert_eq!(startup.export_format, ExportFormat::Agent);
                 assert_eq!(startup.title.as_deref(), None);
@@ -558,6 +577,7 @@ mod tests {
 
             let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
 
+            assert_eq!(startup.line_number_mode, LineNumberMode::Relative);
             assert_eq!(startup.document_background, DocumentBackground::Theme);
             assert_eq!(startup.theme.source, SettingSource::Fallback);
             assert_eq!(startup.theme.value.requested, "neverforest");
@@ -919,6 +939,27 @@ mod tests {
             settings.app_theme.annotation.fg,
             Some(crate::tui::theme::ThemeColor::new(171, 205, 239))
         );
+    }
+
+    #[test]
+    fn startup_settings_resolve_defaults_line_numbers_to_relative() {
+        with_temp_home(None, || {
+            let cli = cli_from(&["anno", "demo.md"]);
+
+            let startup = StartupSettings::resolve(&cli, &file_source("demo.md"), "").unwrap();
+
+            assert_eq!(startup.line_number_mode, LineNumberMode::Relative);
+        });
+    }
+
+    #[test]
+    fn settings_file_accepts_line_numbers_field_aliases() {
+        for field_name in ["line_numbers", "lineNumbers", "line-numbers"] {
+            let settings: SettingsFile =
+                serde_json::from_str(&format!(r#"{{ "{field_name}": "absolute" }}"#)).unwrap();
+
+            assert_eq!(settings.line_numbers, LineNumberMode::Absolute);
+        }
     }
 
     #[test]

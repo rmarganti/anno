@@ -1,4 +1,5 @@
 use super::*;
+use crate::startup::LineNumberMode;
 
 #[test]
 fn new_plain_builds_terminal_independent_default_state() {
@@ -45,4 +46,19 @@ fn test_harness_basic() {
     AppTestHarness::new("hello")
         .assert_mode(Mode::Normal)
         .assert_cursor(0, 0);
+}
+
+#[test]
+fn construction_threads_line_number_mode_into_document_view_state() {
+    let state = AppState::new_plain_with_format_and_line_number_mode(
+        "[stdin]".to_string(),
+        "first".to_string(),
+        ExportFormat::Agent,
+        LineNumberMode::Absolute,
+    );
+
+    assert_eq!(
+        state.document_view().line_number_mode(),
+        LineNumberMode::Absolute
+    );
 }

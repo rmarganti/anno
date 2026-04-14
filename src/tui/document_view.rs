@@ -8,6 +8,7 @@ use ratatui::{
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection, SearchDirection};
+use crate::startup::LineNumberMode;
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
@@ -39,10 +40,16 @@ pub struct DocumentViewState {
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
     styled_lines: Vec<Vec<StyledSpan>>,
+    /// Configured line number mode for gutter rendering.
+    line_number_mode: LineNumberMode,
 }
 
 impl DocumentViewState {
-    pub fn new(doc_lines: Vec<String>, styled_lines: Vec<Vec<StyledSpan>>) -> Self {
+    pub fn new(
+        doc_lines: Vec<String>,
+        styled_lines: Vec<Vec<StyledSpan>>,
+        line_number_mode: LineNumberMode,
+    ) -> Self {
         let mut viewport = Viewport::new();
         let display_layout = DisplayLayout::build(&doc_lines, 0, false);
         viewport.set_dimensions(0, 0);
@@ -54,6 +61,7 @@ impl DocumentViewState {
             last_char_search: None,
             doc_lines,
             styled_lines,
+            line_number_mode,
         }
     }
 
@@ -65,6 +73,10 @@ impl DocumentViewState {
     /// Whether word wrap is enabled.
     pub fn word_wrap(&self) -> bool {
         self.viewport.word_wrap
+    }
+
+    pub fn line_number_mode(&self) -> LineNumberMode {
+        self.line_number_mode
     }
 
     /// Handle a movement or visual-mode action. Returns `true` if consumed.
@@ -362,6 +374,7 @@ impl DocumentViewState {
         annotation_indicators: &[AnnotationIndicator],
         total_doc_lines: usize,
         cursor_row: usize,
+        _line_number_mode: LineNumberMode,
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
         let line_number_width = Self::line_number_gutter_width(total_doc_lines);
@@ -480,6 +493,7 @@ pub fn render_document_view(
         annotation_indicators,
         state.total_doc_lines(),
         state.viewport.cursor.row,
+        state.line_number_mode(),
         theme,
     );
 
@@ -500,6 +514,7 @@ mod tests {
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
+    use crate::startup::LineNumberMode;
     use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
@@ -518,7 +533,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut view = DocumentViewState::new(doc_lines, styled_lines);
+        let mut view = DocumentViewState::new(doc_lines, styled_lines, LineNumberMode::Relative);
         // Give it a non-zero size so movement works.
         view.update_dimensions(80, 24);
         view
@@ -995,11 +1010,22 @@ mod tests {
         let mut raw_view = {
             let doc_lines = vec!["hello".to_string()];
             let styled_lines = vec![vec![StyledSpan::plain("hello")]];
-            DocumentViewState::new(doc_lines, styled_lines)
+            DocumentViewState::new(doc_lines, styled_lines, LineNumberMode::Relative)
         };
         assert!(raw_view.is_too_small());
         raw_view.update_dimensions(80, 24);
         assert!(!raw_view.is_too_small());
+    }
+
+    #[test]
+    fn document_view_state_keeps_configured_line_number_mode() {
+        let view = DocumentViewState::new(
+            vec!["hello".to_string()],
+            vec![vec![StyledSpan::plain("hello")]],
+            LineNumberMode::Absolute,
+        );
+
+        assert_eq!(view.line_number_mode(), LineNumberMode::Absolute);
     }
 
     #[test]
