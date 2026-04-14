@@ -361,14 +361,24 @@ impl DocumentViewState {
         render_slices: &[crate::tui::viewport::RenderSlice],
         annotation_indicators: &[AnnotationIndicator],
         total_doc_lines: usize,
+        cursor_row: usize,
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
         let line_number_width = Self::line_number_gutter_width(total_doc_lines);
         let separator = " ".to_string();
 
-        Self::compute_gutter_annotation_types(render_slices, annotation_indicators)
-            .into_iter()
-            .map(|annotation_type| {
+        render_slices
+            .iter()
+            .zip(Self::compute_gutter_annotation_types(
+                render_slices,
+                annotation_indicators,
+            ))
+            .map(|(slice, annotation_type)| {
+                let line_number_style = if slice.doc_row == cursor_row {
+                    theme.current_line_number
+                } else {
+                    theme.line_number
+                };
                 let symbol = annotation_type
                     .map(|annotation_type| {
                         Span::styled(
@@ -382,8 +392,8 @@ impl DocumentViewState {
 
                 Line::from(vec![
                     symbol,
-                    Span::styled(" ".repeat(line_number_width), theme.document),
-                    Span::styled(separator.clone(), theme.document),
+                    Span::styled(" ".repeat(line_number_width), line_number_style),
+                    Span::styled(separator.clone(), line_number_style),
                 ])
             })
             .collect()
@@ -469,6 +479,7 @@ pub fn render_document_view(
         &render_slices,
         annotation_indicators,
         state.total_doc_lines(),
+        state.viewport.cursor.row,
         theme,
     );
 
