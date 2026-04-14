@@ -5,7 +5,7 @@ use syntect::parsing::SyntaxSet;
 
 use super::{Highlighter, StyledSpan};
 use crate::highlight::theme_assets::default_fallback_resolved_theme;
-use crate::startup::{ExportFormat, ResolvedSyntax, StartupError, StartupSettings};
+use crate::startup::{ExportFormat, LineNumberMode, ResolvedSyntax, StartupError, StartupSettings};
 use crate::tui::theme::DocumentBackground;
 
 /// Magic value stored in the alpha byte of a `syntect::highlighting::Color` to signal
@@ -28,6 +28,7 @@ impl SyntectHighlighter {
             export_format: ExportFormat::Agent,
             title: None,
             document_background: DocumentBackground::Theme,
+            line_number_mode: LineNumberMode::Relative,
             theme_mode: crate::startup::ResolvedValue {
                 value: crate::startup::ThemeMode::Auto,
                 source: crate::startup::SettingSource::Auto,
@@ -169,8 +170,8 @@ mod tests {
     use super::*;
     use crate::highlight::theme_assets::{default_fallback_resolved_theme, resolve_theme_asset};
     use crate::startup::{
-        ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode, ThemeProvenance,
-        ThemeProvenanceFallback,
+        LineNumberMode, ResolvedSyntax, ResolvedValue, SettingSource, StartupSettings, ThemeMode,
+        ThemeProvenance, ThemeProvenanceFallback,
     };
 
     fn make_highlighter(no_color: bool) -> SyntectHighlighter {
@@ -194,6 +195,7 @@ mod tests {
             export_format: ExportFormat::Agent,
             title: None,
             document_background: DocumentBackground::Theme,
+            line_number_mode: LineNumberMode::Relative,
             theme_mode: ResolvedValue {
                 value: ThemeMode::Dark,
                 source: SettingSource::Auto,

@@ -66,7 +66,12 @@ impl App {
         Ok(Self {
             theme,
             title,
-            state: AppState::new(source_name, document_lines, export_format),
+            state: AppState::new(
+                source_name,
+                document_lines,
+                export_format,
+                startup.line_number_mode,
+            ),
         })
     }
 

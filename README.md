@@ -91,12 +91,15 @@ Supported top-level keys:
 
 - `theme`: built-in theme name or explicit `.tmTheme` path.
 - `background`: `theme` or `default`. `default` uses the terminal's default background color for the main document surface.
+- `line_numbers`: `relative` or `absolute`. The default is `relative`.
 - `theme_mode`: `auto`, `light`, or `dark`.
 - `syntax`: syntax name, token, or extension.
 - `title`: optional display-only title shown in the status bar.
 - `app_theme`: optional document-overlay overrides for `cursor`, `selection`, and `annotation`.
 
-The settings parser also accepts `themeMode` / `theme-mode` and `appTheme` / `app-theme` as aliases for the snake_case keys above.
+The settings parser also accepts `lineNumbers` / `line-numbers`, `themeMode` / `theme-mode`, and `appTheme` / `app-theme` as aliases for the snake_case keys above.
+
+Line numbers are always shown in the document gutter. In `relative` mode, the current logical line keeps its absolute 1-indexed number while other logical lines show their distance from the cursor. Wrapped continuation rows leave the line-number cell blank so the gutter stays aligned with the rendered text width.
 
 `background` controls the primary document background independently of the resolved syntax theme.
 Use `default` if you want anno to fall back to the terminal's default background instead of the

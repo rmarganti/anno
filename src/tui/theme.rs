@@ -12,6 +12,7 @@ const DEFAULT_ACCENT: ThemeColor = ThemeColor::new(122, 166, 218);
 const MIN_TEXT_CONTRAST: f32 = 4.5;
 const MIN_UI_CONTRAST: f32 = 3.0;
 const MIN_SURFACE_CONTRAST: f32 = 1.25;
+const MIN_SUBDUED_UI_CONTRAST: f32 = 2.0;
 
 const DELETION_BASE: ThemeColor = ThemeColor::new(224, 108, 117);
 const COMMENT_BASE: ThemeColor = ThemeColor::new(229, 192, 123);
@@ -22,6 +23,8 @@ const GLOBAL_COMMENT_BASE: ThemeColor = ThemeColor::new(198, 120, 221);
 /// Centralized style definitions for the application UI.
 pub struct UiTheme {
     pub document: Style,
+    pub line_number: Style,
+    pub current_line_number: Style,
     pub cursor: Style,
     pub selection_highlight: Style,
     pub annotation_highlight: Style,
@@ -52,6 +55,8 @@ struct ThemeSurface {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DerivedThemePalette {
     document: ThemeSurface,
+    line_number_fg: ThemeColor,
+    current_line_number_fg: ThemeColor,
     cursor: ThemeSurface,
     selection: ThemeSurface,
     annotation_fg: ThemeColor,
@@ -205,6 +210,8 @@ impl UiTheme {
 
         Self {
             document,
+            line_number: style_with_fg(palette.line_number_fg),
+            current_line_number: style_with_fg(palette.current_line_number_fg),
             cursor: overrides
                 .cursor
                 .apply(style_with_surface(palette.cursor).add_modifier(Modifier::BOLD)),
@@ -268,6 +275,10 @@ impl DerivedThemePalette {
             fg: foreground,
             bg: background,
         };
+        let line_number_fg =
+            derive_line_number_color(foreground, background, 0.62, MIN_SUBDUED_UI_CONTRAST);
+        let current_line_number_fg =
+            derive_line_number_color(foreground, background, 0.38, MIN_UI_CONTRAST);
 
         let cursor = surface_with_readable_text(
             ThemeColor::from_syntect(settings.caret)
@@ -361,6 +372,8 @@ impl DerivedThemePalette {
 
         Self {
             document,
+            line_number_fg,
+            current_line_number_fg,
             cursor,
             selection,
             annotation_fg,
@@ -473,6 +486,23 @@ fn derive_annotation_color(
     }
 }
 
+fn derive_line_number_color(
+    foreground: ThemeColor,
+    background: ThemeColor,
+    target_mix: f32,
+    min_contrast: f32,
+) -> ThemeColor {
+    let mut mix_amount = target_mix.clamp(0.0, 1.0);
+
+    loop {
+        let candidate = foreground.mix(background, mix_amount);
+        if candidate.contrast_ratio(background) >= min_contrast || mix_amount <= 0.0 {
+            return candidate;
+        }
+        mix_amount = (mix_amount - 0.08).max(0.0);
+    }
+}
+
 fn enforce_surface_contrast(
     surface: ThemeColor,
     background: ThemeColor,
@@ -567,9 +597,24 @@ mod tests {
         };
 
         let derived = UiTheme::from_syntect_theme(&theme, None, DocumentBackground::Theme);
+        let line_number_fg = match derived.line_number.fg {
+            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
+            _ => panic!("expected rgb line number color"),
+        };
+        let current_line_number_fg = match derived.current_line_number.fg {
+            Some(Color::Rgb(r, g, b)) => ThemeColor::new(r, g, b),
+            _ => panic!("expected rgb current line number color"),
+        };
+        let document_bg = ThemeColor::new(16, 18, 20);
 
         assert_eq!(derived.document.fg, Some(Color::Rgb(220, 220, 220)));
         assert_eq!(derived.document.bg, Some(Color::Rgb(16, 18, 20)));
+        assert!(line_number_fg.contrast_ratio(document_bg) >= MIN_SUBDUED_UI_CONTRAST);
+        assert!(current_line_number_fg.contrast_ratio(document_bg) >= MIN_UI_CONTRAST);
+        assert!(
+            current_line_number_fg.contrast_ratio(document_bg)
+                > line_number_fg.contrast_ratio(document_bg)
+        );
         assert_eq!(derived.cursor.bg, Some(Color::Rgb(255, 140, 64)));
         assert_eq!(
             derived.selection_highlight.bg,
@@ -607,6 +652,9 @@ mod tests {
             let syntect_theme = asset.load().unwrap();
             let palette = DerivedThemePalette::from_syntect_theme(&syntect_theme);
             let document_bg = palette.document.bg;
+            let document_fg = palette.document.fg;
+            let line_number_fg = palette.line_number_fg;
+            let current_line_number_fg = palette.current_line_number_fg;
             let cursor_bg = palette.cursor.bg;
             let cursor_fg = palette.cursor.fg;
             let selection_bg = palette.selection.bg;
@@ -626,6 +674,28 @@ mod tests {
             let panel_border_fg = palette.panel_border_fg;
             let panel_border_focused_fg = palette.panel_border_focused_fg;
 
+            assert!(
+                line_number_fg.contrast_ratio(document_bg) >= MIN_SUBDUED_UI_CONTRAST,
+                "{} line numbers should remain visible without dominating the document",
+                asset.canonical_name
+            );
+            assert!(
+                current_line_number_fg.contrast_ratio(document_bg) >= MIN_UI_CONTRAST,
+                "{} current line number should remain clearly visible",
+                asset.canonical_name
+            );
+            assert!(
+                current_line_number_fg.contrast_ratio(document_bg)
+                    > line_number_fg.contrast_ratio(document_bg),
+                "{} current line number should be stronger than normal line numbers",
+                asset.canonical_name
+            );
+            assert!(
+                current_line_number_fg.contrast_ratio(document_bg)
+                    < document_fg.contrast_ratio(document_bg),
+                "{} current line number should stay quieter than document text",
+                asset.canonical_name
+            );
             assert!(
                 cursor_bg.contrast_ratio(document_bg) >= MIN_SURFACE_CONTRAST,
                 "{} cursor should stand off from the document background",

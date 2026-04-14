@@ -5,7 +5,7 @@ use crate::app::ExitResult;
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{KeybindHandler, SearchDirection};
 use crate::keybinds::mode::Mode;
-use crate::startup::ExportFormat;
+use crate::startup::{ExportFormat, LineNumberMode};
 use crate::tui::annotation_list_panel::{AnnotationListState, PANEL_WIDTH};
 use crate::tui::confirm_dialog::ConfirmDialog;
 use crate::tui::document_view::DocumentViewState;
@@ -91,8 +91,14 @@ impl AppState {
         source_name: String,
         doc_lines_result: renderer::DocumentLines,
         export_format: ExportFormat,
+        line_number_mode: LineNumberMode,
     ) -> Self {
-        Self::from_document_lines(source_name, doc_lines_result, export_format)
+        Self::from_document_lines(
+            source_name,
+            doc_lines_result,
+            export_format,
+            line_number_mode,
+        )
     }
 
     #[cfg(any(test, doctest))]
@@ -105,6 +111,21 @@ impl AppState {
         source_name: String,
         content: String,
         export_format: ExportFormat,
+    ) -> Self {
+        Self::new_plain_with_format_and_line_number_mode(
+            source_name,
+            content,
+            export_format,
+            LineNumberMode::Relative,
+        )
+    }
+
+    #[cfg(any(test, doctest))]
+    pub fn new_plain_with_format_and_line_number_mode(
+        source_name: String,
+        content: String,
+        export_format: ExportFormat,
+        line_number_mode: LineNumberMode,
     ) -> Self {
         let plain = if content.is_empty() {
             vec![String::new()]
@@ -120,6 +141,7 @@ impl AppState {
             source_name,
             renderer::DocumentLines { plain, styled },
             export_format,
+            line_number_mode,
         )
     }
 
@@ -127,8 +149,13 @@ impl AppState {
         source_name: String,
         doc_lines_result: renderer::DocumentLines,
         export_format: ExportFormat,
+        line_number_mode: LineNumberMode,
     ) -> Self {
-        let document_view = DocumentViewState::new(doc_lines_result.plain, doc_lines_result.styled);
+        let document_view = DocumentViewState::new(
+            doc_lines_result.plain,
+            doc_lines_result.styled,
+            line_number_mode,
+        );
 
         Self {
             source_name,

@@ -8,13 +8,15 @@ use ratatui::{
 use crate::annotation::types::{AnnotationIndicator, AnnotationType, TextRange};
 use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection, SearchDirection};
+use crate::startup::LineNumberMode;
 use crate::tui::renderer;
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CharSearch, CursorPosition, DisplayLayout, Viewport};
 
 const MAX_DOC_WIDTH: u16 = 120;
-const GUTTER_WIDTH: usize = 1;
+const ANNOTATION_GUTTER_WIDTH: usize = 1;
+const GUTTER_SEPARATOR_WIDTH: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CharSearchState {
@@ -38,10 +40,16 @@ pub struct DocumentViewState {
     doc_lines: Vec<String>,
     /// Highlighted document lines (for rendering with syntax highlighting).
     styled_lines: Vec<Vec<StyledSpan>>,
+    /// Configured line number mode for gutter rendering.
+    line_number_mode: LineNumberMode,
 }
 
 impl DocumentViewState {
-    pub fn new(doc_lines: Vec<String>, styled_lines: Vec<Vec<StyledSpan>>) -> Self {
+    pub fn new(
+        doc_lines: Vec<String>,
+        styled_lines: Vec<Vec<StyledSpan>>,
+        line_number_mode: LineNumberMode,
+    ) -> Self {
         let mut viewport = Viewport::new();
         let display_layout = DisplayLayout::build(&doc_lines, 0, false);
         viewport.set_dimensions(0, 0);
@@ -53,6 +61,7 @@ impl DocumentViewState {
             last_char_search: None,
             doc_lines,
             styled_lines,
+            line_number_mode,
         }
     }
 
@@ -66,11 +75,17 @@ impl DocumentViewState {
         self.viewport.word_wrap
     }
 
+    pub fn line_number_mode(&self) -> LineNumberMode {
+        self.line_number_mode
+    }
+
     /// Handle a movement or visual-mode action. Returns `true` if consumed.
     pub fn handle_action(&mut self, action: &Action) -> bool {
         match action {
             Action::MoveUp => self.viewport.move_up(&self.display_layout),
             Action::MoveDown => self.viewport.move_down(&self.display_layout),
+            Action::MoveScreenUp => self.viewport.move_screen_up(&self.display_layout),
+            Action::MoveScreenDown => self.viewport.move_screen_down(&self.display_layout),
             Action::MoveLeft => self.viewport.move_left(&self.display_layout),
             Action::MoveRight => self.viewport.move_right(&self.display_layout),
             Action::MoveWordForward => {
@@ -313,7 +328,7 @@ impl DocumentViewState {
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
-        let width = Self::viewport_width(width);
+        let width = Self::text_width(width, self.total_doc_lines());
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(width, height);
         if width != old_width {
@@ -334,20 +349,62 @@ impl DocumentViewState {
         );
     }
 
-    fn viewport_width(width: usize) -> usize {
-        width
-            .saturating_sub(GUTTER_WIDTH)
-            .min(MAX_DOC_WIDTH as usize)
+    fn total_doc_lines(&self) -> usize {
+        self.doc_lines.len().max(1)
+    }
+
+    fn line_number_gutter_width(total_doc_lines: usize) -> usize {
+        total_doc_lines.max(1).to_string().len()
+    }
+
+    fn gutter_width(total_doc_lines: usize) -> usize {
+        ANNOTATION_GUTTER_WIDTH
+            + Self::line_number_gutter_width(total_doc_lines)
+            + GUTTER_SEPARATOR_WIDTH
+    }
+
+    fn main_area_width(width: usize) -> usize {
+        width.min(MAX_DOC_WIDTH as usize)
+    }
+
+    fn text_width(width: usize, total_doc_lines: usize) -> usize {
+        Self::main_area_width(width).saturating_sub(Self::gutter_width(total_doc_lines))
     }
 
     fn prepare_gutter_lines(
         render_slices: &[crate::tui::viewport::RenderSlice],
         annotation_indicators: &[AnnotationIndicator],
+        total_doc_lines: usize,
+        cursor_row: usize,
+        line_number_mode: LineNumberMode,
         theme: &UiTheme,
     ) -> Vec<Line<'static>> {
-        Self::compute_gutter_annotation_types(render_slices, annotation_indicators)
-            .into_iter()
-            .map(|annotation_type| {
+        let line_number_width = Self::line_number_gutter_width(total_doc_lines);
+        let separator = " ".to_string();
+
+        render_slices
+            .iter()
+            .enumerate()
+            .zip(Self::compute_gutter_annotation_types(
+                render_slices,
+                annotation_indicators,
+            ))
+            .map(|((index, slice), annotation_type)| {
+                let line_number_style = if slice.doc_row == cursor_row {
+                    theme.current_line_number
+                } else {
+                    theme.line_number
+                };
+                let line_number = if Self::shows_line_number(render_slices, index, slice) {
+                    Self::format_line_number(
+                        slice.doc_row,
+                        cursor_row,
+                        line_number_mode,
+                        line_number_width,
+                    )
+                } else {
+                    " ".repeat(line_number_width)
+                };
                 let symbol = annotation_type
                     .map(|annotation_type| {
                         Span::styled(
@@ -358,9 +415,42 @@ impl DocumentViewState {
                         )
                     })
                     .unwrap_or_else(|| Span::styled(" ", theme.document));
-                Line::from(symbol)
+
+                Line::from(vec![
+                    symbol,
+                    Span::styled(line_number, line_number_style),
+                    Span::styled(separator.clone(), line_number_style),
+                ])
             })
             .collect()
+    }
+
+    fn shows_line_number(
+        render_slices: &[crate::tui::viewport::RenderSlice],
+        index: usize,
+        slice: &crate::tui::viewport::RenderSlice,
+    ) -> bool {
+        slice.start_col == 0 || index == 0 || render_slices[index - 1].doc_row != slice.doc_row
+    }
+
+    fn format_line_number(
+        doc_row: usize,
+        cursor_row: usize,
+        line_number_mode: LineNumberMode,
+        width: usize,
+    ) -> String {
+        let line_number = match line_number_mode {
+            LineNumberMode::Absolute => doc_row + 1,
+            LineNumberMode::Relative => {
+                if doc_row == cursor_row {
+                    doc_row + 1
+                } else {
+                    doc_row.abs_diff(cursor_row)
+                }
+            }
+        };
+
+        format!("{line_number:>width$}")
     }
 
     fn compute_gutter_annotation_types(
@@ -406,9 +496,9 @@ pub fn render_document_view(
     let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
         .flex(Flex::Center)
         .areas::<1>(area)[0];
+    let gutter_width = DocumentViewState::gutter_width(state.total_doc_lines()) as u16;
     let [gutter_area, text_area] =
-        Layout::horizontal([Constraint::Length(GUTTER_WIDTH as u16), Constraint::Min(0)])
-            .areas(main_area);
+        Layout::horizontal([Constraint::Length(gutter_width), Constraint::Min(0)]).areas(main_area);
 
     let render_slices = state.viewport.visible_render_slices(&state.display_layout);
 
@@ -439,8 +529,14 @@ pub fn render_document_view(
             selected_annotation_range,
         });
 
-    let gutter_lines =
-        DocumentViewState::prepare_gutter_lines(&render_slices, annotation_indicators, theme);
+    let gutter_lines = DocumentViewState::prepare_gutter_lines(
+        &render_slices,
+        annotation_indicators,
+        state.total_doc_lines(),
+        state.viewport.cursor.row,
+        state.line_number_mode(),
+        theme,
+    );
 
     let gutter = Paragraph::new(gutter_lines)
         .style(theme.document)
@@ -459,6 +555,7 @@ mod tests {
     use crate::annotation::types::{AnnotationType, TextPosition};
     use crate::highlight::StyledSpan;
     use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection};
+    use crate::startup::LineNumberMode;
     use crate::tui::viewport::{CursorPosition, RenderSlice};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
@@ -466,6 +563,10 @@ mod tests {
 
     /// Build a `DocumentViewState` from plain text lines with no syntax highlighting.
     fn make_view(lines: &[&str]) -> DocumentViewState {
+        make_view_with_mode(lines, LineNumberMode::Relative)
+    }
+
+    fn make_view_with_mode(lines: &[&str], line_number_mode: LineNumberMode) -> DocumentViewState {
         let doc_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         let styled_lines: Vec<Vec<StyledSpan>> = doc_lines
             .iter()
@@ -477,7 +578,7 @@ mod tests {
                 }
             })
             .collect();
-        let mut view = DocumentViewState::new(doc_lines, styled_lines);
+        let mut view = DocumentViewState::new(doc_lines, styled_lines, line_number_mode);
         // Give it a non-zero size so movement works.
         view.update_dimensions(80, 24);
         view
@@ -546,6 +647,12 @@ mod tests {
             start_col: 0,
             end_col: 1,
         }
+    }
+
+    fn buffer_line(buffer: &ratatui::buffer::Buffer, y: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buffer.cell((x, y)).unwrap().symbol())
+            .collect()
     }
 
     // ── Initial state ─────────────────────────────────────────────────
@@ -782,6 +889,92 @@ mod tests {
     }
 
     #[test]
+    fn render_absolute_line_numbers_are_human_readable_and_right_aligned() {
+        let mut view = make_view_with_mode(&["first", "second", "third"], LineNumberMode::Absolute);
+
+        let buffer = render_buffer(&mut view, 80, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 f");
+        assert_eq!(&buffer_line(&buffer, 1, 4), " 2 s");
+        assert_eq!(&buffer_line(&buffer, 2, 4), " 3 t");
+    }
+
+    #[test]
+    fn render_relative_line_numbers_show_current_line_absolute() {
+        let mut view = make_view_with_mode(&["first", "second", "third"], LineNumberMode::Relative);
+        view.set_cursor(1, 0);
+
+        let buffer = render_buffer(&mut view, 80, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 f");
+        assert_eq!(&buffer_line(&buffer, 1, 4), " 2 s");
+        assert_eq!(&buffer_line(&buffer, 2, 4), " 1 t");
+    }
+
+    #[test]
+    fn render_wrapped_continuation_rows_leave_line_number_cells_blank() {
+        let mut view = make_view_with_mode(&["abcdefghij"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(&mut view, 10, 5, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 a");
+        assert_eq!(&buffer_line(&buffer, 1, 4), "   h");
+    }
+
+    #[test]
+    fn render_mid_wrapped_line_shows_number_on_first_visible_slice() {
+        let mut view =
+            make_view_with_mode(&["abcdefghijklmnopqrstuvwxyz"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
+        view.update_dimensions(10, 1);
+        view.set_cursor(0, 7);
+
+        let buffer = render_buffer(&mut view, 10, 1, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 h");
+    }
+
+    #[test]
+    fn render_empty_document_row_uses_line_number_one() {
+        let mut view = make_view_with_mode(&[""], LineNumberMode::Absolute);
+
+        let buffer = render_buffer(&mut view, 10, 3, &[]);
+
+        assert_eq!(&buffer_line(&buffer, 0, 3), " 1 ");
+    }
+
+    #[test]
+    fn render_current_line_number_uses_emphasis_style_in_both_modes() {
+        let theme = UiTheme::default();
+
+        let mut absolute_view = make_view_with_mode(&["first", "second"], LineNumberMode::Absolute);
+        absolute_view.set_cursor(1, 0);
+        let absolute_buffer = render_buffer(&mut absolute_view, 80, 5, &[]);
+
+        let mut relative_view = make_view_with_mode(&["first", "second"], LineNumberMode::Relative);
+        relative_view.set_cursor(1, 0);
+        let relative_buffer = render_buffer(&mut relative_view, 80, 5, &[]);
+
+        assert_eq!(
+            absolute_buffer.cell((1, 1)).unwrap().style().fg,
+            theme.current_line_number.fg
+        );
+        assert_eq!(
+            relative_buffer.cell((1, 1)).unwrap().style().fg,
+            theme.current_line_number.fg
+        );
+        assert_eq!(
+            absolute_buffer.cell((1, 0)).unwrap().style().fg,
+            theme.line_number.fg
+        );
+        assert_eq!(
+            relative_buffer.cell((1, 0)).unwrap().style().fg,
+            theme.line_number.fg
+        );
+    }
+
+    #[test]
     fn compute_gutter_annotation_types_marks_every_line_in_single_range() {
         let gutter_types = DocumentViewState::compute_gutter_annotation_types(
             &[slice(0), slice(1), slice(2)],
@@ -954,11 +1147,22 @@ mod tests {
         let mut raw_view = {
             let doc_lines = vec!["hello".to_string()];
             let styled_lines = vec![vec![StyledSpan::plain("hello")]];
-            DocumentViewState::new(doc_lines, styled_lines)
+            DocumentViewState::new(doc_lines, styled_lines, LineNumberMode::Relative)
         };
         assert!(raw_view.is_too_small());
         raw_view.update_dimensions(80, 24);
         assert!(!raw_view.is_too_small());
+    }
+
+    #[test]
+    fn document_view_state_keeps_configured_line_number_mode() {
+        let view = DocumentViewState::new(
+            vec!["hello".to_string()],
+            vec![vec![StyledSpan::plain("hello")]],
+            LineNumberMode::Absolute,
+        );
+
+        assert_eq!(view.line_number_mode(), LineNumberMode::Absolute);
     }
 
     #[test]
@@ -968,13 +1172,61 @@ mod tests {
     }
 
     #[test]
-    fn update_dimensions_reserves_one_column_for_gutter() {
+    fn gutter_width_includes_annotation_strip_line_numbers_and_separator() {
+        assert_eq!(DocumentViewState::gutter_width(0), 3);
+        assert_eq!(DocumentViewState::gutter_width(9), 3);
+        assert_eq!(DocumentViewState::gutter_width(10), 4);
+        assert_eq!(DocumentViewState::gutter_width(100), 5);
+    }
+
+    #[test]
+    fn update_dimensions_caps_text_width_after_gutter_budget() {
+        let mut view = make_view(&[&"x".repeat(200)]);
+
+        view.update_dimensions(160, 5);
+
+        assert_eq!(view.viewport.width, 117);
+    }
+
+    #[test]
+    fn update_dimensions_wraps_to_rendered_text_width_after_gutter() {
+        let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        view.update_dimensions(10, 5);
+
+        assert_eq!(view.viewport.width, 7);
+        assert_eq!(view.display_layout.rows.len(), 2);
+        assert_eq!(view.display_layout.rows[0].start_col, 0);
+        assert_eq!(view.display_layout.rows[0].end_col, 7);
+        assert_eq!(view.display_layout.rows[1].start_col, 7);
+        assert_eq!(view.display_layout.rows[1].end_col, 10);
+    }
+
+    #[test]
+    fn render_keeps_annotation_strip_at_far_left_with_composed_gutter() {
+        let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
+
+        let buffer = render_buffer(&mut view, 10, 5, &[]);
+
+        assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), "1");
+        assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((3, 0)).unwrap().symbol(), "a");
+        assert_eq!(buffer.cell((9, 0)).unwrap().symbol(), "g");
+        assert_eq!(buffer.cell((1, 1)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((3, 1)).unwrap().symbol(), "h");
+    }
+
+    #[test]
+    fn update_dimensions_reserves_composed_gutter_width() {
         let mut view = make_view(&["hello"]);
 
-        view.update_dimensions(41, 5);
+        view.update_dimensions(43, 5);
         assert!(!view.is_too_small());
 
-        view.update_dimensions(40, 5);
+        view.update_dimensions(42, 5);
         assert!(view.is_too_small());
     }
 }

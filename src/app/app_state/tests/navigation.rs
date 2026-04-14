@@ -1,6 +1,21 @@
 use super::*;
 use crate::keybinds::handler::Action;
 
+fn wrapped_motion_harness() -> AppTestHarness {
+    let mut harness = harness(
+        "abcdefghijklmnopqrst\nuvwxyzabcdefghijkl\n0123456789abcdefghij\nklmnopqrstuvwxzy12\nlastline",
+    );
+    harness
+        .state_mut()
+        .document_view_mut()
+        .update_dimensions(8, 24);
+    harness
+        .state_mut()
+        .document_view_mut()
+        .handle_action(&Action::ToggleWordWrap);
+    harness
+}
+
 #[test]
 fn next_annotation_jumps_forward() {
     let mut harness = harness("alpha\nbeta\ngamma");
@@ -91,18 +106,46 @@ fn counted_visual_motion_repeats_existing_selection_navigation() {
 }
 
 #[test]
-fn counted_wrapped_motion_uses_display_rows() {
-    let mut harness = harness("abcdefghijklmnopqrst");
-    harness
-        .state_mut()
-        .document_view_mut()
-        .update_dimensions(5, 24);
-    harness
-        .state_mut()
-        .document_view_mut()
-        .handle_action(&Action::ToggleWordWrap);
+fn wrapped_plain_motion_uses_logical_lines() {
+    let mut harness = wrapped_motion_harness();
 
-    harness.keys("4j").assert_cursor(0, 16);
+    harness.keys("j").assert_cursor(1, 0);
+}
+
+#[test]
+fn wrapped_reverse_motion_uses_logical_lines() {
+    let mut harness = wrapped_motion_harness();
+
+    harness.keys("2jk").assert_cursor(1, 0);
+}
+
+#[test]
+fn counted_wrapped_motion_uses_logical_lines() {
+    let mut harness = wrapped_motion_harness();
+
+    harness.keys("4j").assert_cursor(4, 0);
+}
+
+#[test]
+fn wrapped_screen_line_motion_uses_display_rows() {
+    let mut harness = wrapped_motion_harness();
+
+    harness.keys("llgj").assert_cursor(0, 7);
+    harness.keys("gj").assert_cursor(0, 12);
+}
+
+#[test]
+fn wrapped_screen_line_reverse_motion_moves_to_previous_display_row() {
+    let mut harness = wrapped_motion_harness();
+
+    harness.keys("ll2gjgk").assert_cursor(0, 7);
+}
+
+#[test]
+fn counted_wrapped_screen_line_motion_crosses_logical_lines() {
+    let mut harness = wrapped_motion_harness();
+
+    harness.keys("llll4gj").assert_cursor(1, 4);
 }
 
 #[test]

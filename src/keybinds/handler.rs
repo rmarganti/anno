@@ -47,6 +47,8 @@ pub enum Action {
     // -- Movement --
     MoveUp,
     MoveDown,
+    MoveScreenUp,
+    MoveScreenDown,
     MoveLeft,
     MoveRight,
     MoveWordForward,
@@ -144,6 +146,8 @@ impl Action {
             self,
             Action::MoveUp
                 | Action::MoveDown
+                | Action::MoveScreenUp
+                | Action::MoveScreenDown
                 | Action::MoveLeft
                 | Action::MoveRight
                 | Action::MoveWordForward
@@ -408,6 +412,10 @@ impl KeybindHandler {
         }
 
         match (event.code, event.modifiers) {
+            (KeyCode::Char('g'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
+                Action::None
+            }
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -438,12 +446,11 @@ impl KeybindHandler {
 
     fn resolve_visual_input(&mut self, pending: PendingInput, event: KeyEvent) -> Action {
         match pending {
+            PendingInput::FixedSequence(first) => {
+                self.resolve_fixed_visual_sequence(first, event.code)
+            }
             PendingInput::CharSearch { direction, until } => {
                 self.resolve_char_search(direction, until, event)
-            }
-            PendingInput::FixedSequence(_) => {
-                self.clear_pending();
-                Action::None
             }
         }
     }
@@ -452,6 +459,9 @@ impl KeybindHandler {
         match (first, second) {
             // gg — top of document
             (KeyCode::Char('g'), KeyCode::Char('g')) => self.finish_action(Action::MoveDocumentTop),
+            // gj/gk — next/previous screen line
+            (KeyCode::Char('g'), KeyCode::Char('j')) => self.finish_action(Action::MoveScreenDown),
+            (KeyCode::Char('g'), KeyCode::Char('k')) => self.finish_action(Action::MoveScreenUp),
             // gc — global comment
             (KeyCode::Char('g'), KeyCode::Char('c')) => {
                 self.finish_action(Action::CreateGlobalComment)
@@ -461,6 +471,17 @@ impl KeybindHandler {
             // [a — previous annotation
             (KeyCode::Char('['), KeyCode::Char('a')) => self.finish_action(Action::PrevAnnotation),
             // Unrecognized sequence — discard
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
+        }
+    }
+
+    fn resolve_fixed_visual_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
+        match (first, second) {
+            (KeyCode::Char('g'), KeyCode::Char('j')) => self.finish_action(Action::MoveScreenDown),
+            (KeyCode::Char('g'), KeyCode::Char('k')) => self.finish_action(Action::MoveScreenUp),
             _ => {
                 self.clear_pending();
                 Action::None
@@ -980,6 +1001,20 @@ mod tests {
     }
 
     #[test]
+    fn normal_gj_gk_sequences() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('j')),
+            Action::MoveScreenDown
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('k')), Action::MoveScreenUp);
+    }
+
+    #[test]
     fn normal_bracket_a_sequences() {
         let mut h = KeybindHandler::new();
 
@@ -1160,6 +1195,18 @@ mod tests {
     }
 
     #[test]
+    fn normal_counted_screen_line_sequence_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('j')),
+            repeated(Action::MoveScreenDown, 3)
+        );
+    }
+
+    #[test]
     fn normal_counted_bracket_sequence_wraps_action() {
         let mut h = KeybindHandler::new();
 
@@ -1261,6 +1308,20 @@ mod tests {
             h.handle(Mode::Visual, char_key('j')),
             repeated(Action::MoveDown, 3)
         );
+    }
+
+    #[test]
+    fn visual_gj_gk_sequences() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('j')),
+            Action::MoveScreenDown
+        );
+
+        assert_eq!(h.handle(Mode::Visual, char_key('g')), Action::None);
+        assert_eq!(h.handle(Mode::Visual, char_key('k')), Action::MoveScreenUp);
     }
 
     #[test]

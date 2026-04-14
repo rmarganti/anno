@@ -60,6 +60,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("?", "Search backward"),
                 entry("n", "Repeat search"),
                 entry("N", "Repeat search in the opposite direction"),
+                entry("gj/gk", "Move by screen line when content is wrapped"),
                 entry("gg/G", "Move to document top/bottom"),
                 entry("Ctrl-d/u", "Move half page down/up"),
                 entry("Ctrl-f/b", "Move full page down/up"),
@@ -91,6 +92,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "N",
                     "Repeat search in the opposite direction and extend selection to match",
                 ),
+                entry("gj/gk", "Extend selection by screen line when wrapped"),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -262,6 +264,11 @@ mod tests {
         ));
         assert!(contains_entry(
             &sections[1],
+            "gj/gk",
+            "Move by screen line when content is wrapped"
+        ));
+        assert!(contains_entry(
+            &sections[1],
             "gg/G",
             "Move to document top/bottom"
         ));
@@ -322,6 +329,11 @@ mod tests {
             &sections[2],
             "N",
             "Repeat search in the opposite direction and extend selection to match"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "gj/gk",
+            "Extend selection by screen line when wrapped"
         ));
         assert!(contains_entry(
             &sections[2],
