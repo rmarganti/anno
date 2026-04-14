@@ -230,6 +230,34 @@ impl Viewport {
         }
     }
 
+    pub fn move_screen_up(&mut self, layout: &DisplayLayout) {
+        let (display_row, local_col) = layout.display_pos_of_doc_pos(self.cursor);
+        if display_row == 0 {
+            return;
+        }
+
+        self.cursor = layout.doc_pos_of_display_pos(
+            display_row - 1,
+            self.clamp_display_local_col(layout, display_row - 1, local_col),
+        );
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+    }
+
+    pub fn move_screen_down(&mut self, layout: &DisplayLayout) {
+        let (display_row, local_col) = layout.display_pos_of_doc_pos(self.cursor);
+        if display_row + 1 >= layout.total_display_rows() {
+            return;
+        }
+
+        self.cursor = layout.doc_pos_of_display_pos(
+            display_row + 1,
+            self.clamp_display_local_col(layout, display_row + 1, local_col),
+        );
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+    }
+
     pub fn move_left(&mut self, layout: &DisplayLayout) {
         if self.cursor.col > 0 {
             self.cursor.col -= 1;
@@ -589,6 +617,19 @@ impl Viewport {
             self.horizontal_offset = self.cursor.col - self.width + 1;
         }
     }
+
+    fn clamp_display_local_col(
+        &self,
+        layout: &DisplayLayout,
+        display_row: usize,
+        local_col: usize,
+    ) -> usize {
+        layout.rows[display_row]
+            .end_col
+            .saturating_sub(layout.rows[display_row].start_col)
+            .saturating_sub(1)
+            .min(local_col)
+    }
 }
 
 #[cfg(test)]
@@ -628,6 +669,36 @@ mod tests {
         assert_eq!(v.cursor.row, 2);
         v.move_up(&layout);
         assert_eq!(v.cursor.row, 1);
+    }
+
+    #[test]
+    fn move_screen_down_uses_wrapped_display_rows() {
+        let lines = vec!["abcdefghijklmnopqrst".to_string(), "uvwxyz".to_string()];
+        let layout = DisplayLayout::build(&lines, 5, true);
+        let mut v = Viewport::new();
+        v.set_dimensions(5, 2);
+        v.cursor = CursorPosition { row: 0, col: 2 };
+
+        v.move_screen_down(&layout);
+        assert_eq!(v.cursor, CursorPosition { row: 0, col: 7 });
+
+        v.move_screen_down(&layout);
+        assert_eq!(v.cursor, CursorPosition { row: 0, col: 12 });
+    }
+
+    #[test]
+    fn move_screen_motion_clamps_to_shorter_wrapped_rows() {
+        let lines = vec!["abcdefghij".to_string(), "xyz".to_string()];
+        let layout = DisplayLayout::build(&lines, 5, true);
+        let mut v = Viewport::new();
+        v.set_dimensions(5, 2);
+        v.cursor = CursorPosition { row: 0, col: 9 };
+
+        v.move_screen_down(&layout);
+        assert_eq!(v.cursor, CursorPosition { row: 1, col: 2 });
+
+        v.move_screen_up(&layout);
+        assert_eq!(v.cursor, CursorPosition { row: 0, col: 7 });
     }
 
     #[test]

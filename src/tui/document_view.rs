@@ -84,6 +84,8 @@ impl DocumentViewState {
         match action {
             Action::MoveUp => self.viewport.move_up(&self.display_layout),
             Action::MoveDown => self.viewport.move_down(&self.display_layout),
+            Action::MoveScreenUp => self.viewport.move_screen_up(&self.display_layout),
+            Action::MoveScreenDown => self.viewport.move_screen_down(&self.display_layout),
             Action::MoveLeft => self.viewport.move_left(&self.display_layout),
             Action::MoveRight => self.viewport.move_right(&self.display_layout),
             Action::MoveWordForward => {

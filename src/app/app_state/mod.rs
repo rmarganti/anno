@@ -68,6 +68,8 @@ impl AppState {
                 action,
                 Action::MoveUp
                     | Action::MoveDown
+                    | Action::MoveScreenUp
+                    | Action::MoveScreenDown
                     | Action::MoveLeft
                     | Action::MoveRight
                     | Action::MoveWordForward
