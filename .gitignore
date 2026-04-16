@@ -1,18 +1,5 @@
 /target
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-# Beads viewer
-.perles
-
-# AI tools. Not ready to commit
-ralph.sh
-
 # Used by harness plugins
 node_modules
 package-lock.json
-
-# bv (beads viewer) local config and caches
-.bv/
