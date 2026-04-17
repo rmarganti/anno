@@ -305,7 +305,10 @@ function getLastAssistantMessageText(ctx: ExtensionContext): string | null {
             continue;
         }
 
-        return assistantMessageToText(entry.message);
+        const text = assistantMessageToText(entry.message);
+        if (text !== null) {
+            return text;
+        }
     }
 
     return null;
