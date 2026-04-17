@@ -587,10 +587,7 @@ impl Viewport {
 
     /// The maximum column index for the current line (0 for empty lines).
     fn current_line_max_col(&self, layout: &DisplayLayout) -> usize {
-        layout
-            .doc_line_length(self.cursor.row)
-            .saturating_sub(1)
-            .max(0)
+        layout.doc_line_length(self.cursor.row).saturating_sub(1)
     }
 
     /// Adjust scroll offset so the cursor is within the visible area (display-row-based).
