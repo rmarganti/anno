@@ -42,9 +42,11 @@ Copying also works, but symlinks are convenient during development because `/rel
 
 - Package name: `anno-pi-review`
 - Slash command: `/anno-review`
+- Slash command: `/anno-last`
 - Custom tool: `anno_review`
 
 Use `/anno-review` when you want to review an existing file from Pi chat.
+Use `/anno-last` when you want to annotate the most recent assistant response from Pi chat.
 Use `anno_review` for interactive tool-driven review flows.
 
 ## Slash command usage
@@ -57,9 +59,16 @@ Review an existing file:
 /anno-review notes.txt --title "API review"
 ```
 
+Annotate the last assistant message:
+
+```bash
+/anno-last
+```
+
 Behavior:
 
 - Relative paths resolve from `ctx.cwd`.
+- `/anno-last` writes the last assistant response to a temporary markdown file before opening `anno`.
 - Successful reviews are sent back into the Pi conversation as a user message containing the structured JSON export.
 - If the agent is busy, the imported review is queued as a follow-up message.
 
@@ -86,6 +95,7 @@ Important limitations:
 - It only works when Pi has a live TUI (`ctx.hasUI`).
 - It is not suitable for headless/background execution where Pi cannot give terminal control to anno.
 - The slash command always reviews an on-disk file path; only the tool supports writing generated content to a temp file first.
+- `/anno-last` is the exception to the file-path rule because it snapshots the last assistant message into a temp markdown file before launching `anno`.
 
 The extension fails clearly when:
 

@@ -287,6 +287,33 @@ function buildReviewMessage(details: ReviewDetails): string {
     return `${summary}\n\nStructured anno export:\n\n\`\`\`json\n${JSON.stringify(reviewExport, null, 2)}\n\`\`\``;
 }
 
+function assistantMessageToText(message: {
+    content: Array<{ type: string; text?: string }>;
+}): string | null {
+    const text = message.content
+        .filter((item) => item.type === 'text' && typeof item.text === 'string')
+        .map((item) => item.text)
+        .join('')
+        .trim();
+
+    return text.length > 0 ? text : null;
+}
+
+function getLastAssistantMessageText(ctx: ExtensionContext): string | null {
+    for (const entry of ctx.sessionManager.getBranch()) {
+        if (entry.type !== 'message' || entry.message.role !== 'assistant') {
+            continue;
+        }
+
+        const text = assistantMessageToText(entry.message);
+        if (text !== null) {
+            return text;
+        }
+    }
+
+    return null;
+}
+
 async function runReview(
     request: ReviewRequest,
     ctx: ExtensionContext
@@ -455,6 +482,54 @@ export default function annoReviewExtension(pi: ExtensionAPI) {
             }
 
             const details = await runReview(parsed.request, ctx);
+            if (!details.ok) {
+                ctx.ui.notify(
+                    details.message,
+                    details.cancelled ? 'info' : 'error'
+                );
+                return;
+            }
+
+            const message = buildReviewMessage(details);
+            if (ctx.isIdle()) {
+                pi.sendUserMessage(message);
+                ctx.ui.notify(
+                    'Imported anno review into the conversation.',
+                    'info'
+                );
+            } else {
+                pi.sendUserMessage(message, { deliverAs: 'followUp' });
+                ctx.ui.notify(
+                    'Anno review queued as a follow-up message.',
+                    'info'
+                );
+            }
+        },
+    });
+
+    pi.registerCommand('anno-last', {
+        description:
+            'Annotate the last assistant message, then import the exported JSON annotations back into the session',
+        handler: async (args, ctx: ExtensionCommandContext) => {
+            if (args.trim().length > 0) {
+                ctx.ui.notify('Usage: /anno-last', 'error');
+                return;
+            }
+
+            const lastAssistantMessage = getLastAssistantMessageText(ctx);
+            if (!lastAssistantMessage) {
+                ctx.ui.notify('No assistant message found in session.', 'error');
+                return;
+            }
+
+            const details = await runReview(
+                {
+                    content: lastAssistantMessage,
+                    fileName: 'last-message.md',
+                    title: 'Last Agent Message',
+                },
+                ctx
+            );
             if (!details.ok) {
                 ctx.ui.notify(
                     details.message,
