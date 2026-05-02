@@ -19,6 +19,7 @@ use self::core::PendingAnnotation;
 use crate::annotation::types::{Annotation, TextPosition};
 use crate::keybinds::handler::Action;
 use crate::keybinds::mode::Mode;
+use crate::tui::document_view::VisualKind;
 use crate::tui::input_box::InputBoxEvent;
 
 impl AppState {
@@ -45,6 +46,20 @@ impl AppState {
     }
 
     fn dispatch_repeat(&mut self, action: Action, count: usize) {
+        if matches!(action, Action::EnterVisualLineMode) {
+            if count == 0 {
+                return;
+            }
+
+            self.dispatch_action(Action::EnterVisualLineMode);
+
+            if count > 1 {
+                self.dispatch_repeat(Action::MoveDown, count - 1);
+            }
+
+            return;
+        }
+
         if self.is_repeatable_navigation_action(&action) {
             for _ in 0..count {
                 self.dispatch_action(action.clone());
@@ -64,7 +79,7 @@ impl AppState {
     // issued from Normal/Visual mode before dispatching into the search actions.
     fn is_repeatable_navigation_action(&self, action: &Action) -> bool {
         match self.mode {
-            Mode::Normal | Mode::Visual => matches!(
+            Mode::Normal | Mode::Visual | Mode::VisualLine => matches!(
                 action,
                 Action::MoveUp
                     | Action::MoveDown
@@ -149,15 +164,24 @@ impl AppState {
     }
 
     fn handle_document_view_action(&mut self, action: &Action) -> bool {
-        if !self.document_view.handle_action(action) {
-            return false;
+        match action {
+            Action::EnterVisualMode => {
+                self.document_view.set_visual_kind(VisualKind::Char);
+                self.mode = Mode::Visual;
+                true
+            }
+            Action::EnterVisualLineMode => {
+                self.document_view.set_visual_kind(VisualKind::Line);
+                self.mode = Mode::VisualLine;
+                true
+            }
+            _ => {
+                if !self.document_view.handle_action(action) {
+                    return false;
+                }
+                true
+            }
         }
-
-        if matches!(action, Action::EnterVisualMode) {
-            self.mode = Mode::Visual;
-        }
-
-        true
     }
 
     fn handle_non_document_action(&mut self, action: Action) -> bool {

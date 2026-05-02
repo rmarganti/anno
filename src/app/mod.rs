@@ -25,6 +25,10 @@ use crate::tui::renderer;
 use crate::tui::status_bar::{self, StatusBarProps};
 use crate::tui::theme::UiTheme;
 
+fn is_visual_mode(mode: Mode) -> bool {
+    matches!(mode, Mode::Visual | Mode::VisualLine)
+}
+
 /// Minimum terminal width required to show the annotation list panel.
 /// Below this width the panel is automatically hidden.
 const MIN_WIDTH_FOR_PANEL: u16 = 116;
@@ -198,7 +202,7 @@ impl App {
         }
 
         // -- Main document area --
-        let is_visual = self.state.mode() == Mode::Visual;
+        let is_visual = is_visual_mode(self.state.mode());
         document_view::render_document_view(
             frame,
             doc_area,
@@ -265,5 +269,23 @@ impl App {
                 self.state.help_scroll_offset(),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_visual_mode;
+    use crate::keybinds::mode::Mode;
+
+    #[test]
+    fn visual_line_counts_as_visual_for_rendering() {
+        assert!(is_visual_mode(Mode::VisualLine));
+    }
+
+    #[test]
+    fn non_visual_modes_do_not_count_as_visual_for_rendering() {
+        assert!(is_visual_mode(Mode::Visual));
+        assert!(!is_visual_mode(Mode::Normal));
+        assert!(!is_visual_mode(Mode::Search));
     }
 }

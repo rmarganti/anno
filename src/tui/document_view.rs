@@ -25,6 +25,21 @@ struct CharSearchState {
     until: bool,
 }
 
+/// Whether an active visual selection is character-wise or line-wise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VisualKind {
+    Char,
+    Line,
+}
+
+/// Active visual-mode anchor: the position where Visual mode was entered
+/// together with the kind (character-wise vs line-wise) of selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VisualAnchor {
+    pos: CursorPosition,
+    kind: VisualKind,
+}
+
 /// Manages the document content display state: viewport, cursor movement,
 /// word wrap, and visual selection.
 pub struct DocumentViewState {
@@ -32,8 +47,8 @@ pub struct DocumentViewState {
     viewport: Viewport,
     /// Display layout mapping document lines → display rows.
     display_layout: DisplayLayout,
-    /// Anchor position when in Visual mode.
-    visual_anchor: Option<CursorPosition>,
+    /// Anchor position when in Visual or Visual Line mode.
+    visual_anchor: Option<VisualAnchor>,
     /// Last successful f/F/t/T search, used by ; and , repeat motions.
     last_char_search: Option<CharSearchState>,
     /// Plain-text document lines.
@@ -142,7 +157,17 @@ impl DocumentViewState {
             Action::FullPageUp => self.viewport.full_page_up(&self.display_layout),
 
             Action::EnterVisualMode => {
-                self.visual_anchor = Some(self.viewport.cursor);
+                self.visual_anchor = Some(VisualAnchor {
+                    pos: self.viewport.cursor,
+                    kind: VisualKind::Char,
+                });
+            }
+
+            Action::EnterVisualLineMode => {
+                self.visual_anchor = Some(VisualAnchor {
+                    pos: self.viewport.cursor,
+                    kind: VisualKind::Line,
+                });
             }
 
             Action::ToggleWordWrap => {
@@ -183,8 +208,12 @@ impl DocumentViewState {
     /// Returns `None` if there is no active visual anchor.
     pub fn take_visual_selection(&mut self) -> Option<(TextRange, String)> {
         let anchor = self.visual_anchor.take()?;
-        let sel = Selection { anchor };
+        let sel = Selection { anchor: anchor.pos };
         let (start, end) = sel.range(self.viewport.cursor);
+        let (start, end) = match anchor.kind {
+            VisualKind::Char => (start, end),
+            VisualKind::Line => self.snap_linewise(start, end),
+        };
         let range = TextRange {
             start: crate::annotation::types::TextPosition {
                 line: start.row,
@@ -195,8 +224,36 @@ impl DocumentViewState {
                 column: end.col,
             },
         };
-        let text = selection::selected_text(start, end, &self.doc_lines);
+        let mut text = selection::selected_text(start, end, &self.doc_lines);
+        if anchor.kind == VisualKind::Line {
+            text.push('\n');
+        }
         Some((range, text))
+    }
+
+    /// Snap a (start, end) pair so the start sits at column 0 of its row and
+    /// the end sits at the last char index of its row (clamped to 0 for
+    /// empty lines, matching the existing charwise empty-line behavior).
+    fn snap_linewise(
+        &self,
+        start: CursorPosition,
+        end: CursorPosition,
+    ) -> (CursorPosition, CursorPosition) {
+        let last_col = self
+            .doc_lines
+            .get(end.row)
+            .map(|line| line.chars().count().saturating_sub(1))
+            .unwrap_or(0);
+        (
+            CursorPosition {
+                row: start.row,
+                col: 0,
+            },
+            CursorPosition {
+                row: end.row,
+                col: last_col,
+            },
+        )
     }
 
     /// Move the cursor to the given document row and column, clamping to valid bounds.
@@ -318,6 +375,18 @@ impl DocumentViewState {
             .map(|(idx, _)| idx)
             .chain(std::iter::once(line.len()))
             .nth(char_idx)
+    }
+
+    pub(crate) fn set_visual_kind(&mut self, kind: VisualKind) {
+        match self.visual_anchor.as_mut() {
+            Some(anchor) => anchor.kind = kind,
+            None => {
+                self.visual_anchor = Some(VisualAnchor {
+                    pos: self.viewport.cursor,
+                    kind,
+                });
+            }
+        }
     }
 
     /// Clear the visual anchor (e.g. when exiting Visual mode).
@@ -504,8 +573,12 @@ pub fn render_document_view(
 
     let selection = if is_visual {
         state.visual_anchor.map(|anchor| {
-            let sel = Selection { anchor };
-            sel.range(state.viewport.cursor)
+            let sel = Selection { anchor: anchor.pos };
+            let (start, end) = sel.range(state.viewport.cursor);
+            match anchor.kind {
+                VisualKind::Char => (start, end),
+                VisualKind::Line => state.snap_linewise(start, end),
+            }
         })
     } else {
         None
@@ -1120,6 +1193,172 @@ mod tests {
         view.handle_action(&Action::EnterVisualMode);
         view.clear_visual();
         assert!(view.take_visual_selection().is_none());
+    }
+
+    // ── Visual Line selection ─────────────────────────────────────────
+
+    #[test]
+    fn enter_visual_line_mode_sets_line_anchor_at_cursor() {
+        let mut view = make_view(&["hello world", "second line"]);
+        view.set_cursor(0, 4);
+        let consumed = view.handle_action(&Action::EnterVisualLineMode);
+        assert!(consumed);
+        let anchor = view.visual_anchor.expect("anchor should be set");
+        assert_eq!(anchor.kind, VisualKind::Line);
+        assert_eq!(anchor.pos, pos(0, 4));
+    }
+
+    #[test]
+    fn take_visual_line_selection_only_anchor_covers_full_row_with_newline() {
+        let mut view = make_view(&["hello world"]);
+        view.set_cursor(0, 4);
+        view.handle_action(&Action::EnterVisualLineMode);
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start, TextPosition { line: 0, column: 0 });
+        assert_eq!(
+            range.end,
+            TextPosition {
+                line: 0,
+                column: "hello world".chars().count() - 1
+            }
+        );
+        assert_eq!(text, "hello world\n");
+    }
+
+    #[test]
+    fn take_visual_line_selection_after_move_down_covers_full_lines() {
+        let mut view = make_view(&["first line", "second line", "third line"]);
+        view.set_cursor(0, 3);
+        view.handle_action(&Action::EnterVisualLineMode);
+        view.handle_action(&Action::MoveDown);
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start, TextPosition { line: 0, column: 0 });
+        assert_eq!(
+            range.end,
+            TextPosition {
+                line: 1,
+                column: "second line".chars().count() - 1
+            }
+        );
+        assert_eq!(text, "first line\nsecond line\n");
+    }
+
+    #[test]
+    fn take_visual_line_selection_handles_anchor_below_cursor() {
+        let mut view = make_view(&["first line", "second line"]);
+        view.set_cursor(1, 3);
+        view.handle_action(&Action::EnterVisualLineMode);
+        view.handle_action(&Action::MoveUp);
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start, TextPosition { line: 0, column: 0 });
+        assert_eq!(
+            range.end,
+            TextPosition {
+                line: 1,
+                column: "second line".chars().count() - 1
+            }
+        );
+        assert_eq!(text, "first line\nsecond line\n");
+    }
+
+    #[test]
+    fn take_visual_line_selection_on_empty_line_clamps_end_col() {
+        let mut view = make_view(&["", "second"]);
+        view.set_cursor(0, 0);
+        view.handle_action(&Action::EnterVisualLineMode);
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start, TextPosition { line: 0, column: 0 });
+        assert_eq!(range.end, TextPosition { line: 0, column: 0 });
+        assert_eq!(text, "\n");
+    }
+
+    #[test]
+    fn charwise_visual_selection_does_not_get_trailing_newline() {
+        // Regression guard: charwise must keep ending at the cursor's exact
+        // column with no trailing newline.
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::EnterVisualMode);
+        view.handle_action(&Action::MoveRight);
+        let (range, text) = view.take_visual_selection().unwrap();
+        assert_eq!(range.start, TextPosition { line: 0, column: 0 });
+        assert_eq!(range.end, TextPosition { line: 0, column: 1 });
+        assert_eq!(text, "he");
+        assert!(!text.ends_with('\n'));
+    }
+
+    #[test]
+    fn clear_visual_clears_line_kind_anchor() {
+        let mut view = make_view(&["hello"]);
+        view.handle_action(&Action::EnterVisualLineMode);
+        view.clear_visual();
+        assert!(view.take_visual_selection().is_none());
+    }
+
+    #[test]
+    fn render_visual_line_highlights_every_column_of_selected_rows() {
+        let theme = UiTheme::default();
+        let mut view = make_view(&["abc", "defgh", "ijk"]);
+        view.set_cursor(0, 1);
+        view.handle_action(&Action::EnterVisualLineMode);
+        view.handle_action(&Action::MoveDown);
+
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                view.update_dimensions(40, 5);
+                render_document_view(
+                    frame,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: 40,
+                        height: 5,
+                    },
+                    &view,
+                    &theme,
+                    true,
+                    &[],
+                    None,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // Locate the columns containing the document text on rows 0 and 1.
+        let row0 = buffer_line(&buffer, 0, 40);
+        let row1 = buffer_line(&buffer, 1, 40);
+        let abc_x = row0.find("abc").expect("abc should be visible") as u16;
+        let defgh_x = row1.find("defgh").expect("defgh should be visible") as u16;
+
+        // Every char of "abc" is part of the selection (full first row).
+        // The anchor was set at row 0 col 1 ('b'), so every cell must carry
+        // the selection background.
+        for i in 0..3u16 {
+            let cell = buffer.cell((abc_x + i, 0)).unwrap();
+            assert_eq!(cell.style().bg, theme.selection_highlight.bg);
+        }
+
+        // Every char of "defgh" is part of the selection. The cursor (after
+        // MoveDown) lives at row 1 col 1 ('e'), which gets the cursor style
+        // instead of selection.
+        for i in 0..5u16 {
+            let cell = buffer.cell((defgh_x + i, 1)).unwrap();
+            if i == 1 {
+                assert_eq!(cell.style().bg, theme.cursor.bg);
+            } else {
+                assert_eq!(cell.style().bg, theme.selection_highlight.bg);
+            }
+        }
+
+        // Row 2 ("ijk") is outside the selection.
+        let ijk_x = buffer_line(&buffer, 2, 40)
+            .find("ijk")
+            .expect("ijk should be visible") as u16;
+        for i in 0..3u16 {
+            let cell = buffer.cell((ijk_x + i, 2)).unwrap();
+            assert_ne!(cell.style().bg, theme.selection_highlight.bg);
+        }
     }
 
     // ── Word wrap toggle ──────────────────────────────────────────────

@@ -65,6 +65,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("Ctrl-d/u", "Move half page down/up"),
                 entry("Ctrl-f/b", "Move full page down/up"),
                 entry("v", "Enter visual mode"),
+                entry("V", "Enter visual line mode"),
                 entry("i", "Create insertion annotation"),
                 entry("gc", "Create global comment annotation"),
                 entry("]a/[a", "Jump to next/previous annotation"),
@@ -96,6 +97,24 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
+                entry("Esc", "Cancel selection"),
+            ],
+        },
+        HelpSection {
+            title: "Visual Line Mode",
+            entries: vec![
+                entry("h/j/k/l", "Extend selection by line/motion"),
+                entry("w/b/e", "Extend selection by line/motion"),
+                entry("0/$", "Extend selection by line/motion"),
+                entry("f/F/t/T", "Extend selection by line/motion"),
+                entry("; / ,", "Extend selection by line/motion"),
+                entry("/ / ?", "Extend selection by line/motion"),
+                entry("n / N", "Extend selection by line/motion"),
+                entry("d", "Create deletion annotation"),
+                entry("c", "Create comment annotation"),
+                entry("r", "Create replacement annotation"),
+                entry("v", "Switch to charwise visual"),
+                entry("V", "Exit visual line mode"),
                 entry("Esc", "Cancel selection"),
             ],
         },
@@ -159,6 +178,7 @@ mod tests {
                 "Global",
                 "Normal Mode",
                 "Visual Mode",
+                "Visual Line Mode",
                 "Insert Mode",
                 "Search Mode",
                 "Annotation List",
@@ -283,6 +303,7 @@ mod tests {
             "Move full page down/up"
         ));
         assert!(contains_entry(&sections[1], "v", "Enter visual mode"));
+        assert!(contains_entry(&sections[1], "V", "Enter visual line mode"));
         assert!(contains_entry(
             &sections[1],
             "i",
@@ -352,53 +373,111 @@ mod tests {
         ));
         assert!(contains_entry(&sections[2], "Esc", "Cancel selection"));
 
-        assert!(contains_entry(&sections[3], "Ctrl-S", "Confirm input"));
-        assert!(contains_entry(&sections[3], "Esc", "Cancel input"));
-
-        assert!(contains_entry(&sections[4], "Enter", "Confirm search"));
-        assert!(contains_entry(&sections[4], "Esc", "Cancel search"));
-
-        assert!(contains_entry(&sections[5], "j/k", "Move selection"));
         assert!(contains_entry(
-            &sections[5],
+            &sections[3],
+            "h/j/k/l",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "w/b/e",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "0/$",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "f/F/t/T",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "; / ,",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "/ / ?",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "n / N",
+            "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "d",
+            "Create deletion annotation"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "c",
+            "Create comment annotation"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "r",
+            "Create replacement annotation"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "v",
+            "Switch to charwise visual"
+        ));
+        assert!(contains_entry(&sections[3], "V", "Exit visual line mode"));
+        assert!(contains_entry(&sections[3], "Esc", "Cancel selection"));
+
+        assert!(contains_entry(&sections[4], "Ctrl-S", "Confirm input"));
+        assert!(contains_entry(&sections[4], "Esc", "Cancel input"));
+
+        assert!(contains_entry(&sections[5], "Enter", "Confirm search"));
+        assert!(contains_entry(&sections[5], "Esc", "Cancel search"));
+
+        assert!(contains_entry(&sections[6], "j/k", "Move selection"));
+        assert!(contains_entry(
+            &sections[6],
             "Space",
             "Inspect selected annotation"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "Up/Down",
             "Scroll inspect text"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "PgUp/PgDn",
             "Page inspect text"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "Ctrl-u/d",
             "Page inspect text"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "Enter",
             "Jump to selected annotation"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "Tab",
             "Unfocus annotation panel"
         ));
         assert!(contains_entry(
-            &sections[5],
+            &sections[6],
             "dd",
             "Delete selected annotation"
         ));
-        assert!(contains_entry(&sections[5], "Esc", "Hide annotation panel"));
+        assert!(contains_entry(&sections[6], "Esc", "Hide annotation panel"));
 
-        assert!(contains_entry(&sections[6], ":q", "Quit"));
-        assert!(contains_entry(&sections[6], ":q!", "Force quit"));
-        assert!(contains_entry(&sections[6], "Esc", "Cancel command"));
+        assert!(contains_entry(&sections[7], ":q", "Quit"));
+        assert!(contains_entry(&sections[7], ":q!", "Force quit"));
+        assert!(contains_entry(&sections[7], "Esc", "Cancel command"));
     }
 
     fn contains_entry(section: &HelpSection, keys: &str, action: &str) -> bool {

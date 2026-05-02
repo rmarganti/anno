@@ -30,6 +30,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
     let mode_label = match props.mode {
         Mode::Normal => " NORMAL ",
         Mode::Visual => " VISUAL ",
+        Mode::VisualLine => " VISUAL LINE ",
         Mode::Insert => " INSERT ",
         Mode::AnnotationList => " ANNOTATIONS ",
         Mode::Command => " COMMAND ",
@@ -56,7 +57,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
                 "count+nav  Tab focus  Esc hide  H help".to_string()
             }
             Mode::Normal => "count+nav  Tab panel  H help".to_string(),
-            Mode::Visual => "count+nav  d/c/r annotate  Esc".to_string(),
+            Mode::Visual | Mode::VisualLine => "count+nav  d/c/r annotate  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
             Mode::AnnotationList if props.annotation_inspect_visible => {
                 "count+nav  Up/Down  Enter  Esc".to_string()
@@ -144,6 +145,16 @@ mod tests {
         let props = base_props(Mode::Visual);
         let output = render_to_string(&props);
         assert!(output.contains("VISUAL"), "Expected VISUAL in: {output}");
+    }
+
+    #[test]
+    fn visual_line_mode_label() {
+        let props = base_props(Mode::VisualLine);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("VISUAL LINE"),
+            "Expected VISUAL LINE in: {output}"
+        );
     }
 
     #[test]
