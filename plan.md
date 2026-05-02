@@ -188,3 +188,13 @@ _Add timestamped notes here as decisions, surprises, or follow-ups come up._
   inside `Mode::VisualLine` clear any pending count and dispatch the raw
   toggle/exit action instead of `Action::Repeat`, matching vim's
   non-counted mode-toggle behavior.
+- 2026-05-02 (anno-6x5o, `[count]V`): `Action::Repeat {
+  EnterVisualLineMode, count }` is now intercepted in
+  [src/app/app_state/mod.rs](src/app/app_state/mod.rs) instead of going
+  through the generic repeat loop. App-state dispatches one
+  `EnterVisualLineMode`, then reuses repeated `MoveDown` actions for
+  `count - 1`, which preserves the original anchor, inherits existing
+  cursor clamping at EOF, and keeps counted linewise selection behavior
+  aligned with normal motion semantics. Downstream docs/UI work should
+  describe `3V` as "enter Visual Line once, then extend downward" rather
+  than as a generic repeated mode switch.

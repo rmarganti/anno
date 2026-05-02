@@ -1,14 +1,14 @@
 ---
 # anno-6x5o
 title: Implement [count]V to pre-extend Visual Line selection
-status: todo
+status: completed
 type: task
 priority: normal
 tags:
 - visual-mode
 - vim-bindings
 created_at: 2026-05-02T02:42:54.931665Z
-updated_at: 2026-05-02T02:42:54.931665Z
+updated_at: 2026-05-02T13:31:37.467085Z
 parent: anno-1ouf
 blocked_by:
 - anno-7ejd
@@ -100,3 +100,22 @@ cargo build --all-features
 If you change the `Action::Repeat` runtime in a way that affects other
 counted actions (e.g. `[count]v`), record the change under **Open Notes**
 in `plan.md` so the docs ish reflects the right behavior.
+
+## Implementation Notes
+
+- `AppState::dispatch_repeat` now intercepts
+  `Action::EnterVisualLineMode` and translates `[count]V` into one visual
+  line-mode entry plus `count - 1` repeated `MoveDown` actions.
+- Reusing the existing `MoveDown` path preserves the original visual
+  anchor and inherits the document-view cursor clamping behavior at EOF
+  without changing counted motion semantics elsewhere.
+- Added app-state coverage for `3V`, `1V`, EOF clamping, and deletion over
+  a counted linewise selection in
+  `src/app/app_state/tests/visual_line.rs`.
+
+## Verification Results
+
+- `cargo fmt --all -- --check` ✓
+- `cargo test --all-features` ✓
+- `cargo clippy --all-targets --all-features -- -D warnings` ✓
+- `cargo build --all-features` ✓

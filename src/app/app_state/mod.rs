@@ -46,6 +46,20 @@ impl AppState {
     }
 
     fn dispatch_repeat(&mut self, action: Action, count: usize) {
+        if matches!(action, Action::EnterVisualLineMode) {
+            if count == 0 {
+                return;
+            }
+
+            self.dispatch_action(Action::EnterVisualLineMode);
+
+            if count > 1 {
+                self.dispatch_repeat(Action::MoveDown, count - 1);
+            }
+
+            return;
+        }
+
         if self.is_repeatable_navigation_action(&action) {
             for _ in 0..count {
                 self.dispatch_action(action.clone());

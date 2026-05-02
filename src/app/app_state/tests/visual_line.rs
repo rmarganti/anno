@@ -101,3 +101,56 @@ fn visual_line_shift_v_exits_and_clears_selection() {
         .assert_mode(Mode::Normal)
         .assert_annotation_count(0);
 }
+
+#[test]
+fn counted_visual_line_enters_mode_and_extends_downward() {
+    harness("one\ntwo\nthree\nfour\nfive")
+        .keys("jj3V")
+        .assert_mode(Mode::VisualLine)
+        .assert_cursor(4, 0);
+}
+
+#[test]
+fn one_visual_line_matches_plain_visual_line_entry() {
+    let mut harness = harness("one\ntwo\nthree");
+    harness
+        .keys("j1V")
+        .assert_mode(Mode::VisualLine)
+        .assert_cursor(1, 0);
+
+    harness.keys("d").assert_mode(Mode::Normal);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation.range.expect("deletion should have a range");
+    assert_eq!(annotation.annotation_type, AnnotationType::Deletion);
+    assert_eq!(annotation.selected_text, "two\n");
+    assert_eq!((range.start.line, range.start.column), (1, 0));
+    assert_eq!(
+        (range.end.line, range.end.column),
+        (1, "two".chars().count() - 1)
+    );
+}
+
+#[test]
+fn counted_visual_line_clamps_at_end_of_document() {
+    harness("one\ntwo\nthree")
+        .keys("2j9V")
+        .assert_mode(Mode::VisualLine)
+        .assert_cursor(2, 0);
+}
+
+#[test]
+fn counted_visual_line_deletion_uses_linewise_range() {
+    let mut harness = harness("one\ntwo\nthree\nfour");
+    harness.keys("3Vd").assert_mode(Mode::Normal);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation.range.expect("deletion should have a range");
+    assert_eq!(annotation.annotation_type, AnnotationType::Deletion);
+    assert_eq!(annotation.selected_text, "one\ntwo\nthree\n");
+    assert_eq!((range.start.line, range.start.column), (0, 0));
+    assert_eq!(
+        (range.end.line, range.end.column),
+        (2, "three".chars().count() - 1)
+    );
+}
