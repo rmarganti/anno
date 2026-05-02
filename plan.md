@@ -178,3 +178,13 @@ _Add timestamped notes here as decisions, surprises, or follow-ups come up._
   automatically. The rendering gate in [src/app/mod.rs](src/app/mod.rs)
   now uses a shared `is_visual_mode()` helper so future Visual-derived
   modes only need one predicate update.
+- 2026-05-02 (anno-1am6, toggle semantics): `DocumentViewState` gained a
+  crate-visible `set_visual_kind(VisualKind)` helper so app-state can flip
+  between charwise and linewise selection without re-anchoring. `AppState`
+  now uses that helper for both `EnterVisualMode` and
+  `EnterVisualLineMode`, which preserves the original anchor position when
+  toggling `v ↔ V` and still installs a fresh anchor when entering from
+  Normal. In the keybind layer, `V` inside `Mode::Visual` and `v`/`V`
+  inside `Mode::VisualLine` clear any pending count and dispatch the raw
+  toggle/exit action instead of `Action::Repeat`, matching vim's
+  non-counted mode-toggle behavior.

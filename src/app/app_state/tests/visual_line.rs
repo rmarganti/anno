@@ -66,3 +66,38 @@ fn counted_search_repeat_works_from_visual_line_mode() {
         .assert_mode(Mode::VisualLine)
         .assert_cursor(2, 2);
 }
+
+#[test]
+fn visual_line_v_switches_to_charwise_visual_without_reanchoring() {
+    let mut harness = harness("abcd\nefgh\nijkl");
+    harness.keys("lVjjvd").assert_mode(Mode::Normal);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation.range.expect("deletion should have a range");
+    assert_eq!(annotation.annotation_type, AnnotationType::Deletion);
+    assert_eq!(annotation.selected_text, "bcd\nefgh\nij");
+    assert_eq!((range.start.line, range.start.column), (0, 1));
+    assert_eq!((range.end.line, range.end.column), (2, 1));
+}
+
+#[test]
+fn visual_shift_v_switches_to_linewise_visual_without_reanchoring() {
+    let mut harness = harness("abcd\nefgh\nijkl");
+    harness.keys("lvjllVd").assert_mode(Mode::Normal);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation.range.expect("deletion should have a range");
+    assert_eq!(annotation.annotation_type, AnnotationType::Deletion);
+    assert_eq!(annotation.selected_text, "abcd\nefgh\n");
+    assert_eq!((range.start.line, range.start.column), (0, 0));
+    assert_eq!((range.end.line, range.end.column), (1, 3));
+}
+
+#[test]
+fn visual_line_shift_v_exits_and_clears_selection() {
+    let mut harness = harness("abcd\nefgh");
+    harness
+        .keys("VjVd")
+        .assert_mode(Mode::Normal)
+        .assert_annotation_count(0);
+}

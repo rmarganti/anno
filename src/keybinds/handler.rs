@@ -429,6 +429,12 @@ impl KeybindHandler {
                 self.finish_action(Action::CreateReplacement)
             }
 
+            // Mode toggles ignore counts inside Visual mode.
+            (KeyCode::Char('V'), KeyModifiers::SHIFT) => {
+                self.clear_pending();
+                Action::EnterVisualLineMode
+            }
+
             // Cancel selection
             (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
 
@@ -473,14 +479,14 @@ impl KeybindHandler {
                 self.finish_action(Action::CreateReplacement)
             }
 
-            // v/V toggles are wired in a follow-up ish; placeholder no-ops here.
+            // Mode toggles ignore counts inside Visual Line mode.
             (KeyCode::Char('v'), KeyModifiers::NONE) => {
                 self.clear_pending();
-                Action::None
+                Action::EnterVisualMode
             }
             (KeyCode::Char('V'), KeyModifiers::SHIFT) => {
                 self.clear_pending();
-                Action::None
+                Action::ExitToNormal
             }
 
             // Cancel selection
@@ -1351,6 +1357,18 @@ mod tests {
     }
 
     #[test]
+    fn visual_shift_v_switches_to_visual_line_mode() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+            ),
+            Action::EnterVisualLineMode
+        );
+    }
+
+    #[test]
     fn visual_esc_exits() {
         let mut h = KeybindHandler::new();
         assert_eq!(
@@ -1616,21 +1634,56 @@ mod tests {
         }
 
         #[test]
-        fn lowercase_v_is_placeholder_no_op() {
+        fn lowercase_v_switches_to_visual_mode() {
             let mut h = KeybindHandler::new();
-            assert_eq!(h.handle(Mode::VisualLine, char_key('v')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('v')),
+                Action::EnterVisualMode
+            );
         }
 
         #[test]
-        fn shift_v_is_placeholder_no_op() {
+        fn shift_v_exits_to_normal() {
             let mut h = KeybindHandler::new();
             assert_eq!(
                 h.handle(
                     Mode::VisualLine,
                     key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
                 ),
-                Action::None
+                Action::ExitToNormal
             );
+        }
+
+        #[test]
+        fn counts_are_dropped_for_mode_toggles() {
+            let mut h = KeybindHandler::new();
+
+            assert_eq!(h.handle(Mode::Visual, char_key('3')), Action::None);
+            assert_eq!(
+                h.handle(
+                    Mode::Visual,
+                    key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+                ),
+                Action::EnterVisualLineMode
+            );
+            assert!(!h.has_pending());
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('4')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('v')),
+                Action::EnterVisualMode
+            );
+            assert!(!h.has_pending());
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('5')), Action::None);
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+                ),
+                Action::ExitToNormal
+            );
+            assert!(!h.has_pending());
         }
 
         #[test]

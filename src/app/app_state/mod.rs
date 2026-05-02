@@ -19,6 +19,7 @@ use self::core::PendingAnnotation;
 use crate::annotation::types::{Annotation, TextPosition};
 use crate::keybinds::handler::Action;
 use crate::keybinds::mode::Mode;
+use crate::tui::document_view::VisualKind;
 use crate::tui::input_box::InputBoxEvent;
 
 impl AppState {
@@ -149,17 +150,24 @@ impl AppState {
     }
 
     fn handle_document_view_action(&mut self, action: &Action) -> bool {
-        if !self.document_view.handle_action(action) {
-            return false;
-        }
-
         match action {
-            Action::EnterVisualMode => self.mode = Mode::Visual,
-            Action::EnterVisualLineMode => self.mode = Mode::VisualLine,
-            _ => {}
+            Action::EnterVisualMode => {
+                self.document_view.set_visual_kind(VisualKind::Char);
+                self.mode = Mode::Visual;
+                true
+            }
+            Action::EnterVisualLineMode => {
+                self.document_view.set_visual_kind(VisualKind::Line);
+                self.mode = Mode::VisualLine;
+                true
+            }
+            _ => {
+                if !self.document_view.handle_action(action) {
+                    return false;
+                }
+                true
+            }
         }
-
-        true
     }
 
     fn handle_non_document_action(&mut self, action: Action) -> bool {

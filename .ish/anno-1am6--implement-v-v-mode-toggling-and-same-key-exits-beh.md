@@ -1,14 +1,14 @@
 ---
 # anno-1am6
 title: Implement v <-> V mode toggling and same-key-exits behavior
-status: todo
+status: completed
 type: task
 priority: normal
 tags:
 - visual-mode
 - vim-bindings
 created_at: 2026-05-02T02:42:31.922115Z
-updated_at: 2026-05-02T02:42:31.922115Z
+updated_at: 2026-05-02T13:29:01.687818Z
 parent: anno-1ouf
 blocked_by:
 - anno-7ejd
@@ -108,3 +108,23 @@ cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build --all-features
 ```
+
+## Implementation Notes
+
+- Added `V` handling in Visual mode and `v` / `V` handling in Visual Line
+  mode in `src/keybinds/handler.rs`.
+- Mode-toggle keys now clear any pending count state and dispatch the raw
+  toggle/exit action instead of `Action::Repeat`, so inputs like `3V`
+  inside Visual and `5v` inside Visual Line behave like vim and do not
+  repeat the mode switch.
+- Added `DocumentViewState::set_visual_kind(VisualKind)` in
+  `src/tui/document_view.rs`. App-state uses it to preserve the existing
+  anchor when toggling between `Mode::Visual` and `Mode::VisualLine`, while
+  still creating a fresh anchor when entering from Normal.
+
+## Verification Results
+
+- `cargo fmt --all -- --check` ✓
+- `cargo test --all-features` ✓
+- `cargo clippy --all-targets --all-features -- -D warnings` ✓
+- `cargo build --all-features` ✓

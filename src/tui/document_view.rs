@@ -27,7 +27,7 @@ struct CharSearchState {
 
 /// Whether an active visual selection is character-wise or line-wise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VisualKind {
+pub(crate) enum VisualKind {
     Char,
     Line,
 }
@@ -375,6 +375,18 @@ impl DocumentViewState {
             .map(|(idx, _)| idx)
             .chain(std::iter::once(line.len()))
             .nth(char_idx)
+    }
+
+    pub(crate) fn set_visual_kind(&mut self, kind: VisualKind) {
+        match self.visual_anchor.as_mut() {
+            Some(anchor) => anchor.kind = kind,
+            None => {
+                self.visual_anchor = Some(VisualAnchor {
+                    pos: self.viewport.cursor,
+                    kind,
+                });
+            }
+        }
     }
 
     /// Clear the visual anchor (e.g. when exiting Visual mode).
