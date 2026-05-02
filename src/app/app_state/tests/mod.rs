@@ -19,6 +19,7 @@ mod navigation;
 mod overlays;
 mod panel;
 mod search;
+mod visual_line;
 
 fn harness(content: &str) -> AppTestHarness {
     AppTestHarness::new(content)

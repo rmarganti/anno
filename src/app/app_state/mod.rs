@@ -153,8 +153,10 @@ impl AppState {
             return false;
         }
 
-        if matches!(action, Action::EnterVisualMode) {
-            self.mode = Mode::Visual;
+        match action {
+            Action::EnterVisualMode => self.mode = Mode::Visual,
+            Action::EnterVisualLineMode => self.mode = Mode::VisualLine,
+            _ => {}
         }
 
         true
