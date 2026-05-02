@@ -198,3 +198,12 @@ _Add timestamped notes here as decisions, surprises, or follow-ups come up._
   aligned with normal motion semantics. Downstream docs/UI work should
   describe `3V` as "enter Visual Line once, then extend downward" rather
   than as a generic repeated mode switch.
+- 2026-05-02 (anno-vzmd, UI polish):
+  [src/tui/status_bar.rs](src/tui/status_bar.rs) now gives
+  `Mode::VisualLine` its own ` VISUAL LINE ` pill while reusing the same
+  styling as `VISUAL`; the existing single-row status layout had enough
+  slack at 80 columns, so no abbreviation or layout change was needed.
+  [src/keybinds/help_content.rs](src/keybinds/help_content.rs) chose a
+  dedicated `Visual Line Mode` section instead of collapsing into a note
+  under `Visual Mode`, so the README ish (`anno-n4c8`) should mirror that
+  structure and include the explicit `V` Normal-mode entry.

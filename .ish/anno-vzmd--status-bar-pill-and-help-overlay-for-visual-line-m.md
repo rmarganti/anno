@@ -1,7 +1,7 @@
 ---
 # anno-vzmd
 title: Status bar pill and help overlay for Visual Line Mode
-status: todo
+status: completed
 type: task
 priority: normal
 tags:
@@ -9,7 +9,7 @@ tags:
 - vim-bindings
 - ui
 created_at: 2026-05-02T02:43:13.039447Z
-updated_at: 2026-05-02T02:43:13.039447Z
+updated_at: 2026-05-02T13:35:06.303073Z
 parent: anno-1ouf
 blocked_by:
 - anno-8o31
@@ -82,3 +82,21 @@ cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build --all-features
 ```
+
+## Implementation Notes
+
+- `src/tui/status_bar.rs` now renders a dedicated ` VISUAL LINE ` pill for
+  `Mode::VisualLine` while keeping the existing visual-mode hint text and
+  styling.
+- `src/keybinds/help_content.rs` adds a dedicated `Visual Line Mode`
+  section instead of collapsing the bindings into a note under `Visual
+  Mode`; the Normal-mode section also now lists `V` explicitly.
+- The hard-coded help-section order test was updated to keep `Visual Line
+  Mode` adjacent to `Visual Mode`, which the README follow-up should mirror.
+
+## Verification Results
+
+- `cargo fmt --all -- --check` ✓
+- `cargo test --all-features` ✓
+- `cargo clippy --all-targets --all-features -- -D warnings` ✓
+- `cargo build --all-features` ✓

@@ -29,8 +29,8 @@ pub struct StatusBarProps<'a> {
 pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarProps) {
     let mode_label = match props.mode {
         Mode::Normal => " NORMAL ",
-        // VisualLine reuses the VISUAL pill until the UI-polish ish refines it.
-        Mode::Visual | Mode::VisualLine => " VISUAL ",
+        Mode::Visual => " VISUAL ",
+        Mode::VisualLine => " VISUAL LINE ",
         Mode::Insert => " INSERT ",
         Mode::AnnotationList => " ANNOTATIONS ",
         Mode::Command => " COMMAND ",
@@ -145,6 +145,16 @@ mod tests {
         let props = base_props(Mode::Visual);
         let output = render_to_string(&props);
         assert!(output.contains("VISUAL"), "Expected VISUAL in: {output}");
+    }
+
+    #[test]
+    fn visual_line_mode_label() {
+        let props = base_props(Mode::VisualLine);
+        let output = render_to_string(&props);
+        assert!(
+            output.contains("VISUAL LINE"),
+            "Expected VISUAL LINE in: {output}"
+        );
     }
 
     #[test]
