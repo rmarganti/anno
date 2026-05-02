@@ -29,7 +29,8 @@ pub struct StatusBarProps<'a> {
 pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarProps) {
     let mode_label = match props.mode {
         Mode::Normal => " NORMAL ",
-        Mode::Visual => " VISUAL ",
+        // VisualLine reuses the VISUAL pill until the UI-polish ish refines it.
+        Mode::Visual | Mode::VisualLine => " VISUAL ",
         Mode::Insert => " INSERT ",
         Mode::AnnotationList => " ANNOTATIONS ",
         Mode::Command => " COMMAND ",
@@ -56,7 +57,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
                 "count+nav  Tab focus  Esc hide  H help".to_string()
             }
             Mode::Normal => "count+nav  Tab panel  H help".to_string(),
-            Mode::Visual => "count+nav  d/c/r annotate  Esc".to_string(),
+            Mode::Visual | Mode::VisualLine => "count+nav  d/c/r annotate  Esc".to_string(),
             Mode::Insert => "Ctrl+S confirm  Esc cancel".to_string(),
             Mode::AnnotationList if props.annotation_inspect_visible => {
                 "count+nav  Up/Down  Enter  Esc".to_string()

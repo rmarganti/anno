@@ -64,7 +64,7 @@ impl AppState {
     // issued from Normal/Visual mode before dispatching into the search actions.
     fn is_repeatable_navigation_action(&self, action: &Action) -> bool {
         match self.mode {
-            Mode::Normal | Mode::Visual => matches!(
+            Mode::Normal | Mode::Visual | Mode::VisualLine => matches!(
                 action,
                 Action::MoveUp
                     | Action::MoveDown

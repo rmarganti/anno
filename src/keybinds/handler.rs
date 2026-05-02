@@ -75,6 +75,7 @@ pub enum Action {
 
     // -- Mode transitions --
     EnterVisualMode,
+    EnterVisualLineMode,
     EnterCommandMode,
     EnterSearchMode {
         direction: SearchDirection,
@@ -170,6 +171,7 @@ impl Action {
                 | Action::ScrollOverlayPageDown
                 | Action::SearchNext
                 | Action::SearchPrev
+                | Action::EnterVisualLineMode
         )
     }
 
@@ -231,6 +233,7 @@ impl KeybindHandler {
         match mode {
             Mode::Normal => self.handle_normal(event),
             Mode::Visual => self.handle_visual(event),
+            Mode::VisualLine => self.handle_visual_line(event),
             Mode::Insert => self.handle_insert(event),
             Mode::AnnotationList => self.handle_annotation_list(event),
             Mode::Command => self.handle_command(event),
@@ -365,6 +368,9 @@ impl KeybindHandler {
 
             // Mode transitions
             (KeyCode::Char('v'), KeyModifiers::NONE) => self.finish_action(Action::EnterVisualMode),
+            (KeyCode::Char('V'), KeyModifiers::SHIFT) => {
+                self.finish_action(Action::EnterVisualLineMode)
+            }
             (KeyCode::Char('i'), KeyModifiers::NONE) => self.finish_action(Action::CreateInsertion),
             (KeyCode::Char(':'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.finish_action(Action::EnterCommandMode)
@@ -421,6 +427,60 @@ impl KeybindHandler {
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 self.finish_action(Action::CreateReplacement)
+            }
+
+            // Cancel selection
+            (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
+
+            _ => {
+                self.clear_pending();
+                Action::None
+            }
+        }
+    }
+
+    fn handle_visual_line(&mut self, event: KeyEvent) -> Action {
+        if let Some(pending) = self.pending.take() {
+            return self.resolve_visual_input(pending, event);
+        }
+
+        if self.consume_count_prefix(event) {
+            return Action::None;
+        }
+
+        if self.count_overflowed {
+            self.clear_pending();
+            return Action::None;
+        }
+
+        if let Some(action) = self.try_handle_char_search(event) {
+            return action;
+        }
+
+        if let Some(action) = self.handle_shared_navigation_key(event) {
+            return action;
+        }
+
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('g'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
+                Action::None
+            }
+            // Annotation creation from selection
+            (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
+            (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
+            (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                self.finish_action(Action::CreateReplacement)
+            }
+
+            // v/V toggles are wired in a follow-up ish; placeholder no-ops here.
+            (KeyCode::Char('v'), KeyModifiers::NONE) => {
+                self.clear_pending();
+                Action::None
+            }
+            (KeyCode::Char('V'), KeyModifiers::SHIFT) => {
+                self.clear_pending();
+                Action::None
             }
 
             // Cancel selection
@@ -1375,6 +1435,213 @@ mod tests {
         assert_eq!(h.handle(Mode::Visual, char_key('2')), Action::None);
         assert_eq!(h.handle(Mode::Visual, char_key('d')), Action::None);
         assert!(!h.has_pending());
+    }
+
+    // ── Visual Line mode ──────────────────────────────────────────
+
+    mod visual_line_mode_bindings {
+        use super::*;
+
+        #[test]
+        fn shift_v_in_normal_enters_visual_line_mode() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(
+                    Mode::Normal,
+                    key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+                ),
+                Action::EnterVisualLineMode
+            );
+        }
+
+        #[test]
+        fn counted_shift_v_wraps_in_repeat() {
+            let mut h = KeybindHandler::new();
+
+            assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+            assert_eq!(
+                h.handle(
+                    Mode::Normal,
+                    key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+                ),
+                repeated(Action::EnterVisualLineMode, 3)
+            );
+        }
+
+        #[test]
+        fn movement_keys_match_visual_mode() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(h.handle(Mode::VisualLine, char_key('j')), Action::MoveDown);
+            assert_eq!(h.handle(Mode::VisualLine, char_key('k')), Action::MoveUp);
+            assert_eq!(h.handle(Mode::VisualLine, char_key('h')), Action::MoveLeft);
+            assert_eq!(h.handle(Mode::VisualLine, char_key('l')), Action::MoveRight);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('w')),
+                Action::MoveWordForward
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('b')),
+                Action::MoveWordBackward
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('e')),
+                Action::MoveWordEnd
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('0')),
+                Action::MoveLineStart
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('$')),
+                Action::MoveLineEnd
+            );
+        }
+
+        #[test]
+        fn gj_and_gk_match_visual_mode() {
+            let mut h = KeybindHandler::new();
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('g')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('j')),
+                Action::MoveScreenDown
+            );
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('g')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('k')),
+                Action::MoveScreenUp
+            );
+        }
+
+        #[test]
+        fn char_search_sequences_emit_dedicated_actions() {
+            let mut h = KeybindHandler::new();
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('f')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('x')),
+                char_search('x', CharSearchDirection::Forward, false, 1)
+            );
+
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('F'), KeyModifiers::SHIFT)
+                ),
+                Action::None
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('y')),
+                char_search('y', CharSearchDirection::Backward, false, 1)
+            );
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('t')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('z')),
+                char_search('z', CharSearchDirection::Forward, true, 1)
+            );
+
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('T'), KeyModifiers::SHIFT)
+                ),
+                Action::None
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('q')),
+                char_search('q', CharSearchDirection::Backward, true, 1)
+            );
+
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key(';')),
+                repeated_char_search(RepeatDirection::Same, 1)
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key(',')),
+                repeated_char_search(RepeatDirection::Opposite, 1)
+            );
+        }
+
+        #[test]
+        fn search_keys_match_visual_mode() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('/')),
+                Action::EnterSearchMode {
+                    direction: SearchDirection::Forward,
+                }
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('?')),
+                Action::EnterSearchMode {
+                    direction: SearchDirection::Backward,
+                }
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('n')),
+                Action::SearchNext
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('N')),
+                Action::SearchPrev
+            );
+        }
+
+        #[test]
+        fn annotation_keys_match_visual_mode() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('d')),
+                Action::CreateDeletion
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('c')),
+                Action::CreateComment
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('r')),
+                Action::CreateReplacement
+            );
+        }
+
+        #[test]
+        fn esc_exits_to_normal() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(Mode::VisualLine, key(KeyCode::Esc)),
+                Action::ExitToNormal
+            );
+        }
+
+        #[test]
+        fn lowercase_v_is_placeholder_no_op() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(h.handle(Mode::VisualLine, char_key('v')), Action::None);
+        }
+
+        #[test]
+        fn shift_v_is_placeholder_no_op() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('V'), KeyModifiers::SHIFT)
+                ),
+                Action::None
+            );
+        }
+
+        #[test]
+        fn counted_motion_wraps_action() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(h.handle(Mode::VisualLine, char_key('5')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('j')),
+                repeated(Action::MoveDown, 5)
+            );
+        }
     }
 
     // ── Insert mode ───────────────────────────────────────────────

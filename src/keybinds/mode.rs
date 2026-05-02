@@ -6,6 +6,8 @@ pub enum Mode {
     Normal,
     /// Text selection mode, entered with `v`.
     Visual,
+    /// Linewise selection mode, entered with `V`.
+    VisualLine,
     /// Text input mode for comment/replacement/insertion text entry.
     Insert,
     /// Focused on the annotation list sidebar.
