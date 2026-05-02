@@ -1,6 +1,6 @@
 # MUST dos
 
-- **IMPORTANT**: before you do anything else, run the `beans prime` command and heed its output.
+- **IMPORTANT**: before you do anything else, run the `ish prime` command and heed its output.
 - All commit messages should following conventional commits. Examples:
     - `feat: added ability to do thing`
     - `fix: fixed some bug`
