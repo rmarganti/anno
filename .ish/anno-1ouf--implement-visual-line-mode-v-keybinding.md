@@ -1,14 +1,14 @@
 ---
 # anno-1ouf
 title: Implement Visual Line Mode (V) keybinding
-status: todo
+status: completed
 type: epic
 priority: normal
 tags:
 - visual-mode
 - vim-bindings
 created_at: 2026-05-02T02:40:56.479077Z
-updated_at: 2026-05-02T02:40:56.479077Z
+updated_at: 2026-05-02T15:00:00.000000Z
 ---
 
 ## Summary
@@ -72,3 +72,12 @@ cargo build --all-features
 Smoke test from a real session: open a multi-line file with
 `cargo run -- README.md`, press `V`, move with `j`/`k`, confirm entire rows
 highlight, press `d`, confirm the deletion annotation covers full lines.
+
+## Completion Notes
+
+- All child ishes are now completed: foundation (`anno-8o31`), selection
+  model (`anno-xrp9`), app-state integration (`anno-7ejd`), mode toggling
+  (`anno-1am6`), `[count]V` (`anno-6x5o`), UI polish (`anno-vzmd`), and
+  README docs (`anno-n4c8`).
+- The shared plan in [plan.md](../plan.md) contains the final design and
+  implementation notes future workers should rely on.

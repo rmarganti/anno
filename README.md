@@ -165,6 +165,7 @@ anno uses vim-inspired modal editing:
 | ------------------- | -------------------------------- | -------------- | --------- |
 | **Normal**          | Navigate the document            | Startup default | —         |
 | **Visual**          | Select text for annotations      | `v`            | `Esc`     |
+| **Visual Line**     | Select whole lines for annotations | `V`          | `Esc` or `V` |
 | **Insert**          | Enter annotation text            | Annotation flow | `Ctrl-S` or `Esc` |
 | **Search**          | Enter a `/` or `?` search pattern | `/` or `?`     | `Enter` or `Esc` |
 | **Annotation List** | Browse existing annotations      | `Tab`          | `Esc`     |
@@ -172,9 +173,9 @@ anno uses vim-inspired modal editing:
 
 ## Help Overlay
 
-Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. While the overlay is open, `H`, `Esc`, and `q` all close it. `?` is available for backward search now that help moved off that key.
+Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. Visual Line bindings appear under their own `Visual Line Mode` section alongside the existing `Visual Mode` section. While the overlay is open, `H`, `Esc`, and `q` all close it. `?` is available for backward search now that help moved off that key.
 
-Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Text search uses simple substring matching. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
+Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual Line mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `3V`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. In particular, `[count]V` enters Visual Line mode and selects `count` lines from the current row downward. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Text search uses simple substring matching. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
 
 ## Keybindings
 
@@ -213,6 +214,7 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `Ctrl-d/u`  | Move half page down/up            |
 | `Ctrl-f/b`  | Move full page down/up            |
 | `v`         | Enter visual mode                 |
+| `V`         | Enter visual line mode            |
 | `i`         | Create insertion annotation       |
 | `gc`        | Create global comment annotation  |
 | `]a/[a`     | Jump to next/previous annotation  |
@@ -234,7 +236,30 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, the an
 | `d`       | Create deletion annotation     |
 | `c`       | Create comment annotation      |
 | `r`       | Create replacement annotation  |
+| `V`       | Switch to visual line mode     |
 | `Esc`     | Cancel selection               |
+
+### Visual Line Mode
+
+| Key       | Action                         |
+| --------- | ------------------------------ |
+| `h/j/k/l` | Extend selection by line       |
+| `w/b/e`   | Extend selection by line / motion |
+| `0/$`     | Extend selection to line start/end |
+| `f/F/t/T` | Extend selection to / before a character on the current line |
+| `;` / `,` | Repeat the last successful char search / reverse it |
+| `/`       | Search forward and extend selection to match |
+| `?`       | Search backward and extend selection to match |
+| `n`       | Repeat search and extend selection to match |
+| `N`       | Repeat search in the opposite direction and extend selection to match |
+| `d`       | Create deletion annotation     |
+| `c`       | Create comment annotation      |
+| `r`       | Create replacement annotation  |
+| `v`       | Switch to charwise visual      |
+| `V`       | Exit visual line mode          |
+| `Esc`     | Cancel selection               |
+
+From Normal mode, `[count]V` selects `count` whole lines starting at the current row. Visual Line uses the same motion keys as Visual mode, but annotation creation always snaps to full lines and linewise selections include a trailing newline.
 
 ### Insert Mode
 
@@ -278,9 +303,9 @@ Deleting an annotation opens a confirmation dialog. Press `y` or `Enter` to conf
 
 | Type               | How to Create                                           |
 | ------------------ | ------------------------------------------------------- |
-| **Deletion**       | Select text in Visual mode, press `d`                   |
-| **Comment**        | Select text in Visual mode, press `c`, type comment     |
-| **Replacement**    | Select text in Visual mode, press `r`, type replacement |
+| **Deletion**       | Select text in Visual or Visual Line mode, press `d`                   |
+| **Comment**        | Select text in Visual or Visual Line mode, press `c`, type comment     |
+| **Replacement**    | Select text in Visual or Visual Line mode, press `r`, type replacement |
 | **Insertion**      | In Normal mode, press `i`, type text to insert          |
 | **Global Comment** | In Normal mode, press `gc`, type comment                |
 

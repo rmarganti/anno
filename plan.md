@@ -207,3 +207,9 @@ _Add timestamped notes here as decisions, surprises, or follow-ups come up._
   dedicated `Visual Line Mode` section instead of collapsing into a note
   under `Visual Mode`, so the README ish (`anno-n4c8`) should mirror that
   structure and include the explicit `V` Normal-mode entry.
+- 2026-05-02 (anno-n4c8, docs): [README.md](README.md) now mirrors the
+  shipped UI and behavior with a dedicated `Visual Line Mode` section,
+  an explicit `V` row in Normal mode, a `V` toggle row in Visual mode,
+  and `[count]V` called out in both the help-overlay prose and the mode-
+  specific docs. Annotation-type instructions now say `Visual or Visual
+  Line mode` so linewise annotation creation is documented end-to-end.

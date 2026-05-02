@@ -1,7 +1,7 @@
 ---
 # anno-n4c8
 title: Document Visual Line Mode in README
-status: todo
+status: completed
 type: task
 priority: low
 tags:
@@ -9,7 +9,7 @@ tags:
 - vim-bindings
 - docs
 created_at: 2026-05-02T02:43:31.573806Z
-updated_at: 2026-05-02T02:43:31.573806Z
+updated_at: 2026-05-02T15:00:00.000000Z
 parent: anno-1ouf
 blocked_by:
 - anno-1am6
@@ -81,7 +81,24 @@ cargo build --all-features
 Spot-check the README rendering locally if convenient (e.g. `glow` or your
 markdown previewer of choice). Confirm tables align and links are valid.
 
+## Implementation Notes
+
+- Updated [README.md](../README.md) to document `Visual Line` in the modes
+  table, the dedicated help-overlay section structure, `[count]V`, and the
+  `V` bindings in both Normal and Visual mode.
+- Added a standalone `Visual Line Mode` keybinding section that matches the
+  in-app help copy and documents linewise annotation semantics.
+- Broadened annotation-creation wording from `Visual mode` to `Visual or
+  Visual Line mode`.
+
+## Verification Results
+
+- `cargo fmt --all -- --check` ✓
+- `cargo test --all-features` ✓
+- `cargo clippy --all-targets --all-features -- -D warnings` ✓
+- `cargo build --all-features` ✓
+
 ## Closing The Epic
 
-Once this ish completes successfully, mark the epic `anno-1ouf` as
-`completed` (`ish update anno-1ouf -s completed`).
+This ish is complete; the parent epic `anno-1ouf` should also be marked
+`completed`.
