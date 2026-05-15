@@ -1,7 +1,7 @@
 ---
 # anno-banz
 title: Implement wheel navigation for document and annotation list contexts
-status: todo
+status: completed
 type: task
 priority: high
 tags:
@@ -9,7 +9,7 @@ tags:
 - input
 - navigation
 created_at: 2026-05-15T15:26:43.088755Z
-updated_at: 2026-05-15T15:26:43.571578Z
+updated_at: 2026-05-15T16:16:20.721673Z
 parent: anno-jml9
 blocking:
 - anno-e1jz
@@ -56,3 +56,15 @@ Likely code touchpoints:
   - `cargo test --all-features`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo build --all-features`
+
+## Implementation Notes
+- Extended `handle_vertical_wheel` in `src/app/app_state/mod.rs` to map wheel up/down onto existing `Action::MoveUp` / `Action::MoveDown` dispatch once overlay and modal checks have been handled.
+- Reused the existing document-action and annotation-list-action paths instead of adding mouse-only movement code, so Normal, Visual, Visual Line, and Annotation List semantics stay aligned with keyboard navigation.
+- Preserved no-fallthrough behavior by keeping insert/command/search/confirm-dialog wheel input inert and by relying on the underlying movement helpers' existing boundary clamping.
+- Added parity tests in `src/app/app_state/tests/mouse.rs` covering document movement, Visual/Visual Line selection behavior, annotation-list selection movement, and annotation-list boundary no-ops.
+
+## Completed Verification
+- `cargo fmt --all -- --check`
+- `cargo test --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo build --all-features`

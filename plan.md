@@ -2,7 +2,7 @@
 
 ## Mouse wheel scrolling feature
 - Parent ish: `anno-jml9` — support focused-context mouse wheel scrolling.
-- Selected next task: `anno-r40b` because it is the foundational, unblocked prerequisite for the remaining wheel-routing tasks.
+- Selected next task: `anno-banz` because it was the highest-value ready task after the plumbing and overlay routing landed, and it unlocked the remaining user-facing documentation work.
 
 ## Completed in `anno-r40b`
 - Enabled terminal mouse capture during app runtime and disabled it during normal and panic cleanup.
@@ -27,6 +27,18 @@
 - `handle_vertical_wheel` now owns focused-context precedence for wheel routing, so document/list support in `anno-banz` should extend the existing `else if` chain after overlay/modal checks.
 - Overlay wheel behavior reuses `scroll_help_*` and `scroll_annotation_inspect_*`; future work should keep reusing existing movement/scroll helpers rather than inventing mouse-only semantics.
 - Boundary behavior is now covered by mouse-specific tests in `src/app/app_state/tests/overlays.rs`, which should be a good pattern for document/list no-fallthrough tests.
+
+## Completed in `anno-banz`
+- Extended `AppState::handle_vertical_wheel` to reuse existing `Action::MoveUp` / `Action::MoveDown` dispatch for document navigation in Normal, Visual, and Visual Line modes.
+- Routed wheel input in Annotation List mode through the existing list-selection movement path, preserving auto-scroll-to-selection behavior.
+- Kept the overlay/modal precedence from `anno-d4rv`: help and inspect still win first, and insert/command/search/confirm-dialog remain inert for wheel input.
+- Added mouse-wheel regression tests proving parity with keyboard navigation in Normal, Visual, Visual Line, and Annotation List contexts.
+- Added annotation-list boundary tests proving wheel events no-op at the ends instead of falling through to document navigation.
+
+## Notes for follow-on tasks after `anno-banz`
+- The only remaining wheel-scrolling child ish is `anno-e1jz`, which is now unblocked and should focus on README/help text only.
+- Mouse routing parity is covered in `src/app/app_state/tests/mouse.rs`; future behavior tweaks should keep those parity assertions aligned with the keyboard paths rather than duplicating movement logic.
+- `handle_vertical_wheel` now centralizes all v1 wheel-context routing, so any future pointer-hit-testing work should likely branch from there instead of bypassing it.
 
 ## Validation
 - `cargo fmt --all -- --check`

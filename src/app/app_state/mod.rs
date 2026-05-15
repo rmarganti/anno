@@ -44,6 +44,11 @@ impl AppState {
     }
 
     fn handle_vertical_wheel(&mut self, direction: VerticalWheelDirection) {
+        let movement = match direction {
+            VerticalWheelDirection::Up => Action::MoveUp,
+            VerticalWheelDirection::Down => Action::MoveDown,
+        };
+
         if self.help_visible {
             match direction {
                 VerticalWheelDirection::Up => self.scroll_help_up(1),
@@ -55,6 +60,12 @@ impl AppState {
                 VerticalWheelDirection::Up => self.scroll_annotation_inspect_up(1),
                 VerticalWheelDirection::Down => self.scroll_annotation_inspect_down(1),
             }
+        } else if matches!(self.mode, Mode::Insert | Mode::Command | Mode::Search) {
+        } else if matches!(
+            self.mode,
+            Mode::Normal | Mode::Visual | Mode::VisualLine | Mode::AnnotationList
+        ) {
+            self.dispatch_action(movement);
         }
     }
 
