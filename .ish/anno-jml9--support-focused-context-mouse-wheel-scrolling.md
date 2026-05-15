@@ -1,7 +1,7 @@
 ---
 # anno-jml9
 title: Support focused-context mouse wheel scrolling
-status: todo
+status: completed
 type: feature
 priority: high
 tags:
@@ -9,7 +9,7 @@ tags:
 - input
 - tui
 created_at: 2026-05-15T15:26:42.532860Z
-updated_at: 2026-05-15T15:26:42.532860Z
+updated_at: 2026-05-15T16:21:11.178928Z
 ---
 
 ## Context
@@ -49,3 +49,16 @@ None.
 ## Verification
 - `ish roadmap` shows a coherent hierarchy and dependency graph for the wheel-scrolling work.
 - `ish check` passes.
+
+## Implementation Notes
+- Completed the feature via four child tasks: mouse event plumbing (`anno-r40b`), overlay/modal routing (`anno-d4rv`), document and annotation-list routing (`anno-banz`), and user-facing documentation (`anno-e1jz`).
+- Final shipped v1 behavior is focused-context vertical wheel support only: document navigation mirrors `j`/`k`, annotation list movement mirrors its existing selection navigation, help and annotation inspect reuse their existing scroll helpers, and insert/command/search/confirm-dialog contexts remain inert.
+- Mouse-wheel parity and no-fallthrough behavior are now covered in `src/app/app_state/tests/mouse.rs` and `src/app/app_state/tests/overlays.rs`; README and in-app help are aligned on the supported contexts and limitations.
+
+## Completed Verification
+- `ish roadmap`
+- `ish check`
+- `cargo fmt --all -- --check`
+- `cargo test --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo build --all-features`

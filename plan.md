@@ -51,6 +51,16 @@
 - The help overlay render tests are somewhat height-sensitive because they assert on visible sections; if more help rows are added later, prefer raising fixture heights instead of weakening the assertions.
 - With `anno-e1jz` done, the mouse-wheel child tasks under `anno-jml9` are complete, so the parent feature ish is ready for wrap-up.
 
+## Completed in `anno-jml9`
+- Reviewed the ready ishes and selected the parent feature wrap-up as the strongest next action because every child task for mouse-wheel support was already completed and validated.
+- Confirmed the focused-context wheel-scrolling hierarchy remains coherent in ish and that the feature can now be treated as complete end-to-end.
+- Re-ran the full required validation suite after the feature-series landed and recorded the result for future workers.
+
+## Notes for future workers after `anno-jml9`
+- v1 wheel support is now complete for document navigation, annotation list navigation, help scrolling, and annotation inspect scrolling, with ignored modal/input contexts and no-fallthrough boundaries covered by tests.
+- Future mouse work should treat `AppState::handle_vertical_wheel` as the central routing point; pointer hit-testing, horizontal wheel support, or richer gestures should build from that entrypoint rather than bypassing it.
+- The parent feature ish is completed, so any follow-on mouse work should be tracked as a new ish instead of reopening the original rollout tasks unless regressions are found.
+
 ## Validation
 - `cargo fmt --all -- --check`
 - `cargo test --all-features`
