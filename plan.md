@@ -40,6 +40,17 @@
 - Mouse routing parity is covered in `src/app/app_state/tests/mouse.rs`; future behavior tweaks should keep those parity assertions aligned with the keyboard paths rather than duplicating movement logic.
 - `handle_vertical_wheel` now centralizes all v1 wheel-context routing, so any future pointer-hit-testing work should likely branch from there instead of bypassing it.
 
+## Completed in `anno-e1jz`
+- Documented vertical mouse wheel support in `README.md`, including focused-context routing, supported contexts, ignored contexts, and silent degradation when terminals do not emit wheel events.
+- Added explicit `Wheel ↑/↓` discoverability rows to the README keybinding tables for Normal, Visual, Visual Line, and Annotation List contexts plus a global overview row.
+- Updated `src/keybinds/help_content.rs` so the in-app help overlay advertises the same wheel behavior as the README.
+- Adjusted `src/tui/help_overlay.rs` tests to use taller render fixtures now that the help overlay contains additional wheel documentation.
+
+## Notes for future workers after `anno-e1jz`
+- README and in-app help are now intentionally aligned on wheel wording; update both together if wheel semantics change.
+- The help overlay render tests are somewhat height-sensitive because they assert on visible sections; if more help rows are added later, prefer raising fixture heights instead of weakening the assertions.
+- With `anno-e1jz` done, the mouse-wheel child tasks under `anno-jml9` are complete, so the parent feature ish is ready for wrap-up.
+
 ## Validation
 - `cargo fmt --all -- --check`
 - `cargo test --all-features`

@@ -1,7 +1,7 @@
 ---
 # anno-e1jz
 title: Document mouse wheel behavior in README and in-app help
-status: todo
+status: completed
 type: task
 priority: normal
 tags:
@@ -9,7 +9,7 @@ tags:
 - docs
 - ux
 created_at: 2026-05-15T15:26:43.411068Z
-updated_at: 2026-05-15T15:26:43.411068Z
+updated_at: 2026-05-15T16:19:44.823930Z
 parent: anno-jml9
 blocked_by:
 - anno-banz
@@ -49,3 +49,17 @@ Likely documentation touchpoints:
   - `cargo test --all-features`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo build --all-features`
+
+
+
+## Implementation Notes
+- Documented wheel support in `README.md` with focused-context routing details, supported contexts, ignored contexts, and silent fallback when terminals do not emit wheel events.
+- Added explicit `Wheel ↑/↓` rows to the README keybinding tables for Global, Normal, Visual, Visual Line, and Annotation List discoverability.
+- Updated `src/keybinds/help_content.rs` so the in-app help overlay mirrors the README's wheel behavior descriptions.
+- Increased the help overlay test fixture heights in `src/tui/help_overlay.rs` so section-order and no-scroll-indicator assertions remain stable after the additional help rows.
+
+## Completed Verification
+- `cargo fmt --all -- --check`
+- `cargo test --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo build --all-features`

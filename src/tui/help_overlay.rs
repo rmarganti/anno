@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn renders_section_titles() {
-        let output = render_to_lines(80, 24).join("\n");
+        let output = render_to_lines(80, 40).join("\n");
         assert!(
             output.contains("Normal Mode"),
             "Expected section title in: {output}"
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn omits_scroll_indicators_when_help_fits() {
-        let output = render_to_lines(120, 96).join("\n");
+        let output = render_to_lines(120, 120).join("\n");
         assert!(
             !output.contains('▼'),
             "Did not expect ▼ indicator in: {output}"
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn sections_follow_hardcoded_order() {
-        let output = render_to_lines(80, 50);
+        let output = render_to_lines(80, 80);
         let global_row = output.iter().position(|l| l.contains("Global"));
         let normal_row = output.iter().position(|l| l.contains("Normal Mode"));
         let insert_row = output.iter().position(|l| l.contains("Insert Mode"));
