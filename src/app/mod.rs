@@ -97,11 +97,16 @@ impl App {
                 self.render(frame);
             })?;
 
-            if event::poll(Duration::from_millis(100))?
-                && let Event::Key(key_event) = event::read()?
-                && key_event.kind == KeyEventKind::Press
-            {
-                self.state.handle_key(key_event);
+            if event::poll(Duration::from_millis(100))? {
+                match event::read()? {
+                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                        self.state.handle_key(key_event);
+                    }
+                    Event::Mouse(mouse_event) => {
+                        self.state.handle_mouse(mouse_event);
+                    }
+                    _ => {}
+                }
             }
         }
 

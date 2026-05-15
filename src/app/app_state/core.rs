@@ -15,6 +15,12 @@ use crate::tui::viewport::CursorPosition;
 
 pub(super) const ANNOTATION_INSPECT_PAGE_SCROLL_LINES: u16 = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VerticalWheelDirection {
+    Up,
+    Down,
+}
+
 /// Tracks the kind of annotation being created via the input box.
 #[derive(Debug, Clone)]
 pub(super) enum PendingAnnotation {

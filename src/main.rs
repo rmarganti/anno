@@ -15,6 +15,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::flag;
 
@@ -71,6 +75,7 @@ fn main() {
     // Install a panic hook that restores the terminal before printing.
     let default_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
         ratatui::restore();
         default_hook(info);
     }));
@@ -83,7 +88,14 @@ fn main() {
     flag::register(SIGHUP, Arc::clone(&signal_flag)).ok();
 
     let mut terminal = ratatui::init();
+    if let Err(e) = execute!(io::stdout(), EnableMouseCapture) {
+        ratatui::restore();
+        eprintln!("Error: {e}");
+        process::exit(1);
+    }
+
     let result = app.run(&mut terminal, &signal_flag);
+    let _ = execute!(io::stdout(), DisableMouseCapture);
     ratatui::restore();
 
     match result {
