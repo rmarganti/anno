@@ -119,8 +119,64 @@ fn annotation_inspect_scroll_offset_clamps_at_content_end() {
 }
 
 #[test]
+fn mouse_wheel_scrolls_annotation_inspect_without_changing_selection() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+    harness
+        .state_mut()
+        .annotations_mut()
+        .add(Annotation::comment(
+            range(0, 0, 0, 5),
+            "alpha".into(),
+            (0..24)
+                .map(|idx| format!("detail line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+
+    harness.keys("<Tab>k ");
+    let selected_id = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    assert!(harness.mouse_scroll_down());
+    assert_eq!(harness.state().annotation_inspect_scroll_offset(), 1);
+    assert_eq!(
+        harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id(),
+        selected_id
+    );
+
+    assert!(harness.mouse_scroll_up());
+    assert_eq!(harness.state().annotation_inspect_scroll_offset(), 0);
+    assert_eq!(
+        harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id(),
+        selected_id
+    );
+}
+
+#[test]
 fn shift_h_toggles_help_on_from_normal_mode() {
     harness("hello").keys("H").assert_help_visible();
+}
+
+#[test]
+fn mouse_wheel_scrolls_help_overlay_without_moving_cursor() {
+    let mut harness = harness("hello\nworld");
+    harness.keys("jH").assert_help_visible();
+
+    assert!(harness.mouse_scroll_down());
+    assert_eq!(harness.state().help_scroll_offset(), 1);
+    harness.assert_cursor(1, 0);
+
+    assert!(harness.mouse_scroll_up());
+    assert_eq!(harness.state().help_scroll_offset(), 0);
+    harness.assert_cursor(1, 0);
 }
 
 #[test]
@@ -373,6 +429,30 @@ fn dd_is_disabled_while_annotation_inspect_is_open() {
 }
 
 #[test]
+fn mouse_wheel_is_ignored_while_confirm_dialog_is_open() {
+    let mut harness = harness("alpha\nbeta");
+
+    harness.keys("vld<Tab>dd").assert_has_confirm_dialog();
+
+    assert!(harness.mouse_scroll_down());
+    harness
+        .assert_has_confirm_dialog()
+        .assert_annotation_count(1)
+        .assert_mode(Mode::AnnotationList);
+}
+
+#[test]
+fn mouse_wheel_is_ignored_in_input_taking_modes() {
+    for mode in [Mode::Insert, Mode::Command, Mode::Search] {
+        let mut harness = harness("alpha\nbeta");
+        harness.state_mut().set_mode_for_test(mode);
+
+        assert!(harness.mouse_scroll_down());
+        harness.assert_mode(mode).assert_cursor(0, 0);
+    }
+}
+
+#[test]
 fn narrow_terminal_closes_annotation_inspect_and_returns_to_normal() {
     let mut harness = harness("alpha\nbeta");
 
@@ -450,6 +530,24 @@ fn help_scroll_offset_clamps_at_content_end_and_recovers_immediately() {
 }
 
 #[test]
+fn mouse_wheel_at_help_boundary_does_not_fall_through() {
+    let mut harness = harness("alpha\nbeta");
+    let expected_max = help_overlay_max_scroll_offset(80, 23);
+
+    harness.keys("jH");
+    for _ in 0..200 {
+        assert!(harness.mouse_scroll_down());
+    }
+
+    assert_eq!(harness.state().help_scroll_offset(), expected_max);
+    harness.assert_cursor(1, 0);
+
+    assert!(harness.mouse_scroll_down());
+    assert_eq!(harness.state().help_scroll_offset(), expected_max);
+    harness.assert_cursor(1, 0);
+}
+
+#[test]
 fn dismiss_keys_work_regardless_of_scroll_position() {
     harness("hello")
         .keys("Hjjj<Esc>")
@@ -465,4 +563,63 @@ fn dismiss_keys_work_regardless_of_scroll_position() {
         .keys("HjjjH")
         .assert_help_hidden()
         .assert_mode(Mode::Normal);
+}
+
+#[test]
+fn mouse_wheel_at_annotation_inspect_boundary_does_not_fall_through() {
+    let mut harness = harness("alpha\nbeta\ngamma");
+    harness
+        .state_mut()
+        .annotations_mut()
+        .add(Annotation::comment(
+            range(0, 0, 0, 5),
+            "alpha".into(),
+            (0..48)
+                .map(|idx| format!("detail line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+
+    harness.keys("<Tab>k ");
+    let expected_max = max_scroll_offset(
+        harness
+            .state()
+            .selected_annotation()
+            .expect("inspect selection should exist"),
+        80,
+        23,
+    );
+    let selected_id = harness
+        .state()
+        .annotation_list_panel()
+        .selected_annotation_id();
+
+    for _ in 0..200 {
+        assert!(harness.mouse_scroll_down());
+    }
+
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        expected_max
+    );
+    assert_eq!(
+        harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id(),
+        selected_id
+    );
+
+    assert!(harness.mouse_scroll_down());
+    assert_eq!(
+        harness.state().annotation_inspect_scroll_offset(),
+        expected_max
+    );
+    assert_eq!(
+        harness
+            .state()
+            .annotation_list_panel()
+            .selected_annotation_id(),
+        selected_id
+    );
 }

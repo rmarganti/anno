@@ -17,6 +17,17 @@
 - `handle_mouse` already returns whether an event was recognized as supported wheel input, which should help future routing tests.
 - Current cleanup disables mouse capture both on the normal exit path and in the panic hook.
 
+## Completed in `anno-d4rv`
+- Routed wheel events through overlay precedence before any future document/list handling: help overlay first, confirm dialog ignore, then annotation inspect overlay.
+- Mapped wheel up/down to the existing single-step help and annotation inspect scroll helpers instead of introducing parallel scroll behavior.
+- Explicitly kept wheel input inert in confirm-dialog, insert, command, and search contexts.
+- Added mouse-wheel tests covering help/inspect scrolling, ignored contexts, and boundary no-fallthrough behavior.
+
+## Notes for follow-on tasks after `anno-d4rv`
+- `handle_vertical_wheel` now owns focused-context precedence for wheel routing, so document/list support in `anno-banz` should extend the existing `else if` chain after overlay/modal checks.
+- Overlay wheel behavior reuses `scroll_help_*` and `scroll_annotation_inspect_*`; future work should keep reusing existing movement/scroll helpers rather than inventing mouse-only semantics.
+- Boundary behavior is now covered by mouse-specific tests in `src/app/app_state/tests/overlays.rs`, which should be a good pattern for document/list no-fallthrough tests.
+
 ## Validation
 - `cargo fmt --all -- --check`
 - `cargo test --all-features`

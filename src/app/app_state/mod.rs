@@ -44,7 +44,18 @@ impl AppState {
     }
 
     fn handle_vertical_wheel(&mut self, direction: VerticalWheelDirection) {
-        let _ = direction;
+        if self.help_visible {
+            match direction {
+                VerticalWheelDirection::Up => self.scroll_help_up(1),
+                VerticalWheelDirection::Down => self.scroll_help_down(1),
+            }
+        } else if self.confirm_dialog.is_some() {
+        } else if self.annotation_inspect_visible {
+            match direction {
+                VerticalWheelDirection::Up => self.scroll_annotation_inspect_up(1),
+                VerticalWheelDirection::Down => self.scroll_annotation_inspect_down(1),
+            }
+        }
     }
 
     fn dispatch_action(&mut self, action: Action) {

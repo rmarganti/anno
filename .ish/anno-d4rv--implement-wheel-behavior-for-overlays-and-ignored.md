@@ -1,7 +1,7 @@
 ---
 # anno-d4rv
 title: Implement wheel behavior for overlays and ignored modal contexts
-status: todo
+status: completed
 type: task
 priority: high
 tags:
@@ -9,7 +9,7 @@ tags:
 - input
 - overlay
 created_at: 2026-05-15T15:26:43.246153Z
-updated_at: 2026-05-15T15:26:43.585978Z
+updated_at: 2026-05-15T16:12:54.872673Z
 parent: anno-jml9
 blocking:
 - anno-e1jz
@@ -59,3 +59,16 @@ Likely code touchpoints:
   - `cargo test --all-features`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo build --all-features`
+
+
+## Implementation Notes
+- Routed `handle_vertical_wheel` through the established overlay precedence: help overlay first, confirm dialog ignore, then annotation inspect overlay.
+- Reused `scroll_help_up/down` and `scroll_annotation_inspect_up/down` so wheel input mirrors existing single-step overlay scrolling exactly.
+- Left wheel events inert in insert, command, and search modes so future document/list routing can extend the same precedence chain without changing modal behavior.
+- Added mouse-wheel regression tests in `src/app/app_state/tests/overlays.rs` for help/inspect scrolling, ignored modal contexts, and boundary no-fallthrough behavior.
+
+## Completed Verification
+- `cargo fmt --all -- --check`
+- `cargo test --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo build --all-features`

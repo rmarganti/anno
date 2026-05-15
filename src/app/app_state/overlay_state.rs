@@ -161,14 +161,14 @@ impl AppState {
         }
     }
 
-    fn scroll_help_down(&mut self, lines: u16) {
+    pub(super) fn scroll_help_down(&mut self, lines: u16) {
         self.help_scroll_offset = self
             .help_scroll_offset
             .saturating_add(lines)
             .min(self.help_max_scroll_offset());
     }
 
-    fn scroll_help_up(&mut self, lines: u16) {
+    pub(super) fn scroll_help_up(&mut self, lines: u16) {
         self.help_scroll_offset = self
             .help_scroll_offset
             .min(self.help_max_scroll_offset())
@@ -184,14 +184,14 @@ impl AppState {
         help_overlay_max_scroll_offset(width, height)
     }
 
-    fn scroll_annotation_inspect_down(&mut self, lines: u16) {
+    pub(super) fn scroll_annotation_inspect_down(&mut self, lines: u16) {
         self.annotation_inspect_scroll_offset = self
             .annotation_inspect_scroll_offset
             .saturating_add(lines)
             .min(self.annotation_inspect_max_scroll_offset());
     }
 
-    fn scroll_annotation_inspect_up(&mut self, lines: u16) {
+    pub(super) fn scroll_annotation_inspect_up(&mut self, lines: u16) {
         self.annotation_inspect_scroll_offset = self
             .annotation_inspect_scroll_offset
             .min(self.annotation_inspect_max_scroll_offset())
