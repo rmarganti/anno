@@ -10,12 +10,12 @@ mod test_harness;
 #[cfg(test)]
 mod test_support;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent, MouseEventKind};
 
 #[cfg(test)]
 use self::core::ANNOTATION_INSPECT_PAGE_SCROLL_LINES;
 pub(super) use self::core::AppState;
-use self::core::PendingAnnotation;
+use self::core::{PendingAnnotation, VerticalWheelDirection};
 use crate::annotation::types::{Annotation, TextPosition};
 use crate::keybinds::handler::Action;
 use crate::keybinds::mode::Mode;
@@ -30,6 +30,43 @@ impl AppState {
 
         let action = self.keybinds.handle(self.mode, key_event);
         self.dispatch_action(action);
+    }
+
+    pub fn handle_mouse(&mut self, mouse_event: MouseEvent) -> bool {
+        let direction = match mouse_event.kind {
+            MouseEventKind::ScrollUp => VerticalWheelDirection::Up,
+            MouseEventKind::ScrollDown => VerticalWheelDirection::Down,
+            _ => return false,
+        };
+
+        self.handle_vertical_wheel(direction);
+        true
+    }
+
+    fn handle_vertical_wheel(&mut self, direction: VerticalWheelDirection) {
+        let movement = match direction {
+            VerticalWheelDirection::Up => Action::MoveUp,
+            VerticalWheelDirection::Down => Action::MoveDown,
+        };
+
+        if self.help_visible {
+            match direction {
+                VerticalWheelDirection::Up => self.scroll_help_up(1),
+                VerticalWheelDirection::Down => self.scroll_help_down(1),
+            }
+        } else if self.confirm_dialog.is_some() {
+        } else if self.annotation_inspect_visible {
+            match direction {
+                VerticalWheelDirection::Up => self.scroll_annotation_inspect_up(1),
+                VerticalWheelDirection::Down => self.scroll_annotation_inspect_down(1),
+            }
+        } else if matches!(self.mode, Mode::Insert | Mode::Command | Mode::Search) {
+        } else if matches!(
+            self.mode,
+            Mode::Normal | Mode::Visual | Mode::VisualLine | Mode::AnnotationList
+        ) {
+            self.dispatch_action(movement);
+        }
     }
 
     fn dispatch_action(&mut self, action: Action) {

@@ -40,6 +40,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("n / N", "Repeat search / reverse direction"),
                 entry("4d / 5dd", "Counted mutation commands are unsupported"),
                 entry("Tab", "Toggle annotation panel focus"),
+                entry("Wheel ↑/↓", "Scroll the focused document/list/overlay"),
             ],
         },
         HelpSection {
@@ -70,6 +71,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("gc", "Create global comment annotation"),
                 entry("]a/[a", "Jump to next/previous annotation"),
                 entry("Esc", "Hide annotation panel"),
+                entry("Wheel ↑/↓", "Move like k / j"),
             ],
         },
         HelpSection {
@@ -98,6 +100,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
                 entry("Esc", "Cancel selection"),
+                entry("Wheel ↑/↓", "Extend selection like k / j"),
             ],
         },
         HelpSection {
@@ -116,6 +119,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("v", "Switch to charwise visual"),
                 entry("V", "Exit visual line mode"),
                 entry("Esc", "Cancel selection"),
+                entry("Wheel ↑/↓", "Extend selection like k / j"),
             ],
         },
         HelpSection {
@@ -144,6 +148,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("Tab", "Unfocus annotation panel"),
                 entry("dd", "Delete selected annotation"),
                 entry("Esc", "Hide annotation panel"),
+                entry("Wheel ↑/↓", "Move selection like k / j"),
             ],
         },
         HelpSection {
@@ -248,6 +253,10 @@ mod tests {
                         keys: "Tab",
                         action: "Toggle annotation panel focus"
                     },
+                    HelpEntry {
+                        keys: "Wheel ↑/↓",
+                        action: "Scroll the focused document/list/overlay"
+                    },
                 ],
             }
         );
@@ -320,6 +329,7 @@ mod tests {
             "Jump to next/previous annotation"
         ));
         assert!(contains_entry(&sections[1], "Esc", "Hide annotation panel"));
+        assert!(contains_entry(&sections[1], "Wheel ↑/↓", "Move like k / j"));
 
         assert!(contains_entry(
             &sections[2],
@@ -372,6 +382,11 @@ mod tests {
             "Create replacement annotation"
         ));
         assert!(contains_entry(&sections[2], "Esc", "Cancel selection"));
+        assert!(contains_entry(
+            &sections[2],
+            "Wheel ↑/↓",
+            "Extend selection like k / j"
+        ));
 
         assert!(contains_entry(
             &sections[3],
@@ -430,6 +445,11 @@ mod tests {
         ));
         assert!(contains_entry(&sections[3], "V", "Exit visual line mode"));
         assert!(contains_entry(&sections[3], "Esc", "Cancel selection"));
+        assert!(contains_entry(
+            &sections[3],
+            "Wheel ↑/↓",
+            "Extend selection like k / j"
+        ));
 
         assert!(contains_entry(&sections[4], "Ctrl-S", "Confirm input"));
         assert!(contains_entry(&sections[4], "Esc", "Cancel input"));
@@ -474,6 +494,11 @@ mod tests {
             "Delete selected annotation"
         ));
         assert!(contains_entry(&sections[6], "Esc", "Hide annotation panel"));
+        assert!(contains_entry(
+            &sections[6],
+            "Wheel ↑/↓",
+            "Move selection like k / j"
+        ));
 
         assert!(contains_entry(&sections[7], ":q", "Quit"));
         assert!(contains_entry(&sections[7], ":q!", "Force quit"));

@@ -15,6 +15,7 @@ mod annotations;
 mod commands;
 mod construction;
 mod modes;
+mod mouse;
 mod navigation;
 mod overlays;
 mod panel;

@@ -173,7 +173,9 @@ anno uses vim-inspired modal editing:
 
 ## Help Overlay
 
-Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. Visual Line bindings appear under their own `Visual Line Mode` section alongside the existing `Visual Mode` section. While the overlay is open, `H`, `Esc`, and `q` all close it. `?` is available for backward search now that help moved off that key.
+Press `H` to toggle the in-app help overlay. It shows the same global bindings, mode-specific keys, and commands documented below. Visual Line bindings appear under their own `Visual Line Mode` section alongside the existing `Visual Mode` section. While the overlay is open, `H`, `Esc`, and `q` all close it, and the mouse wheel scrolls the overlay one step at a time. `?` is available for backward search now that help moved off that key.
+
+Vertical mouse wheel scrolling mirrors existing keyboard behavior in the currently focused scrollable context: the document in Normal, Visual, and Visual Line modes (`k` / `j`); the annotation list selection (`k` / `j`); the help overlay; and the annotation inspect overlay. Wheel input is intentionally ignored in insert/input, command, search, and confirmation contexts, and terminals that do not report wheel events simply fall back to keyboard-only navigation.
 
 Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual Line mode, the annotation list, and scrollable overlays. For example, `2j`, `3w`, `3V`, `4]a`, `2fa`, and `10j` repeat the existing navigation action. In particular, `[count]V` enters Visual Line mode and selects `count` lines from the current row downward. Character-search motions `f`, `F`, `t`, and `T` stay on the current logical line, accept punctuation and digit targets, and treat bare `0` as a target when it follows a pending char-search key. `;` repeats the last successful char search in the same direction, while `,` repeats it in the opposite direction. Text search uses simple substring matching. Counted mutation commands such as `4d` and `5dd` are intentionally unsupported.
 
@@ -196,6 +198,7 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `n` / `N` | Repeat the last search / reverse its direction |
 | `4d`, `5dd` | Unsupported counted mutation commands |
 | `Tab`    | Toggle annotation panel focus |
+| `Wheel ↑/↓` | Scroll the focused document/list/overlay where supported |
 
 ### Normal Mode
 
@@ -219,6 +222,7 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `gc`        | Create global comment annotation  |
 | `]a/[a`     | Jump to next/previous annotation  |
 | `Esc`       | Hide annotation panel             |
+| `Wheel ↑/↓` | Move like `k` / `j`               |
 
 ### Visual Mode
 
@@ -238,6 +242,7 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `r`       | Create replacement annotation  |
 | `V`       | Switch to visual line mode     |
 | `Esc`     | Cancel selection               |
+| `Wheel ↑/↓` | Extend selection like `k` / `j` |
 
 ### Visual Line Mode
 
@@ -258,6 +263,7 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `v`       | Switch to charwise visual      |
 | `V`       | Exit visual line mode          |
 | `Esc`     | Cancel selection               |
+| `Wheel ↑/↓` | Extend selection like `k` / `j` |
 
 From Normal mode, `[count]V` selects `count` whole lines starting at the current row. Visual Line uses the same motion keys as Visual mode, but annotation creation always snaps to full lines and linewise selections include a trailing newline.
 
@@ -288,6 +294,7 @@ From Normal mode, `[count]V` selects `count` whole lines starting at the current
 | `Tab`   | Unfocus annotation panel      |
 | `dd`    | Delete selected annotation    |
 | `Esc`   | Hide annotation panel         |
+| `Wheel ↑/↓` | Move selection like `k` / `j` |
 
 Deleting an annotation opens a confirmation dialog. Press `y` or `Enter` to confirm, or `n` or `Esc` to cancel.
 

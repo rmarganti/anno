@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use super::AppState;
@@ -40,6 +40,23 @@ impl AppTestHarness {
             self.state.handle_key(key_event);
         }
         self
+    }
+
+    pub(crate) fn mouse(&mut self, kind: MouseEventKind) -> bool {
+        self.state.handle_mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    pub(crate) fn mouse_scroll_up(&mut self) -> bool {
+        self.mouse(MouseEventKind::ScrollUp)
+    }
+
+    pub(crate) fn mouse_scroll_down(&mut self) -> bool {
+        self.mouse(MouseEventKind::ScrollDown)
     }
 
     pub(crate) fn state(&self) -> &AppState {
