@@ -128,9 +128,6 @@ pub enum Action {
     // -- Word wrap --
     ToggleWordWrap,
 
-    // -- Quit --
-    ForceQuit,
-
     // -- Counted actions --
     Repeat {
         action: Box<Action>,
@@ -251,7 +248,9 @@ impl KeybindHandler {
         }
 
         match (event.code, event.modifiers) {
-            (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+            (KeyCode::Esc, _)
+            | (KeyCode::Char('q'), KeyModifiers::NONE)
+            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 self.clear_pending();
                 Action::ToggleHelp
             }
@@ -282,7 +281,7 @@ impl KeybindHandler {
             }
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 self.clear_pending();
-                Action::ForceQuit
+                Action::ExitToNormal
             }
             _ => self.handle_counted_overlay_navigation(event, |handler, event| {
                 match (event.code, event.modifiers) {
@@ -437,6 +436,10 @@ impl KeybindHandler {
 
             // Cancel selection
             (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                self.clear_pending();
+                Action::ExitToNormal
+            }
 
             _ => {
                 self.clear_pending();
@@ -491,6 +494,10 @@ impl KeybindHandler {
 
             // Cancel selection
             (KeyCode::Esc, _) => self.finish_action(Action::ExitToNormal),
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                self.clear_pending();
+                Action::ExitToNormal
+            }
 
             _ => {
                 self.clear_pending();
@@ -640,16 +647,13 @@ impl KeybindHandler {
             (KeyCode::Char('N'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 Some(self.finish_action(Action::SearchPrev))
             }
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                Some(self.finish_action(Action::ForceQuit))
-            }
             _ => None,
         }
     }
 
     fn handle_insert(&mut self, event: KeyEvent) -> Action {
         if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
-            Action::ForceQuit
+            Action::ExitToNormal
         } else {
             Action::InputForward(event)
         }
@@ -686,8 +690,8 @@ impl KeybindHandler {
             (KeyCode::Tab, _) => self.finish_action(Action::EnterAnnotationListMode),
             (KeyCode::Esc, _) => self.finish_action(Action::HideAnnotationList),
 
-            // Ctrl-C — force quit
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ForceQuit),
+            // Ctrl-C — exit to normal mode
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.finish_action(Action::ExitToNormal),
 
             // dd starter
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
@@ -816,7 +820,7 @@ impl KeybindHandler {
 
     fn handle_command(&mut self, event: KeyEvent) -> Action {
         if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
-            return Action::ForceQuit;
+            return Action::ExitToNormal;
         }
 
         match event.code {
@@ -830,7 +834,7 @@ impl KeybindHandler {
 
     fn handle_search(&mut self, event: KeyEvent) -> Action {
         if event.code == KeyCode::Char('c') && event.modifiers.contains(KeyModifiers::CONTROL) {
-            return Action::ForceQuit;
+            return Action::ExitToNormal;
         }
 
         match event.code {

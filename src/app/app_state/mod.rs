@@ -247,10 +247,6 @@ impl AppState {
                 self.handle_normal_annotation_action(action)
             }
             Action::InputForward(_) => self.handle_input_mode_action(action),
-            Action::ForceQuit => {
-                self.should_quit = true;
-                true
-            }
             _ => false,
         }
     }

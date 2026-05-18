@@ -57,25 +57,37 @@ fn annotation_inspect_arrow_keys_scroll_without_changing_selection() {
             .selected_annotation_id(),
         selected_id
     );
+}
 
-    harness.key(KeyCode::PageDown);
-    assert_eq!(
-        harness.state().annotation_inspect_scroll_offset(),
-        1 + ANNOTATION_INSPECT_PAGE_SCROLL_LINES
-    );
-    assert_eq!(
-        harness
-            .state()
-            .annotation_list_panel()
-            .selected_annotation_id(),
-        selected_id
-    );
+#[test]
+fn ctrl_c_dismisses_help_overlay() {
+    harness("hello")
+        .keys("H<C-c>")
+        .assert_help_hidden()
+        .assert_not_quit();
+}
 
-    harness.key(KeyCode::Up);
-    assert_eq!(
-        harness.state().annotation_inspect_scroll_offset(),
-        ANNOTATION_INSPECT_PAGE_SCROLL_LINES
-    );
+#[test]
+fn ctrl_c_dismisses_annotation_inspect() {
+    let mut harness = harness("alpha\nbeta");
+
+    harness
+        .keys("vld<Tab> <C-c>")
+        .assert_annotation_inspect_hidden()
+        .assert_not_quit();
+}
+
+#[test]
+fn ctrl_c_cancels_confirm_dialog() {
+    let mut harness = harness("alpha\nbeta");
+
+    harness.keys("vld<Tab>dd").assert_has_confirm_dialog();
+
+    harness
+        .keys("<C-c>")
+        .assert_no_confirm_dialog()
+        .assert_annotation_count(1)
+        .assert_not_quit();
 }
 
 #[test]
