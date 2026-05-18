@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Flex, Layout, Rect},
@@ -34,9 +34,14 @@ impl ConfirmDialog {
     /// Forward a crossterm key event to the dialog.
     /// Returns the semantic result of the key press.
     pub fn handle_key(&self, key_event: KeyEvent) -> ConfirmDialogEvent {
-        match key_event.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => ConfirmDialogEvent::Confirm,
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => ConfirmDialogEvent::Cancel,
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('y'), _) | (KeyCode::Char('Y'), _) | (KeyCode::Enter, _) => {
+                ConfirmDialogEvent::Confirm
+            }
+            (KeyCode::Char('n'), _)
+            | (KeyCode::Char('N'), _)
+            | (KeyCode::Esc, _)
+            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => ConfirmDialogEvent::Cancel,
             _ => ConfirmDialogEvent::Consumed,
         }
     }

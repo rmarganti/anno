@@ -99,26 +99,41 @@ fn entering_command_mode_clears_existing_buffer() {
 }
 
 #[test]
-fn ctrl_c_quits_from_normal_mode() {
-    harness("hello").keys("<C-c>").assert_should_quit();
+fn ctrl_c_is_noop_in_normal_mode() {
+    harness("hello")
+        .keys("<C-c>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
 }
 
 #[test]
-fn ctrl_c_quits_from_visual_mode() {
-    harness("hello").keys("v<C-c>").assert_should_quit();
+fn ctrl_c_exits_visual_mode_to_normal() {
+    harness("hello")
+        .keys("v<C-c>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
 }
 
 #[test]
-fn ctrl_c_quits_from_insert_mode() {
-    harness("hello").keys("i<C-c>").assert_should_quit();
+fn ctrl_c_exits_insert_mode_to_normal() {
+    harness("hello")
+        .keys("i<C-c>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
 }
 
 #[test]
-fn ctrl_c_quits_from_command_mode() {
-    harness("hello").keys(":<C-c>").assert_should_quit();
+fn ctrl_c_exits_command_mode_to_normal() {
+    harness("hello")
+        .keys(":<C-c>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
 }
 
 #[test]
-fn ctrl_c_quits_from_annotation_list_mode() {
-    harness("hello").keys("vld<Tab><C-c>").assert_should_quit();
+fn ctrl_c_exits_annotation_list_mode_to_normal() {
+    harness("hello")
+        .keys("vld<Tab><C-c>")
+        .assert_mode(Mode::Normal)
+        .assert_not_quit();
 }

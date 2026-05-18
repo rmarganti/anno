@@ -140,9 +140,6 @@ impl AppState {
             }
             Action::JumpToAnnotation => self.jump_to_selected_annotation(),
             Action::ExitToNormal => self.close_annotation_inspect(),
-            Action::ForceQuit => {
-                self.should_quit = true;
-            }
             Action::Repeat { action, count } => {
                 for _ in 0..*count {
                     self.handle_annotation_inspect_action(action.as_ref());
