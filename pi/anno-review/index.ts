@@ -300,7 +300,10 @@ function assistantMessageToText(message: {
 }
 
 function getLastAssistantMessageText(ctx: ExtensionContext): string | null {
-    for (const entry of ctx.sessionManager.getBranch()) {
+    const branch = ctx.sessionManager.getBranch();
+
+    for (let i = branch.length - 1; i >= 0; i -= 1) {
+        const entry = branch[i];
         if (entry.type !== 'message' || entry.message.role !== 'assistant') {
             continue;
         }
