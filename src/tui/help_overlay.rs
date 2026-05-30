@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn sections_follow_hardcoded_order() {
-        let output = render_to_lines(80, 80);
+        let output = render_to_lines(80, 60);
         let global_row = output.iter().position(|l| l.contains("Global"));
         let normal_row = output.iter().position(|l| l.contains("Normal Mode"));
         let insert_row = output.iter().position(|l| l.contains("Insert Mode"));

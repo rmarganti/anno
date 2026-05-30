@@ -62,6 +62,9 @@ pub enum Action {
     HalfPageUp,
     FullPageDown,
     FullPageUp,
+    ScrollCursorTop,
+    ScrollCursorCenter,
+    ScrollCursorBottom,
     MoveToChar {
         target: char,
         direction: CharSearchDirection,
@@ -187,7 +190,8 @@ impl Action {
 /// Handles key event → action dispatch with support for multi-key sequences.
 ///
 /// Multi-key sequences supported:
-/// - Normal: `gg`, `gc`, `]a`, `[a`
+/// - Normal: `gg`, `gc`, `zt`, `zz`, `zb`, `]a`, `[a`
+/// - Visual/VisualLine: `zt`, `zz`, `zb`
 /// - AnnotationList: `dd`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PendingInput {
@@ -355,6 +359,10 @@ impl KeybindHandler {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('[')));
                 Action::None
             }
+            (KeyCode::Char('z'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('z')));
+                Action::None
+            }
 
             // Normal-only navigation
             (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
@@ -421,6 +429,10 @@ impl KeybindHandler {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
                 Action::None
             }
+            (KeyCode::Char('z'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('z')));
+                Action::None
+            }
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -473,6 +485,10 @@ impl KeybindHandler {
         match (event.code, event.modifiers) {
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
+                Action::None
+            }
+            (KeyCode::Char('z'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('z')));
                 Action::None
             }
             // Annotation creation from selection
@@ -539,6 +555,14 @@ impl KeybindHandler {
             (KeyCode::Char('g'), KeyCode::Char('c')) => {
                 self.finish_action(Action::CreateGlobalComment)
             }
+            // zt/zz/zb — scroll cursor to top/center/bottom of viewport
+            (KeyCode::Char('z'), KeyCode::Char('t')) => self.finish_action(Action::ScrollCursorTop),
+            (KeyCode::Char('z'), KeyCode::Char('z')) => {
+                self.finish_action(Action::ScrollCursorCenter)
+            }
+            (KeyCode::Char('z'), KeyCode::Char('b')) => {
+                self.finish_action(Action::ScrollCursorBottom)
+            }
             // ]a — next annotation
             (KeyCode::Char(']'), KeyCode::Char('a')) => self.finish_action(Action::NextAnnotation),
             // [a — previous annotation
@@ -555,6 +579,13 @@ impl KeybindHandler {
         match (first, second) {
             (KeyCode::Char('g'), KeyCode::Char('j')) => self.finish_action(Action::MoveScreenDown),
             (KeyCode::Char('g'), KeyCode::Char('k')) => self.finish_action(Action::MoveScreenUp),
+            (KeyCode::Char('z'), KeyCode::Char('t')) => self.finish_action(Action::ScrollCursorTop),
+            (KeyCode::Char('z'), KeyCode::Char('z')) => {
+                self.finish_action(Action::ScrollCursorCenter)
+            }
+            (KeyCode::Char('z'), KeyCode::Char('b')) => {
+                self.finish_action(Action::ScrollCursorBottom)
+            }
             _ => {
                 self.clear_pending();
                 Action::None
@@ -1085,6 +1116,39 @@ mod tests {
     }
 
     #[test]
+    fn normal_zt_zz_zb_sequences_scroll_viewport() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('t')),
+            Action::ScrollCursorTop
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('z')),
+            Action::ScrollCursorCenter
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('b')),
+            Action::ScrollCursorBottom
+        );
+    }
+
+    #[test]
+    fn counted_z_scroll_sequence_is_unsupported() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('t')), Action::None);
+        assert!(!h.has_pending());
+    }
+
+    #[test]
     fn normal_bracket_a_sequences() {
         let mut h = KeybindHandler::new();
 
@@ -1404,6 +1468,23 @@ mod tests {
 
         assert_eq!(h.handle(Mode::Visual, char_key('g')), Action::None);
         assert_eq!(h.handle(Mode::Visual, char_key('k')), Action::MoveScreenUp);
+    }
+
+    #[test]
+    fn visual_z_scroll_sequences_do_not_move_selection() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('z')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('t')),
+            Action::ScrollCursorTop
+        );
+
+        assert_eq!(h.handle(Mode::VisualLine, char_key('z')), Action::None);
+        assert_eq!(
+            h.handle(Mode::VisualLine, char_key('b')),
+            Action::ScrollCursorBottom
+        );
     }
 
     #[test]
@@ -2018,8 +2099,8 @@ mod tests {
     #[test]
     fn unrecognized_key_returns_none() {
         let mut h = KeybindHandler::new();
-        assert_eq!(h.handle(Mode::Normal, char_key('z')), Action::None);
-        assert_eq!(h.handle(Mode::Visual, char_key('z')), Action::None);
+        assert_eq!(h.handle(Mode::Normal, char_key('x')), Action::None);
+        assert_eq!(h.handle(Mode::Visual, char_key('x')), Action::None);
         assert_eq!(h.handle(Mode::AnnotationList, char_key('z')), Action::None);
     }
 

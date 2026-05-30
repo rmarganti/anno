@@ -155,6 +155,9 @@ impl DocumentViewState {
             Action::HalfPageUp => self.viewport.half_page_up(&self.display_layout),
             Action::FullPageDown => self.viewport.full_page_down(&self.display_layout),
             Action::FullPageUp => self.viewport.full_page_up(&self.display_layout),
+            Action::ScrollCursorTop => self.viewport.scroll_cursor_top(&self.display_layout),
+            Action::ScrollCursorCenter => self.viewport.scroll_cursor_center(&self.display_layout),
+            Action::ScrollCursorBottom => self.viewport.scroll_cursor_bottom(&self.display_layout),
 
             Action::EnterVisualMode => {
                 self.visual_anchor = Some(VisualAnchor {
@@ -772,6 +775,25 @@ mod tests {
         let mut view = make_view(&["only"]);
         view.handle_action(&Action::MoveDown);
         assert_eq!(view.cursor().row, 0);
+    }
+
+    #[test]
+    fn z_scroll_actions_adjust_scroll_without_moving_cursor() {
+        let mut view = make_view(&["one", "two", "three", "four", "five", "six"]);
+        view.update_dimensions(80, 3);
+        view.set_cursor(4, 1);
+
+        assert!(view.handle_action(&Action::ScrollCursorTop));
+        assert_eq!(view.cursor(), pos(4, 1));
+        assert_eq!(view.viewport.scroll_offset, 4);
+
+        assert!(view.handle_action(&Action::ScrollCursorCenter));
+        assert_eq!(view.cursor(), pos(4, 1));
+        assert_eq!(view.viewport.scroll_offset, 3);
+
+        assert!(view.handle_action(&Action::ScrollCursorBottom));
+        assert_eq!(view.cursor(), pos(4, 1));
+        assert_eq!(view.viewport.scroll_offset, 2);
     }
 
     #[test]

@@ -528,6 +528,33 @@ impl Viewport {
         self.ensure_cursor_visible(layout);
     }
 
+    pub fn scroll_cursor_top(&mut self, layout: &DisplayLayout) {
+        if self.height == 0 {
+            return;
+        }
+
+        let (disp_row, _) = layout.display_pos_of_doc_pos(self.cursor);
+        self.scroll_offset = disp_row;
+    }
+
+    pub fn scroll_cursor_center(&mut self, layout: &DisplayLayout) {
+        if self.height == 0 {
+            return;
+        }
+
+        let (disp_row, _) = layout.display_pos_of_doc_pos(self.cursor);
+        self.scroll_offset = disp_row.saturating_sub(self.height / 2);
+    }
+
+    pub fn scroll_cursor_bottom(&mut self, layout: &DisplayLayout) {
+        if self.height == 0 {
+            return;
+        }
+
+        let (disp_row, _) = layout.display_pos_of_doc_pos(self.cursor);
+        self.scroll_offset = disp_row.saturating_sub(self.height - 1);
+    }
+
     // ── Visible range ─────────────────────────────────────────────
 
     /// Build the list of render slices for visible display rows.
@@ -827,6 +854,42 @@ mod tests {
         let (disp_row, _) = layout.display_pos_of_doc_pos(v.cursor);
         assert!(v.scroll_offset <= disp_row);
         assert!(disp_row < v.scroll_offset + v.height);
+    }
+
+    #[test]
+    fn scroll_cursor_top_keeps_cursor_and_uses_display_rows() {
+        let lines = vec!["abcdefghijklmnopqrst".to_string(), "uvwxyz".to_string()];
+        let layout = DisplayLayout::build(&lines, 5, true);
+        let mut v = Viewport::new();
+        v.set_dimensions(5, 3);
+        v.cursor = CursorPosition { row: 0, col: 12 };
+
+        v.scroll_cursor_top(&layout);
+
+        assert_eq!(v.cursor, CursorPosition { row: 0, col: 12 });
+        assert_eq!(v.scroll_offset, 2);
+    }
+
+    #[test]
+    fn scroll_cursor_center_places_cursor_on_middle_display_row() {
+        let (mut v, layout) = make_viewport(20, 5);
+        v.cursor = CursorPosition { row: 10, col: 0 };
+
+        v.scroll_cursor_center(&layout);
+
+        assert_eq!(v.cursor, CursorPosition { row: 10, col: 0 });
+        assert_eq!(v.scroll_offset, 8);
+    }
+
+    #[test]
+    fn scroll_cursor_bottom_places_cursor_on_last_visible_display_row() {
+        let (mut v, layout) = make_viewport(20, 5);
+        v.cursor = CursorPosition { row: 10, col: 0 };
+
+        v.scroll_cursor_bottom(&layout);
+
+        assert_eq!(v.cursor, CursorPosition { row: 10, col: 0 });
+        assert_eq!(v.scroll_offset, 6);
     }
 
     // ── Column clamping on row change ─────────────────────────────

@@ -65,6 +65,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("gg/G", "Move to document top/bottom"),
                 entry("Ctrl-d/u", "Move half page down/up"),
                 entry("Ctrl-f/b", "Move full page down/up"),
+                entry("zt/zz/zb", "Scroll cursor to top/center/bottom"),
                 entry("v", "Enter visual mode"),
                 entry("V", "Enter visual line mode"),
                 entry("i", "Create insertion annotation"),
@@ -96,6 +97,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "Repeat search in the opposite direction and extend selection to match",
                 ),
                 entry("gj/gk", "Extend selection by screen line when wrapped"),
+                entry("zt/zz/zb", "Scroll cursor without changing selection"),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -113,6 +115,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("; / ,", "Extend selection by line/motion"),
                 entry("/ / ?", "Extend selection by line/motion"),
                 entry("n / N", "Extend selection by line/motion"),
+                entry("zt/zz/zb", "Scroll cursor without changing selection"),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -311,6 +314,11 @@ mod tests {
             "Ctrl-f/b",
             "Move full page down/up"
         ));
+        assert!(contains_entry(
+            &sections[1],
+            "zt/zz/zb",
+            "Scroll cursor to top/center/bottom"
+        ));
         assert!(contains_entry(&sections[1], "v", "Enter visual mode"));
         assert!(contains_entry(&sections[1], "V", "Enter visual line mode"));
         assert!(contains_entry(
@@ -368,6 +376,11 @@ mod tests {
         ));
         assert!(contains_entry(
             &sections[2],
+            "zt/zz/zb",
+            "Scroll cursor without changing selection"
+        ));
+        assert!(contains_entry(
+            &sections[2],
             "d",
             "Create deletion annotation"
         ));
@@ -422,6 +435,11 @@ mod tests {
             &sections[3],
             "n / N",
             "Extend selection by line/motion"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "zt/zz/zb",
+            "Scroll cursor without changing selection"
         ));
         assert!(contains_entry(
             &sections[3],
