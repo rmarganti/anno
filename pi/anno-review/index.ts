@@ -14,43 +14,17 @@ import type {
     ExtensionCommandContext,
     ExtensionContext,
 } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
 
-const COMMAND_NAME = 'anno-review';
-const TOOL_NAME = 'anno_review';
-const TOOL_LABEL = 'Anno Review';
-const TOOL_DESCRIPTION =
-    'Open anno in the current terminal for interactive review. Use only when the user explicitly wants a human-in-the-loop anno session and Pi has an interactive TUI.';
+// ----------------------------------------------------------------
+// Constants
+// ----------------------------------------------------------------
 
-const REVIEW_TOOL_PARAMS = Type.Object({
-    path: Type.Optional(
-        Type.String({
-            description:
-                'Path to a file to review, resolved relative to the current working directory.',
-        })
-    ),
-    content: Type.Optional(
-        Type.String({
-            description:
-                'Generated content to review by writing it to a temporary file before launching anno.',
-        })
-    ),
-    fileName: Type.Optional(
-        Type.String({
-            description:
-                'Optional filename to use for generated content so anno can infer syntax from the extension.',
-        })
-    ),
-    syntax: Type.Optional(
-        Type.String({ description: 'Optional anno --syntax override.' })
-    ),
-    title: Type.Optional(
-        Type.String({
-            description:
-                'Optional anno --title value shown in the anno status bar.',
-        })
-    ),
-});
+const COMMAND_NAME_FILE = 'anno-review';
+const COMMAND_NAME_LAST = 'anno-last';
+
+// ----------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------
 
 type ReviewRequest = {
     path?: string;
@@ -94,6 +68,13 @@ type SpawnOutcome = {
     error?: string;
 };
 
+// ----------------------------------------------------------------
+// Support functions
+// ----------------------------------------------------------------
+
+/**
+ * Splits a command string into shell-like argument tokens.
+ */
 function tokenizeArgs(input: string): string[] {
     const tokens: string[] = [];
     let current = '';
@@ -145,6 +126,9 @@ function tokenizeArgs(input: string): string[] {
     return tokens;
 }
 
+/**
+ * Parses command-line input into a review request.
+ */
 function parseCommandArgs(
     args: string
 ): { ok: true; request: ReviewRequest } | { ok: false; message: string } {
@@ -164,7 +148,7 @@ function parseCommandArgs(
     if (tokens.length === 0) {
         return {
             ok: false,
-            message: `Usage: /${COMMAND_NAME} <path> [--syntax <syntax>] [--title <title>]`,
+            message: `Usage: /${COMMAND_NAME_FILE} <path> [--syntax <syntax>] [--title <title>]`,
         };
     }
 
@@ -192,7 +176,7 @@ function parseCommandArgs(
     if (positionals.length !== 1) {
         return {
             ok: false,
-            message: `Usage: /${COMMAND_NAME} <path> [--syntax <syntax>] [--title <title>]`,
+            message: `Usage: /${COMMAND_NAME_FILE} <path> [--syntax <syntax>] [--title <title>]`,
         };
     }
 
@@ -200,16 +184,28 @@ function parseCommandArgs(
     return { ok: true, request };
 }
 
+/**
+ * Derives a suitable filename for generated review content.
+ */
 function chooseGeneratedFileName(request: ReviewRequest): string {
     const candidate = request.fileName?.trim() || 'review';
-    if (extname(candidate)) return candidate;
+
+    if (extname(candidate)) {
+        return candidate;
+    }
+
     const syntax = request.syntax?.trim();
+
     if (syntax && /^[a-z0-9_+-]+$/i.test(syntax)) {
         return `${candidate}.${syntax.toLowerCase()}`;
     }
+
     return `${candidate}.txt`;
 }
 
+/**
+ * Resolves the review target to a filesystem path and temp workspace.
+ */
 function resolveReviewPath(
     request: ReviewRequest,
     ctx: ExtensionContext
@@ -227,6 +223,9 @@ function resolveReviewPath(
     return { path: resolvedPath, mode: 'path', cleanupDir };
 }
 
+/**
+ * Checks whether the anno CLI is available on PATH.
+ */
 function isAnnoAvailable(): boolean {
     const result = spawnSync(
         process.env.SHELL || '/bin/sh',
@@ -239,6 +238,9 @@ function isAnnoAvailable(): boolean {
     return result.status === 0;
 }
 
+/**
+ * Launches anno through the interactive terminal handoff.
+ */
 async function launchAnno(
     ctx: ExtensionContext,
     args: string[]
@@ -268,6 +270,9 @@ async function launchAnno(
     });
 }
 
+/**
+ * Formats exported review results as a conversation message.
+ */
 function buildReviewMessage(details: ReviewDetails): string {
     const reviewExport = details.export;
     const target =
@@ -275,6 +280,7 @@ function buildReviewMessage(details: ReviewDetails): string {
         (details.reviewedPath
             ? basename(details.reviewedPath)
             : 'reviewed content');
+
     if (!reviewExport) {
         return `I completed an anno review for ${target}, but no exported annotations were produced.`;
     }
@@ -287,6 +293,9 @@ function buildReviewMessage(details: ReviewDetails): string {
     return `${summary}\n\nStructured anno export:\n\n\`\`\`json\n${JSON.stringify(reviewExport, null, 2)}\n\`\`\``;
 }
 
+/**
+ * Extracts plain text content from an assistant message.
+ */
 function assistantMessageToText(message: {
     content: Array<{ type: string; text?: string }>;
 }): string | null {
@@ -299,6 +308,9 @@ function assistantMessageToText(message: {
     return text.length > 0 ? text : null;
 }
 
+/**
+ * Finds the most recent assistant message with text content.
+ */
 function getLastAssistantMessageText(ctx: ExtensionContext): string | null {
     const branch = ctx.sessionManager.getBranch();
 
@@ -317,6 +329,9 @@ function getLastAssistantMessageText(ctx: ExtensionContext): string | null {
     return null;
 }
 
+/**
+ * Runs an anno review and collects the exported results.
+ */
 async function runReview(
     request: ReviewRequest,
     ctx: ExtensionContext
@@ -459,22 +474,12 @@ async function runReview(
     }
 }
 
-function reviewDetailsToToolResult(details: ReviewDetails) {
-    return {
-        content: [
-            {
-                type: 'text' as const,
-                text: details.ok
-                    ? buildReviewMessage(details)
-                    : `Error: ${details.message}`,
-            },
-        ],
-        details,
-    };
-}
+// ----------------------------------------------------------------
+// Extension
+// ----------------------------------------------------------------
 
 export default function annoReviewExtension(pi: ExtensionAPI) {
-    pi.registerCommand(COMMAND_NAME, {
+    pi.registerCommand(COMMAND_NAME_FILE, {
         description:
             'Open anno to review a file, then import the exported JSON annotations back into the session',
         handler: async (args, ctx: ExtensionCommandContext) => {
@@ -510,7 +515,7 @@ export default function annoReviewExtension(pi: ExtensionAPI) {
         },
     });
 
-    pi.registerCommand('anno-last', {
+    pi.registerCommand(COMMAND_NAME_LAST, {
         description:
             'Annotate the last assistant message, then import the exported JSON annotations back into the session',
         handler: async (args, ctx: ExtensionCommandContext) => {
@@ -521,7 +526,10 @@ export default function annoReviewExtension(pi: ExtensionAPI) {
 
             const lastAssistantMessage = getLastAssistantMessageText(ctx);
             if (!lastAssistantMessage) {
-                ctx.ui.notify('No assistant message found in session.', 'error');
+                ctx.ui.notify(
+                    'No assistant message found in session.',
+                    'error'
+                );
                 return;
             }
 
@@ -557,24 +565,6 @@ export default function annoReviewExtension(pi: ExtensionAPI) {
             }
         },
     });
-
-    pi.registerTool({
-        name: TOOL_NAME,
-        label: TOOL_LABEL,
-        description: TOOL_DESCRIPTION,
-        promptSnippet:
-            'Open anno interactively for human review and return the exported JSON annotations.',
-        promptGuidelines: [
-            'Use this tool only when the user explicitly wants an interactive anno review in the terminal.',
-            'Do not call this tool in non-interactive or background workflows.',
-        ],
-        parameters: REVIEW_TOOL_PARAMS,
-        async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
-            const params = rawParams as ReviewRequest;
-            const details = await runReview(params, ctx);
-            return reviewDetailsToToolResult(details);
-        },
-    });
 }
 
-export { COMMAND_NAME, TOOL_DESCRIPTION, TOOL_LABEL, TOOL_NAME };
+export { COMMAND_NAME_FILE as COMMAND_NAME };

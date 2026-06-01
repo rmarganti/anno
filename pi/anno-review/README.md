@@ -43,11 +43,8 @@ Copying also works, but symlinks are convenient during development because `/rel
 - Package name: `anno-pi-review`
 - Slash command: `/anno-review`
 - Slash command: `/anno-last`
-- Custom tool: `anno_review`
-
 Use `/anno-review` when you want to review an existing file from Pi chat.
 Use `/anno-last` when you want to annotate the most recent assistant response from Pi chat.
-Use `anno_review` for interactive tool-driven review flows.
 
 ## Slash command usage
 
@@ -72,20 +69,6 @@ Behavior:
 - Successful reviews are sent back into the Pi conversation as a user message containing the structured JSON export.
 - If the agent is busy, the imported review is queued as a follow-up message.
 
-## Tool usage
-
-The `anno_review` tool supports both file review and generated-content review.
-
-Parameters:
-
-- `path`: review an existing file
-- `content`: write generated text to a temp file before opening anno
-- `fileName`: optional filename for generated content so anno can infer syntax from the extension
-- `syntax`: optional `anno --syntax` override
-- `title`: optional `anno --title` value
-
-Generated-content review is useful when an agent needs to review text that is not already saved to disk.
-
 ## Interactive limitations and fallback behavior
 
 This integration is intentionally interactive.
@@ -94,14 +77,14 @@ Important limitations:
 
 - It only works when Pi has a live TUI (`ctx.hasUI`).
 - It is not suitable for headless/background execution where Pi cannot give terminal control to anno.
-- The slash command always reviews an on-disk file path; only the tool supports writing generated content to a temp file first.
-- `/anno-last` is the exception to the file-path rule because it snapshots the last assistant message into a temp markdown file before launching `anno`.
+- `/anno-review` reviews an on-disk file path.
+- `/anno-last` snapshots the last assistant message into a temp markdown file before launching `anno`.
 
 The extension fails clearly when:
 
 - `anno` is not on `PATH`
 - Pi is running without a TUI / without `ctx.hasUI`
-- the command/tool is asked to review a missing file
+- a command is asked to review a missing file
 - anno exits unsuccessfully
 - anno exits without exporting JSON (for example after `:q!`)
 - anno emits invalid JSON
