@@ -15,16 +15,14 @@ pub struct JsonExporter;
 
 impl AnnotationExporter for AgentExporter {
     fn export(&self, store: &AnnotationStore, source_name: &str) -> String {
-        let ordered = store.ordered();
-
-        if ordered.is_empty() {
-            return "No annotations.".to_string();
-        }
-
-        let count = ordered.len();
+        let annotations = store
+            .ordered()
+            .into_iter()
+            .map(ExportAnnotation::from)
+            .collect::<Vec<_>>();
+        let count = annotations.len();
         let mut output = String::new();
 
-        // Open <annotations> tag
         if source_name == "[stdin]" {
             output.push_str(&format!(
                 "<annotations source=\"stdin\" total=\"{count}\">\n"
@@ -44,9 +42,9 @@ impl AnnotationExporter for AgentExporter {
             "The reviewer left {count} {plural} on this document.\n"
         ));
 
-        for ann in &ordered {
+        for annotation in &annotations {
             output.push('\n');
-            export_annotation(&mut output, ann);
+            export_agent_annotation(&mut output, annotation);
         }
 
         output.push_str("\n</annotations>\n");
@@ -59,7 +57,7 @@ impl AnnotationExporter for JsonExporter {
         let annotations = store
             .ordered()
             .into_iter()
-            .map(JsonAnnotation::from)
+            .map(ExportAnnotation::from)
             .collect::<Vec<_>>();
 
         serde_json::to_string(&JsonExport {
@@ -75,109 +73,170 @@ impl AnnotationExporter for JsonExporter {
 struct JsonExport<'a> {
     source: &'a str,
     total: usize,
-    annotations: Vec<JsonAnnotation>,
+    annotations: Vec<ExportAnnotation>,
 }
 
 #[derive(Serialize)]
-struct JsonAnnotation {
-    #[serde(rename = "type")]
-    annotation_type: &'static str,
+#[serde(tag = "type")]
+enum ExportAnnotation {
+    #[serde(rename = "delete")]
+    Delete {
+        #[serde(flatten)]
+        location: ExportLocation,
+        selected_text: String,
+    },
+    #[serde(rename = "comment")]
+    Comment {
+        #[serde(flatten)]
+        location: ExportLocation,
+        selected_text: String,
+        comment: String,
+    },
+    #[serde(rename = "replace")]
+    Replace {
+        #[serde(flatten)]
+        location: ExportLocation,
+        selected_text: String,
+        replacement: String,
+    },
+    #[serde(rename = "insert")]
+    Insert {
+        #[serde(flatten)]
+        location: ExportLocation,
+        text: String,
+    },
+    #[serde(rename = "global_comment")]
+    GlobalComment { comment: String },
+}
+
+#[derive(Serialize)]
+struct ExportLocation {
     #[serde(skip_serializing_if = "Option::is_none")]
     line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lines: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    selected_text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
 }
 
-impl From<&Annotation> for JsonAnnotation {
+impl From<&Annotation> for ExportAnnotation {
     fn from(annotation: &Annotation) -> Self {
-        let (line, lines) = match annotation.range {
+        let location = ExportLocation::from(annotation);
+
+        match annotation.annotation_type {
+            AnnotationType::Deletion => Self::Delete {
+                location,
+                selected_text: annotation.selected_text.clone(),
+            },
+            AnnotationType::Comment => Self::Comment {
+                location,
+                selected_text: annotation.selected_text.clone(),
+                comment: annotation.text.clone(),
+            },
+            AnnotationType::Replacement => Self::Replace {
+                location,
+                selected_text: annotation.selected_text.clone(),
+                replacement: annotation.text.clone(),
+            },
+            AnnotationType::Insertion => Self::Insert {
+                location,
+                text: annotation.text.clone(),
+            },
+            AnnotationType::GlobalComment => Self::GlobalComment {
+                comment: annotation.text.clone(),
+            },
+        }
+    }
+}
+
+impl From<&Annotation> for ExportLocation {
+    fn from(annotation: &Annotation) -> Self {
+        match annotation.range {
             Some(range) => {
                 let start = range.start.line + 1;
                 let end = range.end.line + 1;
                 if start == end {
-                    (Some(start), None)
+                    Self {
+                        line: Some(start),
+                        lines: None,
+                    }
                 } else {
-                    (None, Some(format!("{start}-{end}")))
+                    Self {
+                        line: None,
+                        lines: Some(format!("{start}-{end}")),
+                    }
                 }
             }
-            None => (None, None),
-        };
-
-        Self {
-            annotation_type: annotation_type_name(&annotation.annotation_type),
-            line,
-            lines,
-            selected_text: (!annotation.selected_text.is_empty())
-                .then(|| annotation.selected_text.clone()),
-            text: (!annotation.text.is_empty()).then(|| annotation.text.clone()),
+            None => Self {
+                line: None,
+                lines: None,
+            },
         }
     }
 }
 
-fn annotation_type_name(annotation_type: &AnnotationType) -> &'static str {
-    match annotation_type {
-        AnnotationType::Deletion => "delete",
-        AnnotationType::Comment => "comment",
-        AnnotationType::Replacement => "replace",
-        AnnotationType::Insertion => "insert",
-        AnnotationType::GlobalComment => "global_comment",
+fn location_attr(location: &ExportLocation) -> String {
+    match (location.line, location.lines.as_deref()) {
+        (Some(line), None) => format!(" line=\"{line}\""),
+        (None, Some(lines)) => format!(" lines=\"{lines}\""),
+        _ => String::new(),
     }
 }
 
-fn line_attr(ann: &Annotation) -> String {
-    match ann.range {
-        Some(range) => {
-            let start = range.start.line + 1;
-            let end = range.end.line + 1;
-            if start == end {
-                format!(" line=\"{start}\"")
-            } else {
-                format!(" lines=\"{start}-{end}\"")
-            }
+fn export_agent_annotation(output: &mut String, annotation: &ExportAnnotation) {
+    match annotation {
+        ExportAnnotation::Delete {
+            location,
+            selected_text,
+        } => {
+            output.push_str(&format!(
+                "<annotation type=\"delete\"{}>\n",
+                location_attr(location)
+            ));
+            export_agent_field(output, "selected_text", selected_text);
         }
-        None => String::new(),
+        ExportAnnotation::Comment {
+            location,
+            selected_text,
+            comment,
+        } => {
+            output.push_str(&format!(
+                "<annotation type=\"comment\"{}>\n",
+                location_attr(location)
+            ));
+            export_agent_field(output, "selected_text", selected_text);
+            export_agent_field(output, "comment", comment);
+        }
+        ExportAnnotation::Replace {
+            location,
+            selected_text,
+            replacement,
+        } => {
+            output.push_str(&format!(
+                "<annotation type=\"replace\"{}>\n",
+                location_attr(location)
+            ));
+            export_agent_field(output, "selected_text", selected_text);
+            export_agent_field(output, "replacement", replacement);
+        }
+        ExportAnnotation::Insert { location, text } => {
+            output.push_str(&format!(
+                "<annotation type=\"insert\"{}>\n",
+                location_attr(location)
+            ));
+            export_agent_field(output, "text", text);
+        }
+        ExportAnnotation::GlobalComment { comment } => {
+            output.push_str("<annotation type=\"global_comment\">\n");
+            export_agent_field(output, "comment", comment);
+        }
     }
+
+    output.push_str("</annotation>\n");
 }
 
-fn export_annotation(output: &mut String, ann: &Annotation) {
-    let lines = line_attr(ann);
-
-    match ann.annotation_type {
-        AnnotationType::Deletion => {
-            output.push_str(&format!("<delete{lines}>\n"));
-            output.push_str(&ann.selected_text);
-            output.push_str("\n</delete>\n");
-        }
-        AnnotationType::Comment => {
-            output.push_str(&format!("<comment{lines}>\n"));
-            output.push_str(&ann.text);
-            output.push_str("\n</comment>\n");
-        }
-        AnnotationType::Replacement => {
-            output.push_str(&format!("<replace{lines}>\n"));
-            output.push_str("<original>\n");
-            output.push_str(&ann.selected_text);
-            output.push_str("\n</original>\n");
-            output.push_str("<replacement>\n");
-            output.push_str(&ann.text);
-            output.push_str("\n</replacement>\n");
-            output.push_str("</replace>\n");
-        }
-        AnnotationType::Insertion => {
-            output.push_str(&format!("<insert{lines}>\n"));
-            output.push_str(&ann.text);
-            output.push_str("\n</insert>\n");
-        }
-        AnnotationType::GlobalComment => {
-            output.push_str("<comment>\n");
-            output.push_str(&ann.text);
-            output.push_str("\n</comment>\n");
-        }
-    }
+fn export_agent_field(output: &mut String, name: &str, value: &str) {
+    output.push_str(&format!("<{name}>\n"));
+    output.push_str(value);
+    output.push_str(&format!("\n</{name}>\n"));
 }
 
 #[cfg(test)]
@@ -211,7 +270,10 @@ mod tests {
     #[test]
     fn export_empty_store() {
         let store = AnnotationStore::new();
-        assert_eq!(exporter().export(&store, "test.md"), "No annotations.");
+        assert_eq!(
+            exporter().export(&store, "test.md"),
+            "<annotations file=\"test.md\" total=\"0\">\nThe reviewer left 0 annotations on this document.\n\n</annotations>\n"
+        );
     }
 
     #[test]
@@ -222,7 +284,8 @@ mod tests {
         let result = exporter().export(&store, "test.md");
         assert!(result.contains("<annotations file=\"test.md\" total=\"1\">"));
         assert!(result.contains("1 annotation on this document."));
-        assert!(result.contains("<delete line=\"1\">\nremove me\n</delete>"));
+        assert!(result.contains("<annotation type=\"delete\" line=\"1\">"));
+        assert!(result.contains("<selected_text>\nremove me\n</selected_text>"));
         assert!(result.contains("</annotations>"));
     }
 
@@ -236,7 +299,9 @@ mod tests {
         ));
 
         let result = exporter().export(&store, "test.md");
-        assert!(result.contains("<comment line=\"1\">\nneeds more detail\n</comment>"));
+        assert!(result.contains("<annotation type=\"comment\" line=\"1\">"));
+        assert!(result.contains("<selected_text>\nhello\n</selected_text>"));
+        assert!(result.contains("<comment>\nneeds more detail\n</comment>"));
     }
 
     #[test]
@@ -249,10 +314,10 @@ mod tests {
         ));
 
         let result = exporter().export(&store, "test.md");
-        assert!(result.contains("<replace line=\"1\">"));
-        assert!(result.contains("<original>\nold text\n</original>"));
+        assert!(result.contains("<annotation type=\"replace\" line=\"1\">"));
+        assert!(result.contains("<selected_text>\nold text\n</selected_text>"));
         assert!(result.contains("<replacement>\nnew text\n</replacement>"));
-        assert!(result.contains("</replace>"));
+        assert!(result.contains("</annotation>"));
     }
 
     #[test]
@@ -264,7 +329,8 @@ mod tests {
         ));
 
         let result = exporter().export(&store, "test.md");
-        assert!(result.contains("<insert line=\"1\">\ninserted content\n</insert>"));
+        assert!(result.contains("<annotation type=\"insert\" line=\"1\">"));
+        assert!(result.contains("<text>\ninserted content\n</text>"));
     }
 
     #[test]
@@ -273,6 +339,7 @@ mod tests {
         store.add(Annotation::global_comment("overall looks good".into()));
 
         let result = exporter().export(&store, "test.md");
+        assert!(result.contains("<annotation type=\"global_comment\">"));
         assert!(result.contains("<comment>\noverall looks good\n</comment>"));
     }
 
@@ -287,7 +354,7 @@ mod tests {
         ));
 
         let result = exporter().export(&store, "test.md");
-        assert!(result.contains("<delete lines=\"5-7\">"));
+        assert!(result.contains("<annotation type=\"delete\" lines=\"5-7\">"));
     }
 
     #[test]
@@ -296,7 +363,7 @@ mod tests {
         store.add(Annotation::deletion(range(9, 0, 9, 5), "one line".into()));
 
         let result = exporter().export(&store, "test.md");
-        assert!(result.contains("<delete line=\"10\">"));
+        assert!(result.contains("<annotation type=\"delete\" line=\"10\">"));
     }
 
     // ───── Source name handling ─────
@@ -399,7 +466,7 @@ mod tests {
 
         assert_eq!(
             json_exporter().export(&store, "test.md"),
-            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"comment\",\"lines\":\"12-14\",\"selected_text\":\"selected text\",\"text\":\"needs more detail\"}]}"
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"comment\",\"lines\":\"12-14\",\"selected_text\":\"selected text\",\"comment\":\"needs more detail\"}]}"
         );
     }
 
@@ -414,7 +481,7 @@ mod tests {
 
         assert_eq!(
             json_exporter().export(&store, "test.md"),
-            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"replace\",\"line\":1,\"selected_text\":\"old\",\"text\":\"new\"}]}"
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"replace\",\"line\":1,\"selected_text\":\"old\",\"replacement\":\"new\"}]}"
         );
     }
 
@@ -439,7 +506,7 @@ mod tests {
 
         assert_eq!(
             json_exporter().export(&store, "test.md"),
-            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"global_comment\",\"text\":\"overall looks good\"}]}"
+            "{\"source\":\"test.md\",\"total\":1,\"annotations\":[{\"type\":\"global_comment\",\"comment\":\"overall looks good\"}]}"
         );
     }
 }

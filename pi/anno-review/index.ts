@@ -40,6 +40,8 @@ type ReviewAnnotation = {
     lines?: string;
     selected_text?: string;
     text?: string;
+    comment?: string;
+    replacement?: string;
 };
 
 type ReviewExport = {

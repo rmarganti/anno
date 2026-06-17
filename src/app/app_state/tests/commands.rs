@@ -7,7 +7,10 @@ fn command_q_sets_quit_with_output() {
 
     match harness.state_mut().take_exit_result() {
         Some(ExitResult::QuitWithOutput(output)) => {
-            assert_eq!(output, "No annotations.");
+            assert_eq!(
+                output,
+                "<annotations file=\"[test]\" total=\"0\">\nThe reviewer left 0 annotations on this document.\n\n</annotations>\n"
+            );
         }
         _ => panic!("expected quit with output"),
     }
