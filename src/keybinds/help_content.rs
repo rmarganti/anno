@@ -97,7 +97,16 @@ pub fn help_sections() -> Vec<HelpSection> {
                     "Repeat search in the opposite direction and extend selection to match",
                 ),
                 entry("gj/gk", "Extend selection by screen line when wrapped"),
+                entry("gg/G", "Extend selection to document top/bottom"),
+                entry("Ctrl-d/u", "Extend selection half page down/up"),
+                entry("Ctrl-f/b", "Extend selection full page down/up"),
                 entry("zt/zz/zb", "Scroll cursor without changing selection"),
+                entry(
+                    "]a/[a",
+                    "Jump to next/previous annotation and extend selection",
+                ),
+                entry("H", "Toggle help"),
+                entry("W", "Toggle word wrap"),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -115,7 +124,16 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("; / ,", "Extend selection by line/motion"),
                 entry("/ / ?", "Extend selection by line/motion"),
                 entry("n / N", "Extend selection by line/motion"),
+                entry("gg/G", "Extend selection to document top/bottom"),
+                entry("Ctrl-d/u", "Extend selection half page down/up"),
+                entry("Ctrl-f/b", "Extend selection full page down/up"),
                 entry("zt/zz/zb", "Scroll cursor without changing selection"),
+                entry(
+                    "]a/[a",
+                    "Jump to next/previous annotation and extend selection",
+                ),
+                entry("H", "Toggle help"),
+                entry("W", "Toggle word wrap"),
                 entry("d", "Create deletion annotation"),
                 entry("c", "Create comment annotation"),
                 entry("r", "Create replacement annotation"),
@@ -376,9 +394,31 @@ mod tests {
         ));
         assert!(contains_entry(
             &sections[2],
+            "gg/G",
+            "Extend selection to document top/bottom"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "Ctrl-d/u",
+            "Extend selection half page down/up"
+        ));
+        assert!(contains_entry(
+            &sections[2],
+            "Ctrl-f/b",
+            "Extend selection full page down/up"
+        ));
+        assert!(contains_entry(
+            &sections[2],
             "zt/zz/zb",
             "Scroll cursor without changing selection"
         ));
+        assert!(contains_entry(
+            &sections[2],
+            "]a/[a",
+            "Jump to next/previous annotation and extend selection"
+        ));
+        assert!(contains_entry(&sections[2], "H", "Toggle help"));
+        assert!(contains_entry(&sections[2], "W", "Toggle word wrap"));
         assert!(contains_entry(
             &sections[2],
             "d",
@@ -438,9 +478,31 @@ mod tests {
         ));
         assert!(contains_entry(
             &sections[3],
+            "gg/G",
+            "Extend selection to document top/bottom"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "Ctrl-d/u",
+            "Extend selection half page down/up"
+        ));
+        assert!(contains_entry(
+            &sections[3],
+            "Ctrl-f/b",
+            "Extend selection full page down/up"
+        ));
+        assert!(contains_entry(
+            &sections[3],
             "zt/zz/zb",
             "Scroll cursor without changing selection"
         ));
+        assert!(contains_entry(
+            &sections[3],
+            "]a/[a",
+            "Jump to next/previous annotation and extend selection"
+        ));
+        assert!(contains_entry(&sections[3], "H", "Toggle help"));
+        assert!(contains_entry(&sections[3], "W", "Toggle word wrap"));
         assert!(contains_entry(
             &sections[3],
             "d",

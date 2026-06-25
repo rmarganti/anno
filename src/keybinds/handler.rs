@@ -429,10 +429,29 @@ impl KeybindHandler {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
                 Action::None
             }
+            (KeyCode::Char(']'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char(']')));
+                Action::None
+            }
+            (KeyCode::Char('['), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('[')));
+                Action::None
+            }
             (KeyCode::Char('z'), KeyModifiers::NONE) => {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('z')));
                 Action::None
             }
+            (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                self.finish_action(Action::MoveDocumentBottom)
+            }
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageDown),
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageUp),
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageDown),
+            (KeyCode::Char('b'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageUp),
+            (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.finish_action(Action::ToggleHelp)
+            }
+            (KeyCode::Char('W'), KeyModifiers::SHIFT) => self.finish_action(Action::ToggleWordWrap),
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -487,10 +506,29 @@ impl KeybindHandler {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('g')));
                 Action::None
             }
+            (KeyCode::Char(']'), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char(']')));
+                Action::None
+            }
+            (KeyCode::Char('['), KeyModifiers::NONE) => {
+                self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('[')));
+                Action::None
+            }
             (KeyCode::Char('z'), KeyModifiers::NONE) => {
                 self.pending = Some(PendingInput::FixedSequence(KeyCode::Char('z')));
                 Action::None
             }
+            (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                self.finish_action(Action::MoveDocumentBottom)
+            }
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageDown),
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => self.finish_action(Action::HalfPageUp),
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageDown),
+            (KeyCode::Char('b'), KeyModifiers::CONTROL) => self.finish_action(Action::FullPageUp),
+            (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.finish_action(Action::ToggleHelp)
+            }
+            (KeyCode::Char('W'), KeyModifiers::SHIFT) => self.finish_action(Action::ToggleWordWrap),
             // Annotation creation from selection
             (KeyCode::Char('d'), KeyModifiers::NONE) => self.finish_action(Action::CreateDeletion),
             (KeyCode::Char('c'), KeyModifiers::NONE) => self.finish_action(Action::CreateComment),
@@ -577,6 +615,7 @@ impl KeybindHandler {
 
     fn resolve_fixed_visual_sequence(&mut self, first: KeyCode, second: KeyCode) -> Action {
         match (first, second) {
+            (KeyCode::Char('g'), KeyCode::Char('g')) => self.finish_action(Action::MoveDocumentTop),
             (KeyCode::Char('g'), KeyCode::Char('j')) => self.finish_action(Action::MoveScreenDown),
             (KeyCode::Char('g'), KeyCode::Char('k')) => self.finish_action(Action::MoveScreenUp),
             (KeyCode::Char('z'), KeyCode::Char('t')) => self.finish_action(Action::ScrollCursorTop),
@@ -586,6 +625,8 @@ impl KeybindHandler {
             (KeyCode::Char('z'), KeyCode::Char('b')) => {
                 self.finish_action(Action::ScrollCursorBottom)
             }
+            (KeyCode::Char(']'), KeyCode::Char('a')) => self.finish_action(Action::NextAnnotation),
+            (KeyCode::Char('['), KeyCode::Char('a')) => self.finish_action(Action::PrevAnnotation),
             _ => {
                 self.clear_pending();
                 Action::None
@@ -1425,6 +1466,71 @@ mod tests {
     }
 
     #[test]
+    fn visual_includes_normal_navigation_and_ui_bindings() {
+        let mut h = KeybindHandler::new();
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('G'), KeyModifiers::SHIFT)
+            ),
+            Action::MoveDocumentBottom
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL)
+            ),
+            Action::HalfPageDown
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('u'), KeyModifiers::CONTROL)
+            ),
+            Action::HalfPageUp
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL)
+            ),
+            Action::FullPageDown
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL)
+            ),
+            Action::FullPageUp
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('H'), KeyModifiers::SHIFT)
+            ),
+            Action::ToggleHelp
+        );
+        assert_eq!(
+            h.handle(
+                Mode::Visual,
+                key_mod(KeyCode::Char('W'), KeyModifiers::SHIFT)
+            ),
+            Action::ToggleWordWrap
+        );
+
+        assert_eq!(h.handle(Mode::Visual, char_key(']')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('a')),
+            Action::NextAnnotation
+        );
+        assert_eq!(h.handle(Mode::Visual, char_key('[')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('a')),
+            Action::PrevAnnotation
+        );
+    }
+
+    #[test]
     fn visual_shift_v_switches_to_visual_line_mode() {
         let mut h = KeybindHandler::new();
         assert_eq!(
@@ -1457,8 +1563,14 @@ mod tests {
     }
 
     #[test]
-    fn visual_gj_gk_sequences() {
+    fn visual_document_and_screen_line_sequences() {
         let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Visual, char_key('g')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('g')),
+            Action::MoveDocumentTop
+        );
 
         assert_eq!(h.handle(Mode::Visual, char_key('g')), Action::None);
         assert_eq!(
@@ -1601,8 +1713,14 @@ mod tests {
         }
 
         #[test]
-        fn gj_and_gk_match_visual_mode() {
+        fn gg_gj_and_gk_match_visual_mode() {
             let mut h = KeybindHandler::new();
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key('g')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('g')),
+                Action::MoveDocumentTop
+            );
 
             assert_eq!(h.handle(Mode::VisualLine, char_key('g')), Action::None);
             assert_eq!(
@@ -1706,6 +1824,71 @@ mod tests {
             assert_eq!(
                 h.handle(Mode::VisualLine, char_key('r')),
                 Action::CreateReplacement
+            );
+        }
+
+        #[test]
+        fn includes_normal_navigation_and_ui_bindings() {
+            let mut h = KeybindHandler::new();
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('G'), KeyModifiers::SHIFT)
+                ),
+                Action::MoveDocumentBottom
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL)
+                ),
+                Action::HalfPageDown
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('u'), KeyModifiers::CONTROL)
+                ),
+                Action::HalfPageUp
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('f'), KeyModifiers::CONTROL)
+                ),
+                Action::FullPageDown
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('b'), KeyModifiers::CONTROL)
+                ),
+                Action::FullPageUp
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('H'), KeyModifiers::SHIFT)
+                ),
+                Action::ToggleHelp
+            );
+            assert_eq!(
+                h.handle(
+                    Mode::VisualLine,
+                    key_mod(KeyCode::Char('W'), KeyModifiers::SHIFT)
+                ),
+                Action::ToggleWordWrap
+            );
+
+            assert_eq!(h.handle(Mode::VisualLine, char_key(']')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('a')),
+                Action::NextAnnotation
+            );
+            assert_eq!(h.handle(Mode::VisualLine, char_key('[')), Action::None);
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('a')),
+                Action::PrevAnnotation
             );
         }
 
