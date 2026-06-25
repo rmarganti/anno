@@ -34,19 +34,7 @@ type ReviewRequest = {
     title?: string;
 };
 
-type ReviewAnnotation = {
-    type: string;
-    line?: number;
-    lines?: string;
-    selected_text?: string;
-    text?: string;
-};
-
-type ReviewExport = {
-    source: string;
-    total: number;
-    annotations: ReviewAnnotation[];
-};
+type ReviewExport = string;
 
 type ReviewDetails = {
     ok: boolean;
@@ -285,12 +273,7 @@ function buildReviewMessage(details: ReviewDetails): string {
         return `I completed an anno review for ${target}, but no exported annotations were produced.`;
     }
 
-    const summary =
-        reviewExport.total === 0
-            ? `I reviewed ${target} in anno and found no annotations.`
-            : `I reviewed ${target} in anno and captured ${reviewExport.total} annotation${reviewExport.total === 1 ? '' : 's'}.`;
-
-    return `${summary}\n\nStructured anno export:\n\n\`\`\`json\n${JSON.stringify(reviewExport, null, 2)}\n\`\`\``;
+    return `I completed an anno review for ${target}.\n\nStructured anno export:\n\n\`\`\`xml\n${reviewExport}\n\`\`\``;
 }
 
 /**
@@ -376,7 +359,7 @@ async function runReview(
         mode,
         cleanupDir,
     } = resolveReviewPath(request, ctx);
-    const outputPath = join(cleanupDir, 'annotations.json');
+    const outputPath = join(cleanupDir, 'annotations.agent');
 
     try {
         if (mode === 'path' && !existsSync(reviewPath)) {
@@ -393,7 +376,7 @@ async function runReview(
 
         const launchArgs = [
             '--export-format',
-            'json',
+            'agent',
             '--output-file',
             outputPath,
         ];
@@ -424,7 +407,7 @@ async function runReview(
                 message:
                     outcome.status === 0
                         ? 'anno exited without exporting annotations. This usually means the review was cancelled with :q!.'
-                        : `anno exited before producing JSON output${outcome.status === null ? '' : ` (exit code ${outcome.status})`}.`,
+                        : `anno exited before producing agent output${outcome.status === null ? '' : ` (exit code ${outcome.status})`}.`,
                 mode,
                 reviewedPath: reviewPath,
                 title: request.title,
@@ -434,33 +417,12 @@ async function runReview(
             };
         }
 
-        let reviewExport: ReviewExport;
-        try {
-            reviewExport = JSON.parse(
-                readFileSync(outputPath, 'utf8')
-            ) as ReviewExport;
-        } catch (error) {
-            return {
-                ok: false,
-                cancelled: false,
-                message: 'anno produced invalid JSON output.',
-                mode,
-                reviewedPath: reviewPath,
-                title: request.title,
-                syntax: request.syntax,
-                exitCode: outcome.status,
-                signal: outcome.signal,
-                error: error instanceof Error ? error.message : String(error),
-            };
-        }
+        const reviewExport = readFileSync(outputPath, 'utf8').trim();
 
         return {
             ok: true,
             cancelled: false,
-            message:
-                reviewExport.total === 0
-                    ? `anno review completed with no annotations for ${basename(reviewPath)}.`
-                    : `anno review captured ${reviewExport.total} annotation${reviewExport.total === 1 ? '' : 's'} for ${basename(reviewPath)}.`,
+            message: `anno review completed for ${basename(reviewPath)}.`,
             mode,
             reviewedPath: reviewPath,
             title: request.title,
@@ -481,7 +443,7 @@ async function runReview(
 export default function annoReviewExtension(pi: ExtensionAPI) {
     pi.registerCommand(COMMAND_NAME_FILE, {
         description:
-            'Open anno to review a file, then import the exported JSON annotations back into the session',
+            'Open anno to review a file, then import the exported agent annotations back into the session',
         handler: async (args, ctx: ExtensionCommandContext) => {
             const parsed = parseCommandArgs(args);
             if (!parsed.ok) {
@@ -517,7 +479,7 @@ export default function annoReviewExtension(pi: ExtensionAPI) {
 
     pi.registerCommand(COMMAND_NAME_LAST, {
         description:
-            'Annotate the last assistant message, then import the exported JSON annotations back into the session',
+            'Annotate the last assistant message, then import the exported agent annotations back into the session',
         handler: async (args, ctx: ExtensionCommandContext) => {
             if (args.trim().length > 0) {
                 ctx.ui.notify('Usage: /anno-last', 'error');

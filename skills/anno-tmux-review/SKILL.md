@@ -25,32 +25,39 @@ scripts/anno-review.sh <file> [--syntax <syntax>] [--title <title>]
 - `--syntax` -- syntax hint for highlighting (default: `md`). Use `rs`, `ts`, `json`, `txt`, etc.
 - `--title` -- title shown in anno's status bar (default: `Reviewing: <basename>`).
 
-The script prints annotations to stdout and exits. If there are no annotations, stdout is empty.
+The script prints anno's structured `agent` export to stdout and exits. If there are no annotations, the export has `total="0"`.
 
 If the content to review is not already on disk (e.g. a generated plan), write it to a temp file first, then pass that file to the script.
 
 ## Interpreting Output
 
-If stdout is **empty**, the reviewer exited without annotations. Treat the content as approved unless the surrounding conversation suggests otherwise.
+If stdout contains an export with `total="0"`, the reviewer exited without annotations. Treat the content as approved unless the surrounding conversation suggests otherwise.
 
-If stdout contains **annotations**, they are in anno's default `agent` format -- an XML-like structure designed for LLM consumption:
+Exports are in anno's default `agent` format -- an XML-like structure designed for LLM consumption:
 
 ```xml
 <annotations file="/tmp/anno-review-abc123.md" total="2">
 The reviewer left 2 annotations on this document.
 
-<comment line="5">
+<annotation type="comment" line="5">
+<selected_text>
+The selected source text.
+</selected_text>
+<comment>
 This line needs rewording.
 </comment>
+</annotation>
 
+<annotation type="global_comment">
 <comment>
 Global feedback about the document.
 </comment>
+</annotation>
 
 </annotations>
 ```
 
-- Each annotation is a child element: `<comment line="N">`, `<deletion>`, `<replacement>`, `<insertion>`, or `<comment>` (no line attribute for global comments).
+- Each annotation is a child element: `<annotation type="..." line="N">` or `<annotation type="..." lines="N-M">`, with field children such as `<selected_text>`, `<comment>`, `<replacement>`, or `<text>`.
 - Annotations appear in document order, with global comments last.
 - Parse them and convert them into concrete revision tasks.
 

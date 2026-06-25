@@ -329,30 +329,41 @@ Anno supports two export formats when quitting with `:q`:
 <annotations file="path/to/file.md" total="5">
 The reviewer left 5 annotations on this document.
 
-<delete line="3">
+<annotation type="delete" line="3">
+<selected_text>
 selected text to remove
-</delete>
+</selected_text>
+</annotation>
 
-<comment line="8">
+<annotation type="comment" line="8">
+<selected_text>
+old sentence
+</selected_text>
+<comment>
 This needs more detail.
 </comment>
+</annotation>
 
-<replace lines="12-14">
-<original>
+<annotation type="replace" lines="12-14">
+<selected_text>
 old text
-</original>
+</selected_text>
 <replacement>
 new text
 </replacement>
-</replace>
+</annotation>
 
-<insert line="20">
+<annotation type="insert" line="20">
+<text>
 new content to insert here
-</insert>
+</text>
+</annotation>
 
+<annotation type="global_comment">
 <comment>
 Global comment not tied to any specific location.
 </comment>
+</annotation>
 
 </annotations>
 ```
@@ -370,11 +381,11 @@ When the source is piped from stdin, the opening tag uses `source="stdin"` inste
       "type": "comment",
       "line": 8,
       "selected_text": "old sentence",
-      "text": "This needs more detail."
+      "comment": "This needs more detail."
     },
     {
       "type": "global_comment",
-      "text": "Overall structure looks good."
+      "comment": "Overall structure looks good."
     }
   ]
 }
