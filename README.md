@@ -237,9 +237,15 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `?`       | Search backward and extend selection to match |
 | `n`       | Repeat search and extend selection to match |
 | `N`       | Repeat search in the opposite direction and extend selection to match |
+| `gg/G`    | Extend selection to document top/bottom |
+| `Ctrl-d/u`| Extend selection half page down/up |
+| `Ctrl-f/b`| Extend selection full page down/up |
 | `d`       | Create deletion annotation     |
 | `c`       | Create comment annotation      |
 | `r`       | Create replacement annotation  |
+| `]a/[a`   | Jump to next/previous annotation and extend selection |
+| `H`       | Toggle help                    |
+| `W`       | Toggle word wrap               |
 | `V`       | Switch to visual line mode     |
 | `Esc`     | Cancel selection               |
 | `Wheel ↑/↓` | Extend selection like `k` / `j` |
@@ -257,9 +263,15 @@ Numeric prefixes repeat supported navigation in Normal mode, Visual mode, Visual
 | `?`       | Search backward and extend selection to match |
 | `n`       | Repeat search and extend selection to match |
 | `N`       | Repeat search in the opposite direction and extend selection to match |
+| `gg/G`    | Extend selection to document top/bottom |
+| `Ctrl-d/u`| Extend selection half page down/up |
+| `Ctrl-f/b`| Extend selection full page down/up |
 | `d`       | Create deletion annotation     |
 | `c`       | Create comment annotation      |
 | `r`       | Create replacement annotation  |
+| `]a/[a`   | Jump to next/previous annotation and extend selection |
+| `H`       | Toggle help                    |
+| `W`       | Toggle word wrap               |
 | `v`       | Switch to charwise visual      |
 | `V`       | Exit visual line mode          |
 | `Esc`     | Cancel selection               |
