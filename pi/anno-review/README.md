@@ -66,7 +66,7 @@ Behavior:
 
 - Relative paths resolve from `ctx.cwd`.
 - `/anno-last` writes the last assistant response to a temporary markdown file before opening `anno`.
-- Successful reviews are sent back into the Pi conversation as a user message containing the structured JSON export.
+- Successful reviews are sent back into the Pi conversation as a user message containing anno's structured `agent` export.
 - If the agent is busy, the imported review is queued as a follow-up message.
 
 ## Interactive limitations and fallback behavior
@@ -86,7 +86,6 @@ The extension fails clearly when:
 - Pi is running without a TUI / without `ctx.hasUI`
 - a command is asked to review a missing file
 - anno exits unsuccessfully
-- anno exits without exporting JSON (for example after `:q!`)
-- anno emits invalid JSON
+- anno exits without exporting agent output (for example after `:q!`)
 
 In those cases the extension returns a clear explanation so users or agents can choose another review workflow.
