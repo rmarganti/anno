@@ -6,7 +6,7 @@ use ratatui::{
     text::Span,
     widgets::{Block, Borders, Clear},
 };
-use tui_textarea::{Input, Key, TextArea};
+use ratatui_textarea::{Input, Key, TextArea, WrapMode};
 
 use crate::tui::theme::UiTheme;
 
@@ -34,6 +34,7 @@ impl<'a> InputBox<'a> {
         let mut textarea = TextArea::default();
         textarea.set_cursor_line_style(Style::default());
         textarea.set_tab_length(4);
+        textarea.set_wrap_mode(WrapMode::WordOrGlyph);
         Self {
             prompt: prompt.into(),
             textarea,
