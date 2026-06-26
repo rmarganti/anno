@@ -273,7 +273,11 @@ function buildReviewMessage(details: ReviewDetails): string {
         return `I completed an anno review for ${target}, but no exported annotations were produced.`;
     }
 
-    return `I completed an anno review for ${target}.\n\nStructured anno export:\n\n\`\`\`xml\n${reviewExport}\n\`\`\``;
+    return [
+        `I completed an anno review for ${target}.`,
+        'Structured anno export:',
+        reviewExport,
+    ].join('\n\n');
 }
 
 /**
