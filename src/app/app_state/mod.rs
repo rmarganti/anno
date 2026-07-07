@@ -129,6 +129,8 @@ impl AppState {
                     | Action::MoveWordEnd
                     | Action::MoveLineStart
                     | Action::MoveLineEnd
+                    | Action::MoveParagraphForward
+                    | Action::MoveParagraphBackward
                     | Action::MoveDocumentTop
                     | Action::MoveDocumentBottom
                     | Action::HalfPageDown

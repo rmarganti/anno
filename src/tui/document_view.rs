@@ -119,6 +119,12 @@ impl DocumentViewState {
             }
             Action::MoveLineStart => self.viewport.move_line_start(&self.display_layout),
             Action::MoveLineEnd => self.viewport.move_line_end(&self.display_layout),
+            Action::MoveParagraphForward => self
+                .viewport
+                .move_paragraph_forward(&self.doc_lines, &self.display_layout),
+            Action::MoveParagraphBackward => self
+                .viewport
+                .move_paragraph_backward(&self.doc_lines, &self.display_layout),
             Action::MoveToChar {
                 target,
                 direction,

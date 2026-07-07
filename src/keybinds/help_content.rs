@@ -49,6 +49,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("h/j/k/l", "Move cursor"),
                 entry("w/b/e", "Move by word"),
                 entry("0/$", "Move to line start/end"),
+                entry("{ / }", "Move to previous/next paragraph"),
                 entry(
                     "f/F/t/T",
                     "Move to / before a character on the current line",
@@ -81,6 +82,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("h/j/k/l", "Extend selection"),
                 entry("w/b/e", "Extend selection by word"),
                 entry("0/$", "Extend selection to line start/end"),
+                entry("{ / }", "Extend selection to previous/next paragraph"),
                 entry(
                     "f/F/t/T",
                     "Extend selection to / before a character on the current line",
@@ -120,6 +122,7 @@ pub fn help_sections() -> Vec<HelpSection> {
                 entry("h/j/k/l", "Extend selection by line/motion"),
                 entry("w/b/e", "Extend selection by line/motion"),
                 entry("0/$", "Extend selection by line/motion"),
+                entry("{ / }", "Extend selection by line/motion"),
                 entry("f/F/t/T", "Extend selection by line/motion"),
                 entry("; / ,", "Extend selection by line/motion"),
                 entry("/ / ?", "Extend selection by line/motion"),
