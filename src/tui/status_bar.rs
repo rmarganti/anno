@@ -49,10 +49,8 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
         Span::raw(wrap_indicator),
     ];
 
-    let hint = if props.panel_hidden_due_to_width {
-        "[panel hidden: terminal too narrow]".to_string()
-    } else {
-        match props.mode {
+    if !props.panel_hidden_due_to_width {
+        let hint = match props.mode {
             Mode::Normal if props.panel_visible => {
                 "count+nav  Tab focus  Esc hide  H help".to_string()
             }
@@ -71,9 +69,9 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &UiTheme, props: &StatusBarP
                 };
                 format!("{prefix}{}", props.search_buffer)
             }
-        }
+        };
+        status_spans.push(Span::raw(hint));
     };
-    status_spans.push(Span::raw(hint));
 
     let status_bar = Paragraph::new(Line::from(status_spans)).style(theme.status_bar);
     frame.render_widget(status_bar, area);
@@ -364,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn narrow_terminal_panel_hint_overrides_default_hint() {
+    fn narrow_terminal_hides_hint_section() {
         let props = StatusBarProps {
             panel_visible: false,
             panel_hidden_due_to_width: true,
@@ -372,8 +370,8 @@ mod tests {
         };
         let output = render_to_string(&props);
         assert!(
-            output.contains("[panel hidden: terminal too narrow]"),
-            "Expected narrow terminal hint in: {output}"
+            !output.contains("[panel hidden: terminal too narrow]"),
+            "Did not expect narrow terminal hint in: {output}"
         );
         assert!(
             !output.contains("H help"),
