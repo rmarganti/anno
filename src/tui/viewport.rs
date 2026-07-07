@@ -192,6 +192,10 @@ pub struct Viewport {
     horizontal_offset: usize,
 }
 
+fn is_blank_line(line: &str) -> bool {
+    line.trim().is_empty()
+}
+
 impl Viewport {
     pub fn new() -> Self {
         Self {
@@ -283,6 +287,59 @@ impl Viewport {
 
     pub fn move_line_end(&mut self, layout: &DisplayLayout) {
         self.cursor.col = self.current_line_max_col(layout);
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+    }
+
+    pub fn move_paragraph_forward(&mut self, lines: &[String], layout: &DisplayLayout) {
+        if lines.is_empty() || self.cursor.row >= lines.len() {
+            return;
+        }
+
+        let last_row = lines.len().saturating_sub(1);
+        let mut row = self.cursor.row;
+
+        if is_blank_line(&lines[row]) {
+            while row < last_row && is_blank_line(&lines[row]) {
+                row += 1;
+            }
+        } else {
+            row = (row + 1).min(last_row);
+        }
+
+        while row < last_row && !is_blank_line(&lines[row]) {
+            row += 1;
+        }
+
+        self.cursor.row = row;
+        self.cursor.col = 0;
+        self.clamp_col(layout);
+        self.ensure_cursor_visible(layout);
+        self.ensure_horizontal_visible();
+    }
+
+    pub fn move_paragraph_backward(&mut self, lines: &[String], layout: &DisplayLayout) {
+        if lines.is_empty() || self.cursor.row >= lines.len() {
+            return;
+        }
+
+        let mut row = self.cursor.row;
+
+        if is_blank_line(&lines[row]) {
+            while row > 0 && is_blank_line(&lines[row]) {
+                row -= 1;
+            }
+        } else {
+            row = row.saturating_sub(1);
+        }
+
+        while row > 0 && !is_blank_line(&lines[row]) {
+            row -= 1;
+        }
+
+        self.cursor.row = row;
+        self.cursor.col = 0;
+        self.clamp_col(layout);
         self.ensure_cursor_visible(layout);
         self.ensure_horizontal_visible();
     }

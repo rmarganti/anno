@@ -106,6 +106,73 @@ fn counted_visual_motion_repeats_existing_selection_navigation() {
 }
 
 #[test]
+fn paragraph_forward_jumps_to_next_blank_line_separator() {
+    harness("aaa\nbbb\n\nccc\nddd\n\neee")
+        .keys("}")
+        .assert_cursor(2, 0);
+}
+
+#[test]
+fn paragraph_backward_jumps_to_previous_blank_line_separator() {
+    harness("aaa\nbbb\n\nccc\nddd\n\neee")
+        .keys("G{")
+        .assert_cursor(5, 0);
+}
+
+#[test]
+fn counted_paragraph_motion_repeats_across_separators() {
+    harness("aaa\nbbb\n\nccc\nddd\n\neee")
+        .keys("2}")
+        .assert_cursor(5, 0);
+}
+
+#[test]
+fn paragraph_forward_skips_consecutive_blank_lines() {
+    harness("aaa\nbbb\n\n\nccc\nddd\n\n\n\neee")
+        .keys("}")
+        .assert_cursor(2, 0)
+        .keys("}")
+        .assert_cursor(6, 0);
+}
+
+#[test]
+fn paragraph_forward_from_blank_run_skips_to_next_separator() {
+    harness("aaa\nbbb\n\n\nccc\nddd\n\n\n\neee")
+        .keys("jj}")
+        .assert_cursor(6, 0);
+}
+
+#[test]
+fn paragraph_backward_skips_consecutive_blank_lines() {
+    harness("aaa\nbbb\n\n\nccc\nddd\n\n\n\neee")
+        .keys("G{")
+        .assert_cursor(8, 0)
+        .keys("{")
+        .assert_cursor(3, 0);
+}
+
+#[test]
+fn paragraph_backward_from_blank_run_skips_to_previous_separator() {
+    harness("aaa\nbbb\n\n\nccc\nddd\n\n\n\neee")
+        .keys("7j{")
+        .assert_cursor(3, 0);
+}
+
+#[test]
+fn visual_paragraph_motion_extends_selection() {
+    let mut harness = harness("aaa\nbbb\n\nccc\nddd");
+
+    harness.keys("v}d").assert_annotation_count(1);
+
+    let annotation = harness.state().annotations().ordered()[0];
+    let range = annotation
+        .range
+        .expect("visual deletion should have a range");
+    assert_eq!((range.start.line, range.start.column), (0, 0));
+    assert_eq!((range.end.line, range.end.column), (2, 0));
+}
+
+#[test]
 fn wrapped_plain_motion_uses_logical_lines() {
     let mut harness = wrapped_motion_harness();
 

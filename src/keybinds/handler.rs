@@ -56,6 +56,8 @@ pub enum Action {
     MoveWordEnd,
     MoveLineStart,
     MoveLineEnd,
+    MoveParagraphForward,
+    MoveParagraphBackward,
     MoveDocumentTop,
     MoveDocumentBottom,
     HalfPageDown,
@@ -156,6 +158,8 @@ impl Action {
                 | Action::MoveWordEnd
                 | Action::MoveLineStart
                 | Action::MoveLineEnd
+                | Action::MoveParagraphForward
+                | Action::MoveParagraphBackward
                 | Action::MoveDocumentTop
                 | Action::MoveDocumentBottom
                 | Action::HalfPageDown
@@ -703,6 +707,12 @@ impl KeybindHandler {
             (KeyCode::Char('$'), KeyModifiers::NONE) => {
                 Some(self.finish_action(Action::MoveLineEnd))
             }
+            (KeyCode::Char('}'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::MoveParagraphForward))
+            }
+            (KeyCode::Char('{'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                Some(self.finish_action(Action::MoveParagraphBackward))
+            }
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 Some(self.finish_action(Action::EnterSearchMode {
                     direction: SearchDirection::Forward,
@@ -1010,6 +1020,14 @@ mod tests {
         assert_eq!(h.handle(Mode::Normal, char_key('e')), Action::MoveWordEnd);
         assert_eq!(h.handle(Mode::Normal, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Normal, char_key('$')), Action::MoveLineEnd);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('}')),
+            Action::MoveParagraphForward
+        );
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('{')),
+            Action::MoveParagraphBackward
+        );
     }
 
     #[test]
@@ -1339,6 +1357,23 @@ mod tests {
     }
 
     #[test]
+    fn normal_counted_paragraph_motion_wraps_action() {
+        let mut h = KeybindHandler::new();
+
+        assert_eq!(h.handle(Mode::Normal, char_key('2')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('}')),
+            repeated(Action::MoveParagraphForward, 2)
+        );
+
+        assert_eq!(h.handle(Mode::Normal, char_key('3')), Action::None);
+        assert_eq!(
+            h.handle(Mode::Normal, char_key('{')),
+            repeated(Action::MoveParagraphBackward, 3)
+        );
+    }
+
+    #[test]
     fn normal_zero_without_count_keeps_line_start_motion() {
         let mut h = KeybindHandler::new();
 
@@ -1449,6 +1484,14 @@ mod tests {
         assert_eq!(h.handle(Mode::Visual, char_key('e')), Action::MoveWordEnd);
         assert_eq!(h.handle(Mode::Visual, char_key('0')), Action::MoveLineStart);
         assert_eq!(h.handle(Mode::Visual, char_key('$')), Action::MoveLineEnd);
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('}')),
+            Action::MoveParagraphForward
+        );
+        assert_eq!(
+            h.handle(Mode::Visual, char_key('{')),
+            Action::MoveParagraphBackward
+        );
     }
 
     #[test]
@@ -1709,6 +1752,14 @@ mod tests {
             assert_eq!(
                 h.handle(Mode::VisualLine, char_key('$')),
                 Action::MoveLineEnd
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('}')),
+                Action::MoveParagraphForward
+            );
+            assert_eq!(
+                h.handle(Mode::VisualLine, char_key('{')),
+                Action::MoveParagraphBackward
             );
         }
 
