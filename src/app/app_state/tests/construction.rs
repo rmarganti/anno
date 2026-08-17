@@ -15,7 +15,7 @@ fn new_plain_builds_terminal_independent_default_state() {
     assert!(!state.is_help_visible());
     assert!(state.is_panel_visible());
     assert_eq!(state.command_buffer(), "");
-    assert!(!state.word_wrap());
+    assert!(state.word_wrap());
     assert!(state.confirm_dialog().is_none());
 
     let cursor = state.cursor();
