@@ -26,10 +26,7 @@ pub fn render_vertical_scrollbar(
         .thumb_symbol("▐")
         .track_symbol(None)
         .thumb_style(style);
-    let scroll_range = content_length
-        .saturating_sub(viewport_length)
-        .saturating_add(1);
-    let mut state = ScrollbarState::new(scroll_range)
+    let mut state = ScrollbarState::new(content_length)
         .position(position)
         .viewport_content_length(viewport_length);
     frame.render_stateful_widget(scrollbar, area, &mut state);
@@ -56,10 +53,7 @@ pub fn render_horizontal_scrollbar(
         .thumb_symbol("▂")
         .track_symbol(None)
         .thumb_style(style);
-    let scroll_range = content_length
-        .saturating_sub(viewport_length)
-        .saturating_add(1);
-    let mut state = ScrollbarState::new(scroll_range)
+    let mut state = ScrollbarState::new(content_length)
         .position(position)
         .viewport_content_length(viewport_length);
     frame.render_stateful_widget(scrollbar, area, &mut state);

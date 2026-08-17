@@ -67,8 +67,7 @@ impl DocumentViewState {
         line_number_mode: LineNumberMode,
     ) -> Self {
         let mut viewport = Viewport::new();
-        viewport.word_wrap = true;
-        let display_layout = DisplayLayout::build(&doc_lines, 0, true);
+        let display_layout = DisplayLayout::build(&doc_lines, 0, false);
         viewport.set_dimensions(0, 0);
 
         Self {
@@ -674,9 +673,9 @@ pub fn render_document_view(
     );
 
     let horizontal_area = Rect::new(
-        outer_content_area.x,
+        text_area.x,
         outer_content_area.y + outer_content_area.height,
-        outer_content_area.width,
+        text_area.width,
         area.height.saturating_sub(outer_content_area.height).min(1),
     );
     let longest_line = state
@@ -813,9 +812,9 @@ mod tests {
     }
 
     #[test]
-    fn initial_word_wrap_enabled() {
+    fn initial_word_wrap_disabled() {
         let view = make_view(&["hello"]);
-        assert!(view.word_wrap());
+        assert!(!view.word_wrap());
     }
 
     #[test]
@@ -926,6 +925,7 @@ mod tests {
     #[test]
     fn move_to_char_searches_within_logical_line_when_wrapped() {
         let mut view = make_view(&["abcd efgh ijkl mnop"]);
+        view.handle_action(&Action::ToggleWordWrap);
         view.update_dimensions(8, 24);
 
         let consumed = view.handle_action(&Action::MoveToChar {
@@ -1041,6 +1041,7 @@ mod tests {
     #[test]
     fn render_draws_gutter_indicator_for_all_wrapped_rows_of_annotated_line() {
         let mut view = make_view(&["abcdefghijklmnopqrstuvwxyz"]);
+        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(
             &mut view,
@@ -1080,6 +1081,7 @@ mod tests {
     #[test]
     fn render_wrapped_continuation_rows_leave_line_number_cells_blank() {
         let mut view = make_view_with_mode(&["abcdefghij"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(&mut view, 10, 5, &[]);
 
@@ -1091,6 +1093,7 @@ mod tests {
     fn render_mid_wrapped_line_shows_number_on_first_visible_slice() {
         let mut view =
             make_view_with_mode(&["abcdefghijklmnopqrstuvwxyz"], LineNumberMode::Absolute);
+        view.handle_action(&Action::ToggleWordWrap);
         view.update_dimensions(10, 1);
         view.set_cursor(0, 7);
 
@@ -1455,18 +1458,18 @@ mod tests {
     // ── Word wrap toggle ──────────────────────────────────────────────
 
     #[test]
-    fn toggle_word_wrap_disables() {
+    fn toggle_word_wrap_enables() {
         let mut view = make_view(&["hello world"]);
         view.handle_action(&Action::ToggleWordWrap);
-        assert!(!view.word_wrap());
+        assert!(view.word_wrap());
     }
 
     #[test]
-    fn toggle_word_wrap_enables_after_second_toggle() {
+    fn toggle_word_wrap_disables_after_second_toggle() {
         let mut view = make_view(&["hello world"]);
         view.handle_action(&Action::ToggleWordWrap);
         view.handle_action(&Action::ToggleWordWrap);
-        assert!(view.word_wrap());
+        assert!(!view.word_wrap());
     }
 
     // ── is_too_small ──────────────────────────────────────────────────
@@ -1521,6 +1524,7 @@ mod tests {
     #[test]
     fn update_dimensions_wraps_to_rendered_text_width_after_gutter() {
         let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
 
         view.update_dimensions(10, 5);
 
@@ -1535,6 +1539,7 @@ mod tests {
     #[test]
     fn render_keeps_annotation_strip_at_far_left_with_composed_gutter() {
         let mut view = make_view(&["abcdefghij"]);
+        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(&mut view, 10, 5, &[]);
 
