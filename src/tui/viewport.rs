@@ -655,6 +655,13 @@ impl Viewport {
     }
 
     /// Toggle word wrap on/off and reset horizontal offset.
+    /**
+     * Return the first visible column when word wrapping is disabled.
+     */
+    pub fn horizontal_offset(&self) -> usize {
+        self.horizontal_offset
+    }
+
     pub fn toggle_word_wrap(&mut self) {
         self.word_wrap = !self.word_wrap;
         if self.word_wrap {

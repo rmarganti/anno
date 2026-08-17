@@ -6,6 +6,7 @@ pub mod document_view;
 pub mod help_overlay;
 pub mod input_box;
 pub mod renderer;
+pub mod scrollbar;
 pub mod selection;
 pub mod status_bar;
 pub mod theme;

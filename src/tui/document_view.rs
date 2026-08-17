@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, Layout},
+    layout::{Constraint, Flex, Layout, Rect},
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
@@ -10,6 +10,7 @@ use crate::highlight::StyledSpan;
 use crate::keybinds::handler::{Action, CharSearchDirection, RepeatDirection, SearchDirection};
 use crate::startup::LineNumberMode;
 use crate::tui::renderer;
+use crate::tui::scrollbar::{render_horizontal_scrollbar, render_vertical_scrollbar};
 use crate::tui::selection::{self, Selection};
 use crate::tui::theme::UiTheme;
 use crate::tui::viewport::{CharSearch, CursorPosition, DisplayLayout, Viewport};
@@ -66,7 +67,8 @@ impl DocumentViewState {
         line_number_mode: LineNumberMode,
     ) -> Self {
         let mut viewport = Viewport::new();
-        let display_layout = DisplayLayout::build(&doc_lines, 0, false);
+        viewport.word_wrap = true;
+        let display_layout = DisplayLayout::build(&doc_lines, 0, true);
         viewport.set_dimensions(0, 0);
 
         Self {
@@ -406,7 +408,20 @@ impl DocumentViewState {
     /// Update the viewport dimensions (e.g. from terminal size) so that
     /// `is_too_small()` works correctly before the first `render()` call.
     pub fn update_dimensions(&mut self, width: usize, height: usize) {
-        let width = Self::text_width(width, self.total_doc_lines());
+        let unconstrained_width = Self::text_width(width, self.total_doc_lines(), false);
+        let needs_horizontal_scrollbar = !self.viewport.word_wrap
+            && self
+                .doc_lines
+                .iter()
+                .any(|line| line.chars().count() > unconstrained_width);
+        let height = height.saturating_sub(usize::from(needs_horizontal_scrollbar));
+        let unconstrained_layout = DisplayLayout::build(
+            &self.doc_lines,
+            unconstrained_width,
+            self.viewport.word_wrap,
+        );
+        let needs_vertical_scrollbar = unconstrained_layout.total_display_rows() > height;
+        let width = Self::text_width(width, self.total_doc_lines(), needs_vertical_scrollbar);
         let old_width = self.viewport.width;
         self.viewport.set_dimensions(width, height);
         if width != old_width {
@@ -441,12 +456,15 @@ impl DocumentViewState {
             + GUTTER_SEPARATOR_WIDTH
     }
 
-    fn main_area_width(width: usize) -> usize {
-        width.min(MAX_DOC_WIDTH as usize)
+    fn main_area_width(width: usize, reserve_scrollbar: bool) -> usize {
+        width
+            .saturating_sub(usize::from(reserve_scrollbar))
+            .min(MAX_DOC_WIDTH as usize)
     }
 
-    fn text_width(width: usize, total_doc_lines: usize) -> usize {
-        Self::main_area_width(width).saturating_sub(Self::gutter_width(total_doc_lines))
+    fn text_width(width: usize, total_doc_lines: usize, reserve_scrollbar: bool) -> usize {
+        Self::main_area_width(width, reserve_scrollbar)
+            .saturating_sub(Self::gutter_width(total_doc_lines))
     }
 
     fn prepare_gutter_lines(
@@ -570,13 +588,29 @@ pub fn render_document_view(
 ) {
     frame.render_widget(Block::default().style(theme.document), area);
 
-    // Cap the main content width at MAX_DOC_WIDTH columns and center it.
+    // Reserve the outer edges of the full document region for scrollbars, then
+    // center the width-capped document within the remaining space.
+    let content_height = state.viewport.height.min(area.height as usize) as u16;
+    let has_vertical_scrollbar = state.display_layout.total_display_rows() > state.viewport.height;
+    let scrollbar_width = u16::from(has_vertical_scrollbar);
+    let outer_content_area = Rect::new(
+        area.x,
+        area.y,
+        area.width.saturating_sub(scrollbar_width),
+        content_height,
+    );
     let main_area = Layout::horizontal([Constraint::Max(MAX_DOC_WIDTH)])
         .flex(Flex::Center)
-        .areas::<1>(area)[0];
+        .areas::<1>(outer_content_area)[0];
     let gutter_width = DocumentViewState::gutter_width(state.total_doc_lines()) as u16;
     let [gutter_area, text_area] =
         Layout::horizontal([Constraint::Length(gutter_width), Constraint::Min(0)]).areas(main_area);
+    let scrollbar_area = Rect::new(
+        outer_content_area.x + outer_content_area.width,
+        area.y,
+        scrollbar_width,
+        content_height,
+    );
 
     let render_slices = state.viewport.visible_render_slices(&state.display_layout);
 
@@ -629,6 +663,39 @@ pub fn render_document_view(
         .style(theme.document)
         .block(Block::default().style(theme.document));
     frame.render_widget(doc, text_area);
+
+    render_vertical_scrollbar(
+        frame,
+        scrollbar_area,
+        state.viewport.scroll_offset,
+        state.display_layout.total_display_rows(),
+        state.viewport.height,
+        theme.scrollbar,
+    );
+
+    let horizontal_area = Rect::new(
+        outer_content_area.x,
+        outer_content_area.y + outer_content_area.height,
+        outer_content_area.width,
+        area.height.saturating_sub(outer_content_area.height).min(1),
+    );
+    let longest_line = state
+        .doc_lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+    let has_horizontal_scrollbar = !state.viewport.word_wrap && longest_line > state.viewport.width;
+    if has_horizontal_scrollbar {
+        render_horizontal_scrollbar(
+            frame,
+            horizontal_area,
+            state.viewport.horizontal_offset(),
+            longest_line,
+            state.viewport.width,
+            theme.scrollbar,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -746,9 +813,9 @@ mod tests {
     }
 
     #[test]
-    fn initial_word_wrap_disabled() {
+    fn initial_word_wrap_enabled() {
         let view = make_view(&["hello"]);
-        assert!(!view.word_wrap());
+        assert!(view.word_wrap());
     }
 
     #[test]
@@ -859,7 +926,6 @@ mod tests {
     #[test]
     fn move_to_char_searches_within_logical_line_when_wrapped() {
         let mut view = make_view(&["abcd efgh ijkl mnop"]);
-        view.handle_action(&Action::ToggleWordWrap);
         view.update_dimensions(8, 24);
 
         let consumed = view.handle_action(&Action::MoveToChar {
@@ -975,7 +1041,6 @@ mod tests {
     #[test]
     fn render_draws_gutter_indicator_for_all_wrapped_rows_of_annotated_line() {
         let mut view = make_view(&["abcdefghijklmnopqrstuvwxyz"]);
-        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(
             &mut view,
@@ -1015,7 +1080,6 @@ mod tests {
     #[test]
     fn render_wrapped_continuation_rows_leave_line_number_cells_blank() {
         let mut view = make_view_with_mode(&["abcdefghij"], LineNumberMode::Absolute);
-        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(&mut view, 10, 5, &[]);
 
@@ -1027,13 +1091,12 @@ mod tests {
     fn render_mid_wrapped_line_shows_number_on_first_visible_slice() {
         let mut view =
             make_view_with_mode(&["abcdefghijklmnopqrstuvwxyz"], LineNumberMode::Absolute);
-        view.handle_action(&Action::ToggleWordWrap);
         view.update_dimensions(10, 1);
         view.set_cursor(0, 7);
 
         let buffer = render_buffer(&mut view, 10, 1, &[]);
 
-        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 h");
+        assert_eq!(&buffer_line(&buffer, 0, 4), " 1 g");
     }
 
     #[test]
@@ -1392,18 +1455,18 @@ mod tests {
     // ── Word wrap toggle ──────────────────────────────────────────────
 
     #[test]
-    fn toggle_word_wrap_enables() {
+    fn toggle_word_wrap_disables() {
         let mut view = make_view(&["hello world"]);
         view.handle_action(&Action::ToggleWordWrap);
-        assert!(view.word_wrap());
+        assert!(!view.word_wrap());
     }
 
     #[test]
-    fn toggle_word_wrap_disables_after_second_toggle() {
+    fn toggle_word_wrap_enables_after_second_toggle() {
         let mut view = make_view(&["hello world"]);
         view.handle_action(&Action::ToggleWordWrap);
         view.handle_action(&Action::ToggleWordWrap);
-        assert!(!view.word_wrap());
+        assert!(view.word_wrap());
     }
 
     // ── is_too_small ──────────────────────────────────────────────────
@@ -1458,7 +1521,6 @@ mod tests {
     #[test]
     fn update_dimensions_wraps_to_rendered_text_width_after_gutter() {
         let mut view = make_view(&["abcdefghij"]);
-        view.handle_action(&Action::ToggleWordWrap);
 
         view.update_dimensions(10, 5);
 
@@ -1473,7 +1535,6 @@ mod tests {
     #[test]
     fn render_keeps_annotation_strip_at_far_left_with_composed_gutter() {
         let mut view = make_view(&["abcdefghij"]);
-        view.handle_action(&Action::ToggleWordWrap);
 
         let buffer = render_buffer(&mut view, 10, 5, &[]);
 
