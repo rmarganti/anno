@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::{
     annotation::types::{Annotation, AnnotationType, TextRange},
+    tui::scrollbar::render_vertical_scrollbar,
     tui::theme::UiTheme,
 };
 
@@ -24,7 +25,7 @@ pub(crate) fn max_scroll_offset(annotation: &Annotation, area_width: u16, area_h
     let box_height = ((area_height as usize * 4) / 5)
         .max(MIN_HEIGHT as usize)
         .min(area_height as usize) as u16;
-    let inner_width = box_width.saturating_sub(2);
+    let inner_width = box_width.saturating_sub(3);
     let content_height = box_height.saturating_sub(3);
 
     if inner_width == 0 || content_height == 0 {
@@ -86,13 +87,11 @@ impl AnnotationInspectOverlay {
             return;
         }
 
-        let content_lines = self.content_lines(theme, inner.width as usize);
+        let content_width = inner.width.saturating_sub(1);
+        let content_lines = self.content_lines(theme, content_width as usize);
         let visible_height = content_height as usize;
         let max_offset = content_lines.len().saturating_sub(visible_height);
         let offset = (scroll_offset as usize).min(max_offset);
-        let has_lines_above = offset > 0;
-        let has_lines_below = offset + visible_height < content_lines.len();
-
         for (index, line) in content_lines
             .iter()
             .skip(offset)
@@ -101,12 +100,14 @@ impl AnnotationInspectOverlay {
         {
             frame.render_widget(
                 Paragraph::new(line.clone()).style(theme.input_box),
-                Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
+                Rect::new(inner.x, inner.y + index as u16, content_width, 1),
             );
         }
 
         let footer_y = inner.y + inner.height.saturating_sub(1);
         let width = inner.width as usize;
+        let has_lines_above = offset > 0;
+        let has_lines_below = offset + visible_height < content_lines.len();
         let arrow_up = if has_lines_above { "▲" } else { " " };
         let arrow_down = if has_lines_below { "▼" } else { " " };
         let center_text = truncate_to_width(FOOTER_HINT, width.saturating_sub(2));
@@ -119,6 +120,20 @@ impl AnnotationInspectOverlay {
         frame.render_widget(
             Paragraph::new(footer),
             Rect::new(inner.x, footer_y, inner.width, 1),
+        );
+
+        render_vertical_scrollbar(
+            frame,
+            Rect::new(
+                inner.x + content_width,
+                inner.y,
+                inner.width.saturating_sub(content_width).min(1),
+                content_height,
+            ),
+            offset,
+            content_lines.len(),
+            visible_height,
+            theme.scrollbar,
         );
     }
 

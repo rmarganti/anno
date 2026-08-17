@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::keybinds::help_content::{HelpSection, help_sections};
+use crate::tui::scrollbar::render_vertical_scrollbar;
 use crate::tui::theme::UiTheme;
 
 const MIN_WIDTH: u16 = 36;
@@ -48,7 +49,7 @@ impl HelpOverlay {
         let box_height = ((height as usize * 4) / 5)
             .max(MIN_HEIGHT as usize)
             .min(height as usize) as u16;
-        let content_width = box_width.saturating_sub(2) as usize;
+        let content_width = box_width.saturating_sub(3) as usize;
         let content_height = box_height.saturating_sub(3) as usize;
 
         if content_width == 0 || content_height == 0 {
@@ -96,13 +97,11 @@ impl HelpOverlay {
             return;
         }
 
-        let content_lines = self.content_lines(theme, inner.width as usize);
+        let content_width = inner.width.saturating_sub(1);
+        let content_lines = self.content_lines(theme, content_width as usize);
         let visible_height = content_height as usize;
         let max_offset = self.max_scroll_offset(theme, area.width, area.height) as usize;
         let offset = (scroll_offset as usize).min(max_offset);
-        let has_lines_above = offset > 0;
-        let has_lines_below = offset + visible_height < content_lines.len();
-
         for (index, line) in content_lines
             .iter()
             .skip(offset)
@@ -111,13 +110,15 @@ impl HelpOverlay {
         {
             frame.render_widget(
                 Paragraph::new(line.clone()).style(theme.input_box),
-                Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
+                Rect::new(inner.x, inner.y + index as u16, content_width, 1),
             );
         }
 
         // Build the dismiss hint line with optional scroll indicators.
         let hint_y = inner.y + inner.height.saturating_sub(1);
         let w = inner.width as usize;
+        let has_lines_above = offset > 0;
+        let has_lines_below = offset + visible_height < content_lines.len();
         let arrow_up = if has_lines_above { "▲" } else { " " };
         let arrow_down = if has_lines_below { "▼" } else { " " };
         let center_text = truncate_to_width(DISMISS_HINT, w.saturating_sub(2));
@@ -130,6 +131,20 @@ impl HelpOverlay {
         frame.render_widget(
             Paragraph::new(hint_line),
             Rect::new(inner.x, hint_y, inner.width, 1),
+        );
+
+        render_vertical_scrollbar(
+            frame,
+            Rect::new(
+                inner.x + content_width,
+                inner.y,
+                inner.width.saturating_sub(content_width).min(1),
+                content_height,
+            ),
+            offset,
+            content_lines.len(),
+            visible_height,
+            theme.scrollbar,
         );
     }
 
@@ -359,9 +374,9 @@ mod tests {
     #[test]
     fn two_column_layout_at_wide_width() {
         // Inner width must reach MIN_TWO_COL_WIDTH (110).
-        // box_width = (width * 4) / 5, inner = box_width - 2 (borders).
-        // So width = 140 gives box_width = 112, inner = 110.
-        let output = render_to_lines(140, 30);
+        // Reserve one inner column for the scrollbar in addition to the borders.
+        // At width 142, box_width is 113 and content width is 110.
+        let output = render_to_lines(142, 30);
         let has_side_by_side = output
             .iter()
             .any(|line| line.contains("Global") && line.contains("Visual Mode"));

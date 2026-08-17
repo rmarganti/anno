@@ -203,7 +203,7 @@ impl Viewport {
             cursor: CursorPosition { row: 0, col: 0 },
             height: 0,
             width: 0,
-            word_wrap: false,
+            word_wrap: true,
             horizontal_offset: 0,
         }
     }
@@ -652,6 +652,13 @@ impl Viewport {
     pub fn cursor_viewport_row(&self, layout: &DisplayLayout) -> usize {
         let (disp_row, _) = layout.display_pos_of_doc_pos(self.cursor);
         disp_row.saturating_sub(self.scroll_offset)
+    }
+
+    /**
+     * Return the first visible column when word wrapping is disabled.
+     */
+    pub fn horizontal_offset(&self) -> usize {
+        self.horizontal_offset
     }
 
     /// Toggle word wrap on/off and reset horizontal offset.

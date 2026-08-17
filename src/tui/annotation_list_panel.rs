@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::annotation::store::AnnotationStore;
 use crate::annotation::types::{Annotation, AnnotationType};
+use crate::tui::scrollbar::render_vertical_scrollbar;
 use crate::tui::theme::UiTheme;
 
 /// Fixed width of the annotation list panel in columns.
@@ -200,6 +201,18 @@ pub fn render_annotation_list_panel(
             theme.panel_border
         });
     let inner = content_area(area);
+    let content_area = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width.saturating_sub(1),
+        inner.height,
+    );
+    let scrollbar_area = Rect::new(
+        content_area.x + content_area.width,
+        inner.y,
+        inner.width.min(1),
+        inner.height,
+    );
     frame.render_widget(block, area);
 
     let ordered = store.ordered();
@@ -229,7 +242,7 @@ pub fn render_annotation_list_panel(
         let centered_area = Rect::new(
             inner.x,
             inner.y + inner.height.saturating_sub(message_height) / 2,
-            inner.width,
+            content_area.width,
             inner.height.min(message_height),
         );
         frame.render_widget(msg, centered_area);
@@ -242,9 +255,6 @@ pub fn render_annotation_list_panel(
     }
 
     let current_idx = state.resolve_index(&ordered);
-    let has_items_above = scroll_offset > 0;
-    let has_items_below = scroll_offset + visible_height < ordered.len();
-
     for (row, annotation) in ordered
         .iter()
         .enumerate()
@@ -288,18 +298,37 @@ pub fn render_annotation_list_panel(
         // Used columns: 1 (indicator) + 1 (space) + glyph_width + 1 (space)
         let glyph_width = 1; // All our glyphs are single-width for layout purposes.
         let used = 1 + 1 + glyph_width + 1;
-        let available = (inner.width as usize).saturating_sub(used);
+        let available = (content_area.width as usize).saturating_sub(used);
         let preview = format_item_preview(annotation, available);
         // Pad to fill remaining space.
         let padded = format!("{preview:<available$}");
         let preview_span = Span::styled(padded, base_style);
 
         let line = Line::from(vec![indicator, spacer, glyph_span, spacer2, preview_span]);
-        let line_area = Rect::new(inner.x, inner.y + visible_idx as u16, inner.width, 1);
+        let line_area = Rect::new(
+            content_area.x,
+            content_area.y + visible_idx as u16,
+            content_area.width,
+            1,
+        );
         frame.render_widget(Paragraph::new(line), line_area);
     }
 
-    render_scroll_indicators(frame, inner, theme, has_items_above, has_items_below);
+    render_vertical_scrollbar(
+        frame,
+        scrollbar_area,
+        scroll_offset,
+        ordered.len(),
+        visible_height,
+        theme.scrollbar,
+    );
+    render_scroll_indicators(
+        frame,
+        scrollbar_area,
+        theme,
+        scroll_offset > 0,
+        scroll_offset + visible_height < ordered.len(),
+    );
 }
 
 fn content_area(area: Rect) -> Rect {
@@ -333,29 +362,12 @@ fn render_scroll_indicators(
     }
 
     let indicator_x = inner.x + inner.width - 1;
-
-    if inner.height == 1 {
-        let symbol = match (has_items_above, has_items_below) {
-            (true, true) => "…",
-            (true, false) => "▲",
-            (false, true) => "▼",
-            (false, false) => return,
-        };
-
-        frame.render_widget(
-            Paragraph::new(symbol).style(theme.panel_border),
-            Rect::new(indicator_x, inner.y, 1, 1),
-        );
-        return;
-    }
-
     if has_items_above {
         frame.render_widget(
             Paragraph::new("▲").style(theme.panel_border),
             Rect::new(indicator_x, inner.y, 1, 1),
         );
     }
-
     if has_items_below {
         frame.render_widget(
             Paragraph::new("▼").style(theme.panel_border),

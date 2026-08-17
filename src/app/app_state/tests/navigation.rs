@@ -1,6 +1,4 @@
 use super::*;
-use crate::keybinds::handler::Action;
-
 fn wrapped_motion_harness() -> AppTestHarness {
     let mut harness = harness(
         "abcdefghijklmnopqrst\nuvwxyzabcdefghijkl\n0123456789abcdefghij\nklmnopqrstuvwxzy12\nlastline",
@@ -9,10 +7,6 @@ fn wrapped_motion_harness() -> AppTestHarness {
         .state_mut()
         .document_view_mut()
         .update_dimensions(8, 24);
-    harness
-        .state_mut()
-        .document_view_mut()
-        .handle_action(&Action::ToggleWordWrap);
     harness
 }
 
