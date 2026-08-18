@@ -6,6 +6,15 @@ use ratatui::{
 };
 
 /**
+ * Convert total content and viewport lengths into Ratatui's position count.
+ */
+fn scroll_position_count(content_length: usize, viewport_length: usize) -> usize {
+    content_length
+        .saturating_sub(viewport_length)
+        .saturating_add(1)
+}
+
+/**
  * Render a vertical scrollbar when the content exceeds the viewport.
  */
 pub fn render_vertical_scrollbar(
@@ -26,7 +35,7 @@ pub fn render_vertical_scrollbar(
         .thumb_symbol("▐")
         .track_symbol(None)
         .thumb_style(style);
-    let mut state = ScrollbarState::new(content_length)
+    let mut state = ScrollbarState::new(scroll_position_count(content_length, viewport_length))
         .position(position)
         .viewport_content_length(viewport_length);
     frame.render_stateful_widget(scrollbar, area, &mut state);
@@ -53,8 +62,22 @@ pub fn render_horizontal_scrollbar(
         .thumb_symbol("▂")
         .track_symbol(None)
         .thumb_style(style);
-    let mut state = ScrollbarState::new(content_length)
+    let mut state = ScrollbarState::new(scroll_position_count(content_length, viewport_length))
         .position(position)
         .viewport_content_length(viewport_length);
     frame.render_stateful_widget(scrollbar, area, &mut state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn position_count_ends_at_maximum_scroll_offset() {
+        let content_length = 400;
+        let viewport_length = 87;
+        let position_count = scroll_position_count(content_length, viewport_length);
+
+        assert_eq!(position_count - 1, content_length - viewport_length);
+    }
 }
