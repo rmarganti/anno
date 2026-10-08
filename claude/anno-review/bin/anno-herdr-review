@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Opens anno in a floating Herdr popup, waits for the reviewer to quit, and
+# prints anno's agent export to stdout.
+set -euo pipefail
+
+usage() {
+	cat <<USAGE
+Usage: anno-herdr-review [options] <file>
+       anno-herdr-review [options] --stdin [--name <file-name>]
+
+Open anno in a floating Herdr popup, block until the reviewer exits, then
+print anno's agent export to stdout.
+
+Options:
+  --stdin             Review text read from stdin instead of a file
+  --name <file-name>  File name for --stdin content (default: review.md)
+  --syntax <syntax>   Syntax hint for highlighting
+  --title <title>     Title shown in anno's status bar
+  -h, --help          Show this help message
+
+Environment:
+  ANNO_HERDR_PLUGIN_ID  Herdr plugin providing the popup (default: rmarganti.anno-review)
+
+Exit codes:
+  0  Review exported (stdout holds the agent export)
+  1  Missing dependencies, missing file, or the popup failed
+  2  Invalid arguments
+  3  Reviewer quit without exporting (for example with :q!)
+USAGE
+}
+
+fail() {
+	echo "anno-herdr-review: $*" >&2
+	exit 1
+}
+
+PLUGIN_ID="${ANNO_HERDR_PLUGIN_ID:-rmarganti.anno-review}"
+FROM_STDIN=0
+NAME="review.md"
+SYNTAX=""
+TITLE=""
+FILE=""
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--stdin)
+		FROM_STDIN=1
+		shift
+		;;
+	--name | --syntax | --title)
+		[[ $# -ge 2 ]] || {
+			echo "Missing value for $1" >&2
+			exit 2
+		}
+		case "$1" in
+		--name) NAME="$2" ;;
+		--syntax) SYNTAX="$2" ;;
+		--title) TITLE="$2" ;;
+		esac
+		shift 2
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--)
+		shift
+		[[ $# -le 1 && -z "$FILE" ]] || {
+			echo "Only one file can be reviewed at a time" >&2
+			exit 2
+		}
+		FILE="${1:-}"
+		shift $#
+		;;
+	-*)
+		echo "Unknown option: $1" >&2
+		usage >&2
+		exit 2
+		;;
+	*)
+		[[ -z "$FILE" ]] || {
+			echo "Only one file can be reviewed at a time" >&2
+			exit 2
+		}
+		FILE="$1"
+		shift
+		;;
+	esac
+done
+
+if [[ "$FROM_STDIN" == 1 && -n "$FILE" ]]; then
+	echo "Pass either a file or --stdin, not both" >&2
+	exit 2
+fi
+if [[ "$FROM_STDIN" == 0 && -z "$FILE" ]]; then
+	usage >&2
+	exit 2
+fi
+
+# ── Check dependencies ────────────────────────────────────────────────
+[[ "${HERDR_ENV:-}" == 1 ]] || fail "not running inside a Herdr pane"
+command -v herdr >/dev/null 2>&1 || fail "herdr not found on PATH"
+ANNO_BIN="$(command -v anno 2>/dev/null)" || fail "anno not found on PATH"
+
+if ! herdr plugin list --plugin "$PLUGIN_ID" --json 2>/dev/null | grep -q "\"plugin_id\":\"$PLUGIN_ID\""; then
+	fail "Herdr plugin $PLUGIN_ID is not installed. Install it with: herdr plugin install rmarganti/anno/herdr/anno-review"
+fi
+
+# ── Prepare the review file ───────────────────────────────────────────
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/anno-herdr-review.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+if [[ "$FROM_STDIN" == 1 ]]; then
+	REVIEW_FILE="$WORK_DIR/$(basename "$NAME")"
+	cat >"$REVIEW_FILE"
+else
+	[[ -f "$FILE" ]] || fail "file not found: $FILE"
+	REVIEW_FILE="$(cd "$(dirname "$FILE")" && pwd)/$(basename "$FILE")"
+fi
+
+[[ -n "$TITLE" ]] || TITLE="Reviewing: $(basename "$REVIEW_FILE")"
+
+OUTPUT_FILE="$WORK_DIR/annotations.agent"
+DONE_FILE="$WORK_DIR/done"
+
+# ── Open the popup and wait ───────────────────────────────────────────
+open_args=(
+	plugin pane open
+	--plugin "$PLUGIN_ID"
+	--entrypoint review
+	--placement popup
+	--focus
+	--env "ANNO_BIN=$ANNO_BIN"
+	--env "ANNO_REVIEW_FILE=$REVIEW_FILE"
+	--env "ANNO_REVIEW_OUTPUT=$OUTPUT_FILE"
+	--env "ANNO_REVIEW_DONE=$DONE_FILE"
+	--env "ANNO_REVIEW_TITLE=$TITLE"
+)
+[[ -z "$SYNTAX" ]] || open_args+=(--env "ANNO_REVIEW_SYNTAX=$SYNTAX")
+
+herdr "${open_args[@]}" >/dev/null || fail "Herdr could not open the anno popup"
+
+# The popup writes done.started as soon as it runs; give it a few seconds.
+for _ in $(seq 1 50); do
+	[[ -e "$DONE_FILE.started" || -e "$DONE_FILE" ]] && break
+	sleep 0.1
+done
+[[ -e "$DONE_FILE.started" || -e "$DONE_FILE" ]] || fail "the anno popup did not start"
+
+POPUP_PID="$(cat "$DONE_FILE.started" 2>/dev/null || true)"
+until [[ -e "$DONE_FILE" ]]; do
+	if [[ -n "$POPUP_PID" ]] && ! kill -0 "$POPUP_PID" 2>/dev/null; then
+		# The popup may have finished between the two checks.
+		[[ -e "$DONE_FILE" ]] && break
+		fail "the anno popup closed unexpectedly"
+	fi
+	sleep 0.2
+done
+
+STATUS="$(cat "$DONE_FILE")"
+if [[ -s "$OUTPUT_FILE" ]]; then
+	cat "$OUTPUT_FILE"
+	exit 0
+fi
+if [[ "$STATUS" == 0 ]]; then
+	echo "anno-herdr-review: reviewer quit without exporting annotations" >&2
+	exit 3
+fi
+fail "anno exited with status $STATUS before exporting annotations"

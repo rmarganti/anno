@@ -1,0 +1,14 @@
+id = "rmarganti.anno-review"
+name = "Anno Review"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Open anno in a floating popup so coding agents can collect annotations."
+platforms = ["linux", "macos"]
+
+[[panes]]
+id = "review"
+title = "anno"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ["bash", "bin/anno-popup"]
