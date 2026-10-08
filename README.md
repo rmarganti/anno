@@ -157,6 +157,12 @@ This repository also includes a Pi extension for running anno reviews directly f
 
 For installation, usage, requirements, and limitations, see [`pi/anno-review/README.md`](pi/anno-review/README.md).
 
+## Claude Code Plugin
+
+This repository also includes a Claude Code plugin with `/anno-review` and `/anno-last` commands. It opens anno in a new [Herdr](https://herdr.dev) tab and sends the review back into the conversation.
+
+For installation, usage, requirements, and limitations, see [`claude/anno-review/README.md`](claude/anno-review/README.md).
+
 ## Modes
 
 anno uses vim-inspired modal editing:

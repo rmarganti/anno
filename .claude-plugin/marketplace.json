@@ -1,0 +1,14 @@
+{
+  "name": "anno",
+  "owner": { "name": "Ryan Marganti" },
+  "metadata": {
+    "description": "Claude Code plugins for the anno annotation TUI."
+  },
+  "plugins": [
+    {
+      "name": "anno-review",
+      "source": "./claude/anno-review",
+      "description": "Annotate files and assistant messages in anno (in a new Herdr tab), then send the review back to Claude."
+    }
+  ]
+}

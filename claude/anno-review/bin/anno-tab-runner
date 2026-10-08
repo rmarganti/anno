@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Runs anno inside the Herdr review tab, then records anno's exit status in
+# $ANNO_REVIEW_DONE so the launcher waiting outside the tab can finish.
+set -uo pipefail
+
+done_file="${ANNO_REVIEW_DONE:-}"
+status=1
+
+# Tell the launcher the tab came up, and which process to watch in case
+# the tab dies without reaching the EXIT trap.
+if [[ -n "$done_file" ]]; then
+	printf '%s\n' "$$" >"$done_file.started.tmp" && mv "$done_file.started.tmp" "$done_file.started"
+fi
+
+finish() {
+	if [[ -n "$done_file" ]]; then
+		printf '%s\n' "$status" >"$done_file.tmp" && mv "$done_file.tmp" "$done_file"
+	fi
+}
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 143' TERM
+
+if [[ -z "${ANNO_REVIEW_FILE:-}" || -z "${ANNO_REVIEW_OUTPUT:-}" ]]; then
+	echo "anno-tab-runner: ANNO_REVIEW_FILE and ANNO_REVIEW_OUTPUT must be set" >&2
+	sleep 2
+	exit 1
+fi
+
+args=(--export-format agent --output-file "$ANNO_REVIEW_OUTPUT")
+[[ -n "${ANNO_REVIEW_TITLE:-}" ]] && args+=(--title "$ANNO_REVIEW_TITLE")
+[[ -n "${ANNO_REVIEW_SYNTAX:-}" ]] && args+=(--syntax "$ANNO_REVIEW_SYNTAX")
+
+"${ANNO_BIN:-anno}" "${args[@]}" "$ANNO_REVIEW_FILE"
+status=$?
