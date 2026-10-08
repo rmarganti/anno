@@ -27,11 +27,10 @@ claude --plugin-dir ./claude/anno-review
 
 - Slash command: `/anno-review <path> [--syntax <syntax>] [--title <title>]`
 - Slash command: `/anno-last`
-- Skill: `anno-herdr-review`
 
 Use `/anno-review` when you want to review an existing file.
 Use `/anno-last` when you want to annotate the most recent assistant response.
-The skill lets Claude start a review on its own, for example when you ask it to "have me review the plan in anno".
+Reviews are meant to be started by you. The plugin doesn't give Claude a skill or tool for opening anno.
 
 ## Slash command usage
 
