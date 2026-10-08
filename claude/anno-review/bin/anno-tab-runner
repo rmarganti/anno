@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Runs anno inside the Herdr popup, then records anno's exit status in
-# $ANNO_REVIEW_DONE so the launcher waiting outside the popup can finish.
+# Runs anno inside the Herdr review tab, then records anno's exit status in
+# $ANNO_REVIEW_DONE so the launcher waiting outside the tab can finish.
 set -uo pipefail
 
 done_file="${ANNO_REVIEW_DONE:-}"
 status=1
 
-# Tell the launcher the popup came up, and which process to watch in case
-# the popup dies without reaching the EXIT trap.
+# Tell the launcher the tab came up, and which process to watch in case
+# the tab dies without reaching the EXIT trap.
 if [[ -n "$done_file" ]]; then
 	printf '%s\n' "$$" >"$done_file.started.tmp" && mv "$done_file.started.tmp" "$done_file.started"
 fi
@@ -22,7 +22,7 @@ trap 'exit 129' HUP
 trap 'exit 143' TERM
 
 if [[ -z "${ANNO_REVIEW_FILE:-}" || -z "${ANNO_REVIEW_OUTPUT:-}" ]]; then
-	echo "anno-popup: ANNO_REVIEW_FILE and ANNO_REVIEW_OUTPUT must be set" >&2
+	echo "anno-tab-runner: ANNO_REVIEW_FILE and ANNO_REVIEW_OUTPUT must be set" >&2
 	sleep 2
 	exit 1
 fi

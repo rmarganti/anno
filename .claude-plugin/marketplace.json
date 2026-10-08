@@ -8,7 +8,7 @@
     {
       "name": "anno-review",
       "source": "./claude/anno-review",
-      "description": "Annotate files and assistant messages in anno (in a Herdr popup), then send the review back to Claude."
+      "description": "Annotate files and assistant messages in anno (in a new Herdr tab), then send the review back to Claude."
     }
   ]
 }

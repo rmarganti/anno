@@ -1,18 +1,11 @@
 # Claude Code anno review plugin
 
-Use this Claude Code plugin to open `anno` in a floating Herdr popup and bring the exported review back into the conversation.
+Use this Claude Code plugin to open `anno` in a new Herdr tab and bring the exported review back into the conversation.
 
 ## Prerequisites
 
 - Install `anno` and make sure the `anno` binary is available on `PATH`.
-- Run Claude Code inside a [Herdr](https://herdr.dev) pane. Claude Code plugins can't hand their own terminal to another program, so anno opens in a Herdr popup over the session instead.
-- Install the companion Herdr plugin, which provides the popup:
-
-```bash
-herdr plugin install rmarganti/anno/herdr/anno-review
-# or, from a local checkout:
-herdr plugin link ./herdr/anno-review
-```
+- Run Claude Code inside a [Herdr](https://herdr.dev) pane. Claude Code plugins can't hand their own terminal to another program, so anno opens in a new Herdr tab instead. No Herdr plugin is needed.
 
 ## Installation
 
@@ -60,7 +53,7 @@ Behavior:
 
 - Relative paths resolve from the session's working directory.
 - `/anno-last` sends the last assistant response's text to anno as `last-message.md`.
-- Both commands return right away. anno stays open in the popup for as long as you need, and Claude Code stays usable underneath.
+- Both commands return right away. anno opens in a focused tab labeled `anno` and stays open for as long as you need. When anno exits, the tab closes and focus returns to the tab you started from.
 - When you quit with `:q`, the review is sent to Claude as your next message, containing anno's structured `agent` export. If Claude is busy, the review waits until the current turn finishes.
 - Quitting with `:q!` cancels the review and shows a notice instead.
 
@@ -68,9 +61,9 @@ Behavior:
 
 ```
 /anno-review or /anno-last           (hooks/register.ts)
-  └─ bin/anno-herdr-review           opens the popup, waits, prints the export
-       └─ herdr plugin pane open --placement popup
-            └─ herdr/anno-review/bin/anno-popup   runs anno, records its exit status
+  └─ bin/anno-herdr-review     opens a tab, waits, prints the export
+       └─ herdr tab create + herdr pane run
+            └─ bin/anno-tab-runner   runs anno, records its exit status
 ```
 
 `bin/anno-herdr-review` also works on its own. It prints the export to stdout and exits `0`, `3` when the reviewer quit without exporting, or `1` on failure. Run it with `--help` for details.
@@ -81,7 +74,6 @@ The commands fail with a clear notice when:
 
 - Claude Code isn't running inside a Herdr pane
 - `anno` or `herdr` isn't on `PATH`
-- the `rmarganti.anno-review` Herdr plugin isn't installed
 - the file to review doesn't exist
 - anno exits before exporting annotations
 

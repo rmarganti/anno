@@ -159,9 +159,9 @@ For installation, usage, requirements, and limitations, see [`pi/anno-review/REA
 
 ## Claude Code Plugin
 
-This repository also includes a Claude Code plugin with `/anno-review` and `/anno-last` commands. It opens anno in a floating [Herdr](https://herdr.dev) popup and sends the review back into the conversation.
+This repository also includes a Claude Code plugin with `/anno-review` and `/anno-last` commands. It opens anno in a new [Herdr](https://herdr.dev) tab and sends the review back into the conversation.
 
-For installation, usage, requirements, and limitations, see [`claude/anno-review/README.md`](claude/anno-review/README.md). The popup itself comes from the Herdr plugin in [`herdr/anno-review`](herdr/anno-review/README.md).
+For installation, usage, requirements, and limitations, see [`claude/anno-review/README.md`](claude/anno-review/README.md).
 
 ## Modes
 

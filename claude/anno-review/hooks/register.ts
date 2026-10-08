@@ -16,7 +16,7 @@ import {
 
 /**
  * Runs the Herdr launcher, then sends the export back as the person's next
- * message. Runs after the command has answered, so the popup can stay open
+ * message. Runs after the command has answered, so the review tab can stay open
  * as long as the reviewer needs.
  */
 async function runReview($: EngineInterface, request: ReviewRequest) {
@@ -65,14 +65,14 @@ export const register: Register = (on) => {
         await $.command.register({
             name: 'anno-review',
             description:
-                'Review a file in anno (Herdr popup), then send the annotations back',
+                'Review a file in anno (new Herdr tab), then send the annotations back',
             argumentHint: '<path> [--syntax <syntax>] [--title <title>]',
             immediate: true,
         })
         await $.command.register({
             name: 'anno-last',
             description:
-                'Annotate the last assistant message in anno (Herdr popup), then send the annotations back',
+                'Annotate the last assistant message in anno (new Herdr tab), then send the annotations back',
             immediate: true,
         })
         return next(e)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Opens anno in a floating Herdr popup, waits for the reviewer to quit, and
-# prints anno's agent export to stdout.
+# Opens anno in a new Herdr tab, waits for the reviewer to quit, and prints
+# anno's agent export to stdout.
 set -euo pipefail
 
 usage() {
@@ -8,8 +8,9 @@ usage() {
 Usage: anno-herdr-review [options] <file>
        anno-herdr-review [options] --stdin [--name <file-name>]
 
-Open anno in a floating Herdr popup, block until the reviewer exits, then
-print anno's agent export to stdout.
+Open anno in a new Herdr tab, block until the reviewer exits, then print
+anno's agent export to stdout. The tab closes when anno exits, and focus
+returns to the tab that started the review.
 
 Options:
   --stdin             Review text read from stdin instead of a file
@@ -18,12 +19,9 @@ Options:
   --title <title>     Title shown in anno's status bar
   -h, --help          Show this help message
 
-Environment:
-  ANNO_HERDR_PLUGIN_ID  Herdr plugin providing the popup (default: rmarganti.anno-review)
-
 Exit codes:
   0  Review exported (stdout holds the agent export)
-  1  Missing dependencies, missing file, or the popup failed
+  1  Missing dependencies, missing file, or the review tab failed
   2  Invalid arguments
   3  Reviewer quit without exporting (for example with :q!)
 USAGE
@@ -34,7 +32,7 @@ fail() {
 	exit 1
 }
 
-PLUGIN_ID="${ANNO_HERDR_PLUGIN_ID:-rmarganti.anno-review}"
+RUNNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/anno-tab-runner"
 FROM_STDIN=0
 NAME="review.md"
 SYNTAX=""
@@ -102,13 +100,19 @@ fi
 command -v herdr >/dev/null 2>&1 || fail "herdr not found on PATH"
 ANNO_BIN="$(command -v anno 2>/dev/null)" || fail "anno not found on PATH"
 
-if ! herdr plugin list --plugin "$PLUGIN_ID" --json 2>/dev/null | grep -q "\"plugin_id\":\"$PLUGIN_ID\""; then
-	fail "Herdr plugin $PLUGIN_ID is not installed. Install it with: herdr plugin install rmarganti/anno/herdr/anno-review"
-fi
-
 # ── Prepare the review file ───────────────────────────────────────────
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/anno-herdr-review.XXXXXX")"
-trap 'rm -rf "$WORK_DIR"' EXIT
+REVIEW_TAB=""
+
+cleanup() {
+	if [[ -n "$REVIEW_TAB" ]]; then
+		# The tab normally closes itself when anno exits; this covers failures.
+		herdr tab close "$REVIEW_TAB" >/dev/null 2>&1 || true
+		[[ -z "${HERDR_TAB_ID:-}" ]] || herdr tab focus "$HERDR_TAB_ID" >/dev/null 2>&1 || true
+	fi
+	rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT
 
 if [[ "$FROM_STDIN" == 1 ]]; then
 	REVIEW_FILE="$WORK_DIR/$(basename "$NAME")"
@@ -123,36 +127,50 @@ fi
 OUTPUT_FILE="$WORK_DIR/annotations.agent"
 DONE_FILE="$WORK_DIR/done"
 
-# ── Open the popup and wait ───────────────────────────────────────────
-open_args=(
-	plugin pane open
-	--plugin "$PLUGIN_ID"
-	--entrypoint review
-	--placement popup
+# ── Open the review tab and wait ──────────────────────────────────────
+create_args=(
+	tab create
+	--cwd "$PWD"
+	--label anno
 	--focus
 	--env "ANNO_BIN=$ANNO_BIN"
+	--env "ANNO_REVIEW_RUNNER=$RUNNER"
 	--env "ANNO_REVIEW_FILE=$REVIEW_FILE"
 	--env "ANNO_REVIEW_OUTPUT=$OUTPUT_FILE"
 	--env "ANNO_REVIEW_DONE=$DONE_FILE"
 	--env "ANNO_REVIEW_TITLE=$TITLE"
 )
-[[ -z "$SYNTAX" ]] || open_args+=(--env "ANNO_REVIEW_SYNTAX=$SYNTAX")
+[[ -z "$SYNTAX" ]] || create_args+=(--env "ANNO_REVIEW_SYNTAX=$SYNTAX")
+[[ -z "${HERDR_WORKSPACE_ID:-}" ]] || create_args+=(--workspace "$HERDR_WORKSPACE_ID")
 
-herdr "${open_args[@]}" >/dev/null || fail "Herdr could not open the anno popup"
+created="$(herdr "${create_args[@]}")" || fail "Herdr could not open a review tab"
+# The new tab and its root pane share one tab_id, and only the pane has a
+# pane_id, so the first match of each is unambiguous.
+REVIEW_TAB="$(grep -o '"tab_id":"[^"]*"' <<<"$created" | head -1 | cut -d'"' -f4)"
+REVIEW_PANE="$(grep -o '"pane_id":"[^"]*"' <<<"$created" | head -1 | cut -d'"' -f4)"
+[[ -n "$REVIEW_TAB" && -n "$REVIEW_PANE" ]] || fail "could not read the review tab from Herdr's response"
 
-# The popup writes done.started as soon as it runs; give it a few seconds.
-for _ in $(seq 1 50); do
+# The tab starts the user's login shell; replace it with the runner so the
+# tab closes on its own when anno exits. Every value travels in the tab's
+# environment, so nothing needs shell quoting. The leading space keeps the
+# command out of shell history where the shell honors that.
+herdr pane run "$REVIEW_PANE" ' exec "$ANNO_REVIEW_RUNNER"' >/dev/null ||
+	fail "Herdr could not start anno in the review tab"
+
+# The runner writes done.started as soon as it runs; shells can be slow to
+# start, so allow a generous window.
+for _ in $(seq 1 150); do
 	[[ -e "$DONE_FILE.started" || -e "$DONE_FILE" ]] && break
 	sleep 0.1
 done
-[[ -e "$DONE_FILE.started" || -e "$DONE_FILE" ]] || fail "the anno popup did not start"
+[[ -e "$DONE_FILE.started" || -e "$DONE_FILE" ]] || fail "anno did not start in the review tab"
 
-POPUP_PID="$(cat "$DONE_FILE.started" 2>/dev/null || true)"
+RUNNER_PID="$(cat "$DONE_FILE.started" 2>/dev/null || true)"
 until [[ -e "$DONE_FILE" ]]; do
-	if [[ -n "$POPUP_PID" ]] && ! kill -0 "$POPUP_PID" 2>/dev/null; then
-		# The popup may have finished between the two checks.
+	if [[ -n "$RUNNER_PID" ]] && ! kill -0 "$RUNNER_PID" 2>/dev/null; then
+		# The runner may have finished between the two checks.
 		[[ -e "$DONE_FILE" ]] && break
-		fail "the anno popup closed unexpectedly"
+		fail "the anno review tab closed unexpectedly"
 	fi
 	sleep 0.2
 done

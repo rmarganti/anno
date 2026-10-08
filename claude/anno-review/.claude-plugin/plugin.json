@@ -1,6 +1,6 @@
 {
   "name": "anno-review",
   "version": "0.1.0",
-  "description": "Annotate files and assistant messages in anno (in a Herdr popup), then send the review back to Claude.",
+  "description": "Annotate files and assistant messages in anno (in a new Herdr tab), then send the review back to Claude.",
   "author": { "name": "Ryan Marganti" }
 }

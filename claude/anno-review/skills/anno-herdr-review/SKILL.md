@@ -1,7 +1,7 @@
 ---
 name: anno-herdr-review
-description: Review plans, documents, code, or other text by opening it in anno inside a floating Herdr popup and turning the exported annotations into actionable feedback. Use when asked to review, annotate, mark up, or give feedback on text content while running inside Herdr.
-compatibility: Requires the anno binary on PATH, a Herdr pane ($HERDR_ENV=1), and the rmarganti.anno-review Herdr plugin.
+description: Review plans, documents, code, or other text by opening it in anno in a new Herdr tab and turning the exported annotations into actionable feedback. Use when asked to review, annotate, mark up, or give feedback on text content while running inside Herdr.
+compatibility: Requires the anno binary on PATH and a Herdr pane ($HERDR_ENV=1).
 ---
 
 # Anno Herdr Review
@@ -17,7 +17,7 @@ The person can also start a review on their own with `/anno-review <path>` or `/
 
 ## Running The Launcher
 
-The launcher lives two directories above this skill, at `bin/anno-herdr-review` in the plugin root. It opens anno in a floating Herdr popup, blocks until the reviewer quits, and prints anno's `agent` export to stdout.
+The launcher lives two directories above this skill, at `bin/anno-herdr-review` in the plugin root. It opens anno in a new Herdr tab, blocks until the reviewer quits, and prints anno's `agent` export to stdout.
 
 ```bash
 <plugin root>/bin/anno-herdr-review <file> [--syntax <syntax>] [--title <title>]
@@ -35,7 +35,7 @@ Exit codes:
 
 - `0` -- stdout holds the export.
 - `3` -- the reviewer quit without exporting (`:q!`). Treat it as a cancelled review and ask how to proceed.
-- `1` -- missing dependency, missing file, or the popup failed. The error says which; fall back to a normal in-chat review.
+- `1` -- missing dependency, missing file, or the review tab failed. The error says which; fall back to a normal in-chat review.
 
 ## Interpreting Output
 
