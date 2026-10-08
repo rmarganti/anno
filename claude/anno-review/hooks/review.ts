@@ -126,7 +126,11 @@ export function parseCommandArgs(args: string): ParsedArgs {
         return { ok: false, message: FILE_USAGE }
     }
 
-    request.path = positionals[0]
+    // Claude Code's `@file` mention syntax is the natural way to name a file.
+    const path = positionals[0]!.replace(/^@+/, '')
+    if (!path) return { ok: false, message: FILE_USAGE }
+
+    request.path = path
     return { ok: true, request }
 }
 

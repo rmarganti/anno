@@ -35,8 +35,20 @@ describe('argument parsing', () => {
         })
     })
 
+    test('strips leading @ from a mentioned path', async () => {
+        expect(parseCommandArgs('@README.md')).toEqual({
+            ok: true,
+            request: { path: 'README.md' },
+        })
+        expect(parseCommandArgs('@@docs/a.md')).toEqual({
+            ok: true,
+            request: { path: 'docs/a.md' },
+        })
+    })
+
     test('rejects a missing path, extra paths and unknown flags', async () => {
         expect(parseCommandArgs('').ok).toBe(false)
+        expect(parseCommandArgs('@').ok).toBe(false)
         expect(parseCommandArgs('a.md b.md').ok).toBe(false)
         expect(parseCommandArgs('a.md --bogus')).toEqual({
             ok: false,
